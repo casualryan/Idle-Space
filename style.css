@@ -1,0 +1,638 @@
+/* style.css */
+
+/* General styling */
+body {
+    font-family: 'Orbitron', sans-serif;
+    background-color: #0f0f0f;
+    color: #fff;
+    background-image: url('images/sci-fi-background.jpg'); /* Replace with your image path */
+    background-size: cover;
+    background-position: center;
+    margin: 0;
+    padding: 0;
+}
+
+body, body * {
+    text-shadow: 
+        1.2px 1.2px 0px black, 
+        -1.2px -1.2px 0px black, 
+        1.2px -1.2px 0px black, 
+        -1.2px 1.2px 0px black;
+}
+
+/* Container for stats and combat log */
+.container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    margin: 20px 0;
+}
+
+.container > div {
+    flex: 1 1 32%; /* Adjust the width as needed */
+    margin: 10px;
+}
+
+/* Stats and Combat Log Styling */
+.stats, .combat-log {
+    background-color: rgba(26, 26, 26, 0.9);
+    padding: 20px;
+    border: 1px solid #333;
+    border-radius: 10px;
+    box-shadow: 0 0 10px #000;
+    color: #fff;
+}
+
+.stats h2, .combat-log h2 {
+    font-size: 24px;
+    margin-top: 0;
+    color: #00ffcc;
+}
+
+.combat-log {
+    max-height: 400px;
+    overflow-y: auto;
+    font-family: 'Courier New', Courier, monospace;
+}
+
+/* Stat List Styling */
+.stat-list {
+    list-style-type: none;
+    padding: 0;
+    margin: 5px 0;
+}
+
+.stat-list li {
+    margin: 5px 0;
+}
+
+/* Inventory Styling */
+#inventory {
+    display: flex;
+    flex-wrap: wrap;
+    background-color: rgba(26, 26, 26, 0.8);
+    padding: 10px;
+    border: 1px solid #333;
+    border-radius: 5px;
+    max-width: 600px;
+    margin: 0 auto 20px auto;
+}
+
+#inventory li {
+    position: relative;
+    margin: 5px;
+    width: 60px;
+    height: 60px;
+    list-style: none;
+}
+
+#inventory li img {
+    width: 100%;
+    height: 100%;
+    border: 1px solid #555;
+    border-radius: 5px;
+}
+
+#inventory li:hover {
+    border: 1px solid #00ffcc;
+    cursor: pointer;
+}
+
+/* Quantity badge for stacked items */
+.quantity-badge {
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 12px;
+    pointer-events: none; /* Allows clicking through the badge */
+}
+
+/* Buttons Styling */
+button {
+    background-color: #1a1a1a;
+    color: #fff;
+    border: 1px solid #333;
+    padding: 10px 20px;
+    font-size: 16px;
+    font-family: 'Orbitron', sans-serif;
+    cursor: pointer;
+    transition: background-color 0.3s, box-shadow 0.3s;
+    border-radius: 5px;
+}
+
+button:hover {
+    background-color: #333;
+    box-shadow: 0 0 10px #00ffcc;
+}
+
+button:active {
+    background-color: #444;
+}
+
+/* Remove absolute positioning from settings button */
+#settings-button {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    background-color: transparent;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+}
+
+#settings-button img {
+    width: 24px;
+    height: 24px;
+    margin-right: 10px;
+}
+
+/* HP Bars */
+.hp-bar-container {
+    width: 100%;
+    background-color: #333;
+    height: 30px;
+    border-radius: 5px;
+    overflow: hidden;
+    box-shadow: inset 0 0 5px #000;
+    margin-bottom: 5px;
+}
+
+.hp-bar {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg, #ff3300, #cc0000);
+    box-shadow: 0 0 10px #ff0000;
+    transition: width 0.3s;
+}
+
+.enemy-hp-bar {
+    background: linear-gradient(90deg, #cc0000, #990000);
+    box-shadow: 0 0 10px #cc0000;
+}
+
+.hp-text {
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+/* Energy Shield Bars */
+.es-bar-container {
+    width: 100%;
+    background-color: #333;
+    height: 15px;
+    border-radius: 5px;
+    overflow: hidden;
+    box-shadow: inset 0 0 5px #000;
+    margin-bottom: 5px;
+}
+
+.es-bar {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg, #00ccff, #0066cc);
+    box-shadow: 0 0 10px #00ccff;
+    transition: width 0.3s;
+}
+
+.enemy-es-bar {
+    background: linear-gradient(90deg, #0066cc, #003366);
+    box-shadow: 0 0 10px #0066cc;
+}
+
+.es-text {
+    text-align: center;
+    margin-bottom: 5px;
+    font-size: 0.9em;
+}
+
+/* Progress Bars */
+.progress-container {
+    width: 100%;
+    background-color: #333;
+    height: 25px;
+    border-radius: 5px;
+    overflow: hidden;
+    margin: 10px 0;
+    box-shadow: inset 0 0 5px #000;
+    position: relative;
+}
+
+.progress-bar {
+    height: 100%;
+    width: 0%;
+    transition: width 0.1s;
+}
+
+.attack-bar {
+    background: linear-gradient(90deg, #00ffcc, #0099cc);
+}
+
+.gathering-bar {
+    background: linear-gradient(90deg, #ffcc00, #ff9900);
+}
+
+/* Tooltip Styling */
+.tooltip {
+    display: none;
+    position: absolute;
+    background-color: rgba(34, 34, 34, 0.9);
+    color: #fff;
+    padding: 5px;
+    border-radius: 4px;
+    z-index: 1000;
+    max-width: 250px; /* Maximum width for the tooltip */
+    font-size: 14px;
+    font-family: 'Orbitron', sans-serif;
+    box-shadow: 0 0 10px #000;
+    white-space: normal; /* Allow text to wrap */
+    word-wrap: break-word; /* Break long words if necessary */
+    line-height: 1.2; /* Ensure normal line height */
+    text-shadow: none;
+}
+
+.tooltip strong {
+    display: block;
+    margin-bottom: 5px;
+}
+
+ul#inventory li,
+#equipped-items li {
+    position: relative; /* Required for tooltip positioning */
+}
+
+ul#inventory li:hover .tooltip,
+#equipped-items li:hover .tooltip {
+    display: block;
+    top: -5px;
+    left: 105%;
+}
+
+/* Modal Styling */
+.modal {
+    display: none; /* Hidden by default */
+    position: fixed;
+    z-index: 1000; /* Sit on top */
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto; /* Enable scroll if needed */
+    background-color: rgba(0, 0, 0, 0.5); /* Black w/ opacity */
+}
+
+.modal-content {
+    background-color: #1a1a1a;
+    color: #fff;
+    border: 1px solid #333;
+    margin: 15% auto; /* 15% from top and centered */
+    padding: 20px;
+    width: 300px; /* Could be more or less, depending on screen size */
+    font-family: 'Orbitron', sans-serif;
+}
+
+.close-button {
+    color: #fff;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+}
+
+.close-button:hover,
+.close-button:focus {
+    color: #ff3300;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.modal h2 {
+    color: #00ffcc;
+}
+
+/* Dark Mode Styles */
+body.dark-mode {
+    background-color: #000;
+    color: #fff;
+}
+
+body.dark-mode .stats,
+body.dark-mode .combat-log,
+body.dark-mode #inventory,
+body.dark-mode #equipped-items {
+    background-color: #0d0d0d;
+    border-color: #222;
+}
+
+body.dark-mode .progress-container {
+    background-color: #222;
+}
+
+body.dark-mode .progress-bar {
+    background-color: #444;
+}
+
+body.dark-mode .attack-bar {
+    background: linear-gradient(90deg, #006666, #003333);
+}
+
+body.dark-mode .gathering-bar {
+    background: linear-gradient(90deg, #664400, #332200);
+}
+
+body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+}
+
+/* Layout */
+#sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 220px;
+    height: 100%;
+    background-color: #1a1a1a;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-section {
+    padding: 20px;
+}
+
+.sidebar-menu {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+
+.sidebar-menu li {
+    display: flex;
+    align-items: center;
+    margin-bottom: 15px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.sidebar-menu li:hover {
+    background-color: #333;
+}
+
+.sidebar-menu img {
+    width: 24px;
+    height: 24px;
+    margin-right: 10px;
+}
+
+.sidebar-menu span {
+    font-size: 16px;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid #333;
+    margin: 10px 0;
+}
+
+/* Spacer to push settings button to the bottom */
+.sidebar-spacer {
+    flex: 1 1 auto;
+}
+
+.sidebar-bottom {
+    padding: 20px;
+}
+
+#main-content {
+    margin-left: 220px;
+    padding: 20px;
+}
+
+/* Adjust h1 position */
+h1 {
+    margin-left: 240px; /* Slightly more than sidebar width */
+    padding-top: 20px;
+}
+
+/* Screen visibility */
+.screen {
+    display: none;
+}
+
+.screen.active {
+    display: block;
+}
+
+/* Equipment Paper-Doll Layout */
+#equipment-paper-doll {
+    width: 300px;
+    margin: 0 auto;
+    position: relative;
+}
+
+/* Define positions for each equipment slot */
+.equipment-slot {
+    position: absolute;
+    width: 60px;
+    height: 60px;
+    border: 1px solid #555;
+    background-color: rgba(0, 0, 0, 0.5);
+    border-radius: 5px;
+    text-align: center;
+    line-height: 60px;
+    color: #fff;
+    cursor: pointer;
+}
+
+.equipment-slot img {
+    width: 100%;
+    height: 100%;
+}
+
+#head-slot { top: 0; left: 120px; }
+#chest-slot { top: 80px; left: 120px; }
+#legs-slot { top: 160px; left: 120px; }
+#feet-slot { top: 240px; left: 120px; }
+#mainHand-slot { top: 160px; left: 40px; }
+#offHand-slot { top: 160px; left: 200px; }
+#gloves-slot { top: 160px; left: 280px; }
+
+/* Bionic slots at the bottom */
+.bionic-slot {
+    position: absolute;
+    width: 60px;
+    height: 60px;
+    border: 1px solid #555;
+    background-color: rgba(0, 0, 0, 0.5);
+    border-radius: 5px;
+    text-align: center;
+    line-height: 60px;
+    color: #fff;
+    cursor: pointer;
+    bottom: 0;
+}
+
+#bionic-slot-0 { top: 320px; left: 60px; }
+#bionic-slot-1 { top: 320px; left: 125px; }
+#bionic-slot-2 { top: 320px; left: 190px; }
+#bionic-slot-3 { top: 320px; left: 255px; }
+
+/* Confirmation Popup */
+.confirmation-popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: #1a1a1a;
+    color: #fff;
+    padding: 20px;
+    border: 1px solid #333;
+    z-index: 1001;
+    border-radius: 5px;
+}
+
+.confirmation-popup button {
+    margin: 5px;
+}
+
+/* Overlay for popup */
+#overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    z-index: 1000;
+}
+
+.settings-buttons {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+.settings-buttons button {
+    margin: 5px 0;
+}
+
+/* Damage Popups Container */
+#damage-popups-container {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: auto;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: center;
+}
+
+/* Damage Popup Styles */
+.damage-popup {
+    margin-top: 5px;
+    padding: 10px 15px;
+    border-radius: 5px;
+    color: #fff;
+    font-weight: bold;
+    text-align: center;
+    animation: popupSlideUp 0.5s ease-out forwards;
+}
+
+.damage-popup.player-damage {
+    background-color: rgba(185, 0, 0, 0.8); /* Red background for player damage */
+}
+
+.damage-popup.enemy-damage {
+    background-color: rgba(8, 136, 175, 0.8); /* Blue background for enemy damage */
+}
+
+#loot-popups-container {
+    position: fixed;
+    bottom: 20px;
+    left: 25%;
+    transform: translateX(-50%);
+    width: auto;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: center;
+}
+
+/* loot popup */
+.loot-popup {
+    margin-top: 5px;
+    padding: 10px 15px;
+    border-radius: 5px;
+    color: #fff;
+    font-weight: bold;
+    text-align: center;
+    animation: popupSlideUp 0.5s ease-out forwards;
+    background-color: rgba(54, 160, 1, 0.8);
+    text-decoration-color: #c40303;
+}
+
+@keyframes popupSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Fabrication Screen Styles */
+#fabrication-categories {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.fabrication-category {
+    border: 1px solid #ccc;
+    padding: 10px;
+}
+
+.recipe-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.recipe-card {
+    border: 1px solid #999;
+    padding: 10px;
+    width: 200px;
+    position: relative;
+}
+
+.recipe-card h4 {
+    margin: 0 0 5px 0;
+}
+
+.recipe-card p {
+    margin: 5px 0;
+}
+
+.recipe-card ul {
+    list-style-type: none;
+    padding: 0;
+    margin: 5px 0;
+}
+
+.recipe-card ul li {
+    margin: 2px 0;
+}
+
+.recipe-card button {
+    margin-top: 10px;
+    width: 100%;
+}

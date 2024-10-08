@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Idle Combat Game</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Add Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Sidebar Navigation -->
+    <div id="sidebar">
+        <div class="sidebar-section">
+            <h2>Menu</h2>
+            <ul class="sidebar-menu">
+                <li data-screen="inventory-screen">
+                    <img src="icons/inventory-icon.png" alt="Inventory Icon">
+                    <span>Inventory</span>
+                </li>
+                <li data-screen="equipment-screen">
+                    <img src="icons/equipment-icon.png" alt="Equipment Icon">
+                    <span>Equipment</span>
+                </li>
+            </ul>
+        </div>
+        <hr>
+        <div class="sidebar-section">
+            <ul class="sidebar-menu">
+                <li data-screen="adventure-screen">
+                    <img src="icons/adventure-icon.png" alt="Adventure Icon">
+                    <span>Adventure</span>
+                </li>
+            </ul>
+        </div>
+        <hr>
+        <div class="sidebar-section">
+            <ul class="sidebar-menu">
+                <li data-skill="Mining">
+                    <img src="icons/mining-icon.png" alt="Mining Icon">
+                    <span>Mining</span>
+                </li>
+                <li data-skill="Fabrication">
+                    <img src="icons/fabricating-icon.png" alt="Fabricating Icon">
+                    <span>Fabrication</span>
+                </li>
+                <li data-skill="Medtek">
+                    <img src="icons/medtek-icon.png" alt="Medtek Icon">
+                    <span>Medtek</span>
+                </li>
+                <!-- Add more non-combat skills as needed -->
+            </ul>
+        </div>
+        <!-- Spacer to push settings button to the bottom -->
+        <div class="sidebar-spacer"></div>
+        <div class="sidebar-bottom">
+            <button id="settings-button">
+                <img src="icons/settings-icon.png" alt="Settings Icon">
+                <span>Settings</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div id="main-content">
+        <!-- Inventory Screen -->
+        <div id="inventory-screen" class="screen active">
+            <h2>Inventory</h2>
+            <ul id="inventory"></ul>
+        </div>
+
+        <!-- Equipment Screen -->
+        <div id="equipment-screen" class="screen">
+            <h2>Equipment</h2>
+            <div id="equipment-paper-doll">
+                <!-- Paper-doll layout -->
+                <div id="head-slot" class="equipment-slot" data-slot="head">Head</div>
+                <div id="chest-slot" class="equipment-slot" data-slot="chest">Chest</div>
+                <div id="legs-slot" class="equipment-slot" data-slot="legs">Legs</div>
+                <div id="feet-slot" class="equipment-slot" data-slot="feet">Feet</div>
+                <div id="mainHand-slot" class="equipment-slot" data-slot="mainHand">MainHand</div>
+                <div id="offHand-slot" class="equipment-slot" data-slot="offHand">OffHand</div>
+                <div id="gloves-slot" class="equipment-slot" data-slot="gloves">Gloves</div>
+                <!-- Bionic Slots -->
+                <div id="bionic-slot-0" class="bionic-slot equipment-slot" data-slot="bionic-slot-0">Bionic 1</div>
+                <div id="bionic-slot-1" class="bionic-slot equipment-slot" data-slot="bionic-slot-1">Bionic 2</div>
+                <div id="bionic-slot-2" class="bionic-slot equipment-slot" data-slot="bionic-slot-2">Bionic 3</div>
+                <div id="bionic-slot-3" class="bionic-slot equipment-slot" data-slot="bionic-slot-3">Bionic 4</div>
+            </div>
+        </div>
+
+        <!-- Adventure Screen -->
+        <div id="adventure-screen" class="screen">
+            <h2>Adventure</h2>
+            <h3>Adventure Locations</h3>
+            <div id="adventure-locations"></div>
+            <div class="container">
+                <!-- Player Stats -->
+                <div class="stats" id="player-stats">
+                    <h2>Player Stats</h2>
+                    <p>Level: <span id="player-level">1</span></p>
+                    <p>Experience: <span id="player-experience">0</span></p>
+                    <div class="hp-bar-container">
+                        <div id="player-hp-bar" class="hp-bar"></div>
+                    </div>
+                    <div class="hp-text" id="player-hp-text">0 / 0</div>
+                    <div class="es-bar-container">
+                        <div id="player-es-bar" class="es-bar"></div>
+                    </div>
+                    <div class="es-text" id="player-es-text">0 / 0</div>
+                    <!-- Moved Attack Progress Bar Below HP/ES Bars -->
+                    <h3>Attack Progress</h3>
+                    <div class="progress-container">
+                        <div id="player-attack-progress-bar" class="progress-bar attack-bar"></div>
+                    </div>
+                    <p>Attack Speed: <span id="player-attack-speed">0</span></p>
+                    <p>Critical Chance: <span id="player-crit-chance">0%</span></p>
+                    <p>Critical Multiplier: <span id="player-crit-multiplier">0</span></p>
+                    <h3>Damage Types</h3>
+                    <ul id="player-damage-types" class="stat-list"></ul>
+                    <h3>Defense Types</h3>
+                    <ul id="player-defense-types" class="stat-list"></ul>
+                    <h3>Active Effects</h3>
+                    <ul id="player-active-effects" class="stat-list"></ul>
+                </div>
+                <!-- Enemy Stats -->
+                <div class="stats" id="enemy-stats">
+                    <h2>Enemy Stats</h2>
+                    <p>Name: <span id="enemy-name">Unknown</span></p>
+                    <div id="next-enemy-timer" style="display: none;">
+                        Next enemy in <span id="next-enemy-countdown">2</span> seconds...
+                    </div>
+                    <div class="hp-bar-container">
+                        <div id="enemy-hp-bar" class="hp-bar enemy-hp-bar"></div>
+                    </div>
+                    <div class="hp-text" id="enemy-hp-text">0 / 0</div>
+                    <div class="es-bar-container">
+                        <div id="enemy-es-bar" class="es-bar enemy-es-bar"></div>
+                    </div>
+                    <div class="es-text" id="enemy-es-text">0 / 0</div>
+                    <!-- Moved Attack Progress Bar Below HP/ES Bars -->
+                    <h3>Attack Progress</h3>
+                    <div class="progress-container">
+                        <div id="enemy-attack-progress-bar" class="progress-bar attack-bar"></div>
+                    </div>
+                    <p>Attack Speed: <span id="enemy-attack-speed">0</span></p>
+                    <p>Critical Chance: <span id="enemy-crit-chance">0%</span></p>
+                    <p>Critical Multiplier: <span id="enemy-crit-multiplier">0</span></p>
+                    <h3>Damage Types</h3>
+                    <ul id="enemy-damage-types" class="stat-list"></ul>
+                    <h3>Defense Types</h3>
+                    <ul id="enemy-defense-types" class="stat-list"></ul>
+                    <h3>Active Effects</h3>
+                    <ul id="enemy-active-effects" class="stat-list"></ul>
+                </div>
+                <!-- Combat Log -->
+                <div class="combat-log">
+                    <h2>Combat Log</h2>
+                    <div id="log-messages"></div>
+                </div>
+            </div>
+            <button id="stop-combat" style="display: none;">Stop Combat</button>
+        </div>
+
+        <!-- Skill Screens (e.g., Mining) -->
+        <div id="mining-screen" class="screen">
+            <h2>Mining</h2>
+            <!-- Activities Div -->
+            <div class="activities"></div>
+            <!-- Gathering Progress -->
+            <h3>Progress</h3>
+            <div class="progress-container">
+                <div id="mining-progress-bar" class="progress-bar gathering-bar"></div>
+            </div>
+            <!-- Stop Gathering Button -->
+            <button id="stop-mining" style="display: none;">Stop Mining</button>
+            <!-- Gathering Skill Stats -->
+            <div id="gathering-skill-stats"></div>
+        </div>
+
+        <!-- fabrication-screen -->
+        <div id="fabrication-screen" class="screen">
+            <h2>Fabrication</h2>
+            <!-- Recipe Categories -->
+            <div id="fabrication-categories">
+                <!-- Categories will be dynamically populated -->
+            </div>
+            <button id="stop-fabrication" style="display: none;">Stop Fabrication</button>
+            <div id="fabrication-progress" class="progress-bar">
+                <div id="fabrication-progress-bar" class="progress-bar-fill"></div>
+            </div>
+        </div>
+
+
+        <!-- Medtek Screen -->
+        <div id="medtek-screen" class="screen">
+            <h2>Medtek</h2>
+            <!-- Activities Div -->
+            <div class="activities"></div>
+            <!-- Medtek Progress -->
+            <h3>Progress</h3>
+            <div class="progress-container">
+                <div id="medtek-progress-bar" class="progress-bar gathering-bar"></div>
+            </div>
+            <!-- Stop Medtek Button -->
+            <button id="stop-medtek" style="display: none;">Stop Crafting</button>
+            <!-- Medtek Skill Stats -->
+            <div id="medtek-skill-stats"></div>
+        </div>
+
+        <!-- Add other skill screens similarly -->
+
+    </div>
+
+    <!-- Settings Menu (Modal) -->
+    <div id="settings-menu" class="modal">
+        <div class="modal-content">
+            <span id="close-settings" class="close-button">&times;</span>
+            <h2>Settings</h2>
+            <label>
+                <input type="checkbox" id="dark-mode-toggle"> Dark Mode
+            </label>
+            <div class="settings-buttons">
+                <button id="save-game">Save Game</button>
+                <button id="load-game">Load Game</button>
+                <button id="reset-game">Reset Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load scripts at the end of the body -->
+    <script src="items.js"></script>
+    <script src="injectors.js"></script>
+    <script src="itemgenerator.js"></script>
+    <script src="inventory.js"></script>
+    <script src="gathering.js"></script>
+    <script src="medtek.js"></script>
+    <script src="global.js"></script>
+    <script src="fabricating.js"></script>
+    <script src="statusEffects.js"></script>
+    <script src="locations.js"></script>
+    <script src="disassemble.js"></script>
+    <script src="enemies.js"></script>
+    <script src="combat.js"></script>
+    
+
+
+    <!-- Popups -->
+    <div id="damage-popups-container"></div>
+    <div id="loot-popups-container"></div>
+
+</body>
+</html>
