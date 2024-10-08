@@ -290,79 +290,79 @@ function updateEquipmentDisplay() {
 }
 
 // Function to generate tooltip content
-function getItemTooltipContent(item) {
-    let content = `<strong>${item.name}</strong><br>`;
-    content += `Type: ${item.type}<br>`;
-    if (item.weaponType) {
-        content += `Weapon Type: ${item.weaponType}<br>`;
-    }
+// function getItemTooltipContent(item) {
+//     let content = `<strong>${item.name}</strong><br>`;
+//     content += `Type: ${item.type}<br>`;
+//     if (item.weaponType) {
+//         content += `Weapon Type: ${item.weaponType}<br>`;
+//     }
 
-    // Display flat damage types
-    if (item.damageTypes) {
-        for (let damageType in item.damageTypes) {
-            content += `Damage: ${item.damageTypes[damageType]} ${capitalize(damageType)}<br>`;
-        }
-    }
+//     // Display flat damage types
+//     if (item.damageTypes) {
+//         for (let damageType in item.damageTypes) {
+//             content += `Damage: ${item.damageTypes[damageType]} ${capitalize(damageType)}<br>`;
+//         }
+//     }
 
-    // Display percentage damage type modifiers
-    if (item.statModifiers && item.statModifiers.damageTypes) {
-        for (let damageType in item.statModifiers.damageTypes) {
-            content += `+${item.statModifiers.damageTypes[damageType]}% ${capitalize(damageType)} Damage<br>`;
-        }
-    }
+//     // Display percentage damage type modifiers
+//     if (item.statModifiers && item.statModifiers.damageTypes) {
+//         for (let damageType in item.statModifiers.damageTypes) {
+//             content += `+${item.statModifiers.damageTypes[damageType]}% ${capitalize(damageType)} Damage<br>`;
+//         }
+//     }
 
-    // Display defense types
-    if (item.defenseTypes) {
-        for (let defenseType in item.defenseTypes) {
-            content += `+${item.defenseTypes[defenseType]} ${capitalize(defenseType)}<br>`;
-        }
-    }
+//     // Display defense types
+//     if (item.defenseTypes) {
+//         for (let defenseType in item.defenseTypes) {
+//             content += `+${item.defenseTypes[defenseType]} ${capitalize(defenseType)}<br>`;
+//         }
+//     }
 
-    // Display health bonuses
-    if (item.healthBonus !== undefined) {
-        content += `+${item.healthBonus} Health<br>`;
-    }
-    if (item.healthBonusPercentDisplay !== undefined) {
-        content += `+${item.healthBonusPercentDisplay}% Health<br>`;
-    }
+//     // Display health bonuses
+//     if (item.healthBonus !== undefined) {
+//         content += `+${item.healthBonus} Health<br>`;
+//     }
+//     if (item.healthBonusPercentDisplay !== undefined) {
+//         content += `+${item.healthBonusPercentDisplay}% Health<br>`;
+//     }
 
-    // Display energy shield bonuses
-    if (item.energyShieldBonus !== undefined) {
-        content += `+${item.energyShieldBonus} Energy Shield<br>`;
-    }
-    if (item.energyShieldBonusPercentDisplay !== undefined) {
-        content += `+${item.energyShieldBonusPercentDisplay}% Energy Shield<br>`;
-    }
+//     // Display energy shield bonuses
+//     if (item.energyShieldBonus !== undefined) {
+//         content += `+${item.energyShieldBonus} Energy Shield<br>`;
+//     }
+//     if (item.energyShieldBonusPercentDisplay !== undefined) {
+//         content += `+${item.energyShieldBonusPercentDisplay}% Energy Shield<br>`;
+//     }
 
-    // Other stats
-    if (item.attackSpeedModifierPercent !== undefined) {
-        content += `Attack Speed: ${item.attackSpeedModifierPercent}%<br>`;
-    }
-    if (item.criticalChanceModifierPercent !== undefined) {
-        content += `Critical Chance: ${item.criticalChanceModifierPercent}%<br>`;
-    }
-    if (item.criticalMultiplierModifierPercent !== undefined) {
-        content += `Critical Multiplier: ${item.criticalMultiplierModifierPercent}%<br>`;
-    }
+//     // Other stats
+//     if (item.attackSpeedModifierPercent !== undefined) {
+//         content += `Attack Speed: ${item.attackSpeedModifierPercent}%<br>`;
+//     }
+//     if (item.criticalChanceModifierPercent !== undefined) {
+//         content += `Critical Chance: ${item.criticalChanceModifierPercent}%<br>`;
+//     }
+//     if (item.criticalMultiplierModifierPercent !== undefined) {
+//         content += `Critical Multiplier: ${item.criticalMultiplierModifierPercent}%<br>`;
+//     }
 
-    if (item.levelRequirement !== undefined) {
-        content += `Level Requirement: ${item.levelRequirement}<br>`;
-    }
-    if (item.description) {
-        content += `${item.description}<br>`;
-    }
+//     if (item.levelRequirement !== undefined) {
+//         content += `Level Requirement: ${item.levelRequirement}<br>`;
+//     }
+//     if (item.description) {
+//         content += `${item.description}<br>`;
+//     }
 
-    console.log('Tooltip content:', content);
-    return content;
-}
+//     console.log('Tooltip content:', content);
+//     return content;
+// }
 
 // Helper function to capitalize the first letter
-function capitalize(str) {
-    if (typeof str !== 'string' || str.length === 0) {
-        return '';
-    }
-    return str.charAt(0).toUpperCase() + str.slice(1);
-}
+// function capitalize(str) {
+//     if (typeof str !== 'string' || str.length === 0) {
+//         return '';
+//     }
+//     return str.charAt(0).toUpperCase() + str.slice(1);
+// }
 
 // Function to show confirmation popup with optional secondary action
 function showConfirmationPopup(message, onConfirm, onSecondary = null) {

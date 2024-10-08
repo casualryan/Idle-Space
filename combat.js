@@ -324,6 +324,7 @@ function stopCombat(reason) {
             combatRestartTimeout = setTimeout(() => {
                 if (window.currentScreen === 'adventure-screen') {
                     startCombat();
+                    
                 }
                 timerElement.style.display = 'none';
             }, countdown * 1000);

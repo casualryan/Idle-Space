@@ -161,12 +161,13 @@ function displayFabricationRecipes() {
 function createRecipeCard(recipe) {
     const recipeCard = document.createElement('div');
     recipeCard.className = 'recipe-card';
+    recipeCard.style.position = 'relative'; // Ensure relative positioning
 
     // Retrieve the item template from items.js
     const itemTemplate = items.find(i => i.name === recipe.name);
     if (!itemTemplate) {
         console.error(`Item template not found for ${recipe.name}`);
-        return null; // Return null to indicate the recipe card was not created
+        return null;
     }
 
     // Recipe name
@@ -196,9 +197,25 @@ function createRecipeCard(recipe) {
     }
     recipeCard.appendChild(ingredientsList);
 
-    // Tooltip
-    recipeCard.addEventListener('mouseenter', () => showRecipeTooltip(itemTemplate, recipeCard));
-    recipeCard.addEventListener('mouseleave', hideRecipeTooltip);
+    // Create tooltip
+    const tooltip = document.createElement('div');
+    tooltip.className = 'tooltip';
+    tooltip.innerHTML = getItemTooltipContent(itemTemplate);
+
+    // Append tooltip to recipeCard
+    recipeCard.appendChild(tooltip);
+
+    // Add hover event listeners with delay
+    let hoverTimeout;
+    recipeCard.addEventListener('mouseenter', () => {
+        hoverTimeout = setTimeout(() => {
+            tooltip.style.display = 'block';
+        }, 500); // 0.5-second delay
+    });
+    recipeCard.addEventListener('mouseleave', () => {
+        clearTimeout(hoverTimeout);
+        tooltip.style.display = 'none';
+    });
 
     // Fabricate button
     const fabricateButton = document.createElement('button');
@@ -209,6 +226,7 @@ function createRecipeCard(recipe) {
 
     return recipeCard;
 }
+
 
 function hasRequiredMaterials(ingredients) {
     for (let materialName in ingredients) {
@@ -268,32 +286,32 @@ function refundMaterials(ingredients) {
     updateInventoryDisplay();
 }
 
-function showRecipeTooltip(itemTemplate, parentElement) {
-    if (!tooltipDiv) {
-        tooltipDiv = document.createElement('div');
-        tooltipDiv.className = 'tooltip';
-        document.body.appendChild(tooltipDiv);
-    }
+// function showRecipeTooltip(itemTemplate, parentElement) {
+//     if (!tooltipDiv) {
+//         tooltipDiv = document.createElement('div');
+//         tooltipDiv.className = 'tooltip';
+//         document.body.appendChild(tooltipDiv);
+//     }
 
-    // Build tooltip content from itemTemplate
-    tooltipDiv.innerHTML = `
-        <strong>${itemTemplate.name}</strong><br>
-        ${itemTemplate.description || 'No description available.'}<br>
-        <strong>Stats:</strong><br>
-        ${formatItemStats(itemTemplate)}
-    `;
+//     // Build tooltip content from itemTemplate
+//     tooltipDiv.innerHTML = `
+//         <strong>${itemTemplate.name}</strong><br>
+//         ${itemTemplate.description || 'No description available.'}<br>
+//         <strong>Stats:</strong><br>
+//         ${formatItemStats(itemTemplate)}
+//     `;
 
-    const rect = parentElement.getBoundingClientRect();
-    tooltipDiv.style.top = `${rect.top + window.scrollY}px`;
-    tooltipDiv.style.left = `${rect.right + 10 + window.scrollX}px`;
-    tooltipDiv.style.display = 'block';
-}
+//     const rect = parentElement.getBoundingClientRect();
+//     tooltipDiv.style.top = `${rect.top + window.scrollY}px`;
+//     tooltipDiv.style.left = `${rect.right + 10 + window.scrollX}px`;
+//     tooltipDiv.style.display = 'block';
+// }
 
-function hideRecipeTooltip() {
-    if (tooltipDiv) {
-        tooltipDiv.style.display = 'none';
-    }
-}
+// function hideRecipeTooltip() {
+//     if (tooltipDiv) {
+//         tooltipDiv.style.display = 'none';
+//     }
+// }
 
 function formatItemStats(itemTemplate) {
     const stats = [];

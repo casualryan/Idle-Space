@@ -244,14 +244,15 @@ button:active {
     padding: 5px;
     border-radius: 4px;
     z-index: 1000;
-    max-width: 250px; /* Maximum width for the tooltip */
     font-size: 14px;
     font-family: 'Orbitron', sans-serif;
     box-shadow: 0 0 10px #000;
-    white-space: normal; /* Allow text to wrap */
+    white-space: normal; /* Allow text to wrap at spaces */
     word-wrap: break-word; /* Break long words if necessary */
-    line-height: 1.2; /* Ensure normal line height */
+    line-height: 1.2;
     text-shadow: none;
+    max-width: 300px; /* Adjust as needed */
+    width: max-content; /* Allow tooltip to expand based on content */
 }
 
 .tooltip strong {
@@ -259,9 +260,15 @@ button:active {
     margin-bottom: 5px;
 }
 
-ul#inventory li,
-#equipped-items li {
+ul#inventory li {
     position: relative; /* Required for tooltip positioning */
+    list-style: none;
+    padding: 5px;
+    margin: 5px;
+    background-color: #333;
+    color: #fff;
+    border-radius: 4px;
+    cursor: pointer;
 }
 
 ul#inventory li:hover .tooltip,
@@ -575,7 +582,8 @@ h1 {
     text-align: center;
     animation: popupSlideUp 0.5s ease-out forwards;
     background-color: rgba(54, 160, 1, 0.8);
-    text-decoration-color: #c40303;
+    color: #fd4141;
+    border: #000;
 }
 
 @keyframes popupSlideUp {
@@ -608,14 +616,16 @@ h1 {
 }
 
 .recipe-card {
+    position: relative;
     border: 1px solid #999;
     padding: 10px;
-    width: 200px;
+    width: 300px;
     position: relative;
 }
 
 .recipe-card h4 {
     margin: 0 0 5px 0;
+
 }
 
 .recipe-card p {
@@ -635,4 +645,12 @@ h1 {
 .recipe-card button {
     margin-top: 10px;
     width: 100%;
+}
+
+ul#inventory li:hover .tooltip,
+#equipped-items li:hover .tooltip,
+.recipe-card:hover .tooltip {
+    display: block;
+    top: -5px;
+    left: 105%;
 }
