@@ -17,6 +17,7 @@ const enemies = [
         },
         lootTable: [
             { itemName: "Synthetic Poison Gland", minQuantity: 1, maxQuantity: 3, dropRate: 1 },
+            { itemName: "Unstable Photon", minQuantity: 1, maxQuantity: 1, dropRate: .05 },
             
         ],
         experienceValue: 10,
@@ -36,7 +37,8 @@ const enemies = [
             toughness: 8
         },
         lootTable: [
-            { itemName: "Crystalized Light", minQuantity: 1, maxQuantity: 2, dropRate: 0.20 },
+            { itemName: "Crystalized Light", minQuantity: 1, maxQuantity: 2, dropRate: 0.30 },
+            { itemName: "Particle Fuser", minQuantity: 1, maxQuantity: 1, dropRate: 0.10 },
         ],
         experienceValue: 60,
         statusEffects: []
@@ -57,8 +59,7 @@ const enemies = [
             immunity: 5
         },
         lootTable: [
-            { itemName: "Speed Enhancer", dropRate: 0.01 },
-            { itemName: "Bionic Tail", dropRate: 0.05 }
+            { itemName: "Speed Enhancer", dropRate: 0.10 },
         ],
         experienceValue: 80,
         statusEffects: []
@@ -104,21 +105,22 @@ const enemies = [
     },
     {
         name: "Electro Wasp",
-        health: 80,
+        health: 100,
         energyShield: 10,
         attackSpeed: 1.5,
         criticalChance: 0.15,
         criticalMultiplier: 1.5,
         damageTypes: {
-            kinetic: 10,
-            magnetic: 15
+            kinetic: 5,
+            magnetic: 20
         },
         defenseTypes: {
             toughness: 5,
             antimagnet: 5
         },
         lootTable: [
-            { itemName: "Electro Blaster", dropRate: 0.03 }
+            { itemName: "Crystalized Light", minQuantity: 3, maxQuantity: 3, dropRate: 1 },
+            { itemName: "Electro Blaster", dropRate: 0.2 }
         ],
         experienceValue: 55,
         statusEffects: []

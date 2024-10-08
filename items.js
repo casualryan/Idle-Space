@@ -237,7 +237,7 @@ const items = [
         isDisassembleable: true,
     },
     {
-        name: "Heavy Armor",
+        name: "Metal Carapace",
         type: "Armor",
         icon: "icons/heavy_armor.png",
         damageTypes: {},
@@ -245,17 +245,19 @@ const items = [
         criticalChance: 0,
         criticalMultiplier: 0,
         defenseTypes: { 
-            toughness: {min: 15, max: 25},
-            fortitude: {min: 15, max: 25},
-            heatResistance: {min: 15, max: 25},
-            immunity: {min: 15, max: 25},
-            antimagnet: {min: 15, max: 25}
+            toughness: {min: 20, max: 30},
+            fortitude: {min: 10, max: 10},
+            heatResistance: {min: 10, max: 10},
+            immunity: {min: 10, max: 10},
+            antimagnet: {min: 10, max: 10}
         },
+        healthBonus: { min: 50, max: 100 },
+        healthBonusPercentRange: { min: 15, max: 15 },
         slot: 'chest',
         isDisassembleable: true,
         disassembleResults: [
             {
-                name: 'Iron Ore', quantity: 1
+                name: 'Scrap Metal', quantity: 3
             },
         ],
     },
@@ -362,6 +364,15 @@ const items = [
         name: 'Crystalized Light',
         type: 'material',
         icon: 'icons/crystalized_light.png',
+        slot: 'Material',
+        stackable: true,
+        isDisassembleable: false,
+    },
+
+    {
+        name: 'Partical Fuser',
+        type: 'material',
+        icon: 'icons/plastic_parts.png',
         slot: 'Material',
         stackable: true,
         isDisassembleable: false,

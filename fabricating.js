@@ -378,25 +378,3 @@ function formatItemStats(itemTemplate) {
 function capitalizeFirstLetter(string) {
     return string.charAt(0).toUpperCase() + string.slice(1);
 }
-
-const recipes = [
-    {
-        name: "Poison Pistol",
-        category: "Weapons",
-        ingredients: {
-            "Synthetic Poison Gland": 3,
-            "Scrap Metal": 2
-        },
-        craftingTime: 5,
-    },
-    {
-        name: "Laser Sword",
-        category: "Weapons",
-        ingredients: {
-            "Crystalized Light": 5,
-            "Scrap Metal": 3
-        },
-        craftingTime: 5,
-    },
-    // Add more recipes as needed
-];
