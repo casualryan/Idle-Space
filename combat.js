@@ -7,7 +7,7 @@ let playerAttackTimer = 0;
 let enemyAttackTimer = 0;
 let playerHasFled = false;
 let combatRestartTimeout;
-
+let isCombatActive = false; // Ensure this variable is defined
 
 document.addEventListener('DOMContentLoaded', () => {
     // Initial stat displays
@@ -76,7 +76,6 @@ function startCombat() {
     displayAdventureLocations();
 }
 
-
 function spawnEnemy() {
     if (!currentLocation) {
         logMessage("No location selected.");
@@ -127,10 +126,22 @@ function spawnEnemy() {
     enemy.currentHealth = enemy.health;
     enemy.currentShield = enemy.energyShield;
     enemy.statusEffects = [];
+    enemy.effects = enemy.effects || []; // Initialize enemy effects array
+    enemy.activeBuffs = []; // Initialize active buffs if needed
 
     // Add calculateStats method to enemy
-    enemy.calculateStats = function() {
+    enemy.calculateStats = function () {
         this.totalStats = JSON.parse(JSON.stringify(this));
+        // Include any stat modifications from buffs
+        if (this.activeBuffs && this.activeBuffs.length > 0) {
+            this.activeBuffs.forEach(buff => {
+                if (buff.statChanges) {
+                    for (let stat in buff.statChanges) {
+                        this.totalStats[stat] += buff.statChanges[stat];
+                    }
+                }
+            });
+        }
     };
     enemy.calculateStats();
 
@@ -223,8 +234,6 @@ function fleeCombat() {
     }
 }
 
-
-
 function combatLoop() {
     if (!isCombatActive) return;
 
@@ -270,82 +279,76 @@ function combatLoop() {
 
 // Function to stop combat
 function stopCombat(reason) {
-        if (!isCombatActive) {
-            console.log("Combat already inactive. stopCombat() aborted.");
-            return;
-        }
+    if (!isCombatActive) {
+        console.log("Combat already inactive. stopCombat() aborted.");
+        return;
+    }
 
-        isCombatActive = false;
-        clearInterval(combatInterval);
-        console.log("Combat interval cleared.");
-        logMessage("Combat stopped due to: " + reason);
+    isCombatActive = false;
+    clearInterval(combatInterval);
+    console.log("Combat interval cleared.");
+    logMessage("Combat stopped due to: " + reason);
 
-        // Reset player's HP and shield
-        player.currentHealth = player.totalStats.health;
-        player.currentShield = player.totalStats.energyShield;
-        updatePlayerStatsDisplay();
+    // Reset player's HP and shield
+    player.currentHealth = player.totalStats.health;
+    player.currentShield = player.totalStats.energyShield;
+    updatePlayerStatsDisplay();
 
-        // Reset attack timers
-        playerAttackTimer = 0;
-        enemyAttackTimer = 0;
-        document.getElementById('player-attack-progress-bar').style.width = '0%';
-        document.getElementById('enemy-attack-progress-bar').style.width = '0%';
-        document.getElementById('stop-combat').style.display = 'none';
+    // Reset attack timers
+    playerAttackTimer = 0;
+    enemyAttackTimer = 0;
+    document.getElementById('player-attack-progress-bar').style.width = '0%';
+    document.getElementById('enemy-attack-progress-bar').style.width = '0%';
+    document.getElementById('stop-combat').style.display = 'none';
 
-        // Reset enemy
-        enemy = null;
-        updateEnemyStatsDisplay();
+    // Reset enemy
+    enemy = null;
+    updateEnemyStatsDisplay();
 
-        // Clear enemy stats display
-        initializeEnemyStatsDisplay();
+    // Clear enemy stats display
+    initializeEnemyStatsDisplay();
 
-        // Update the adventure locations display
-        displayAdventureLocations();
+    // Update the adventure locations display
+    displayAdventureLocations();
 
-        // Auto-restart combat only if the enemy was defeated
-        if (reason === 'enemyDefeated' && window.currentScreen === 'adventure-screen') {
-            const countdownElement = document.getElementById('next-enemy-countdown');
-            const timerElement = document.getElementById('next-enemy-timer');
-            let countdown = 3; // Number of seconds
-        
-            timerElement.style.display = 'block';
-            countdownElement.textContent = countdown;
-        
-            const countdownInterval = setInterval(() => {
-                countdown--;
-                if (countdown <= 0) {
-                    clearInterval(countdownInterval);
-                    timerElement.style.display = 'none';
-                } else {
-                    countdownElement.textContent = countdown;
-                }
-            }, 1000);
-        
-            combatRestartTimeout = setTimeout(() => {
-                if (window.currentScreen === 'adventure-screen') {
-                    startCombat();
-                    
-                }
+    // Auto-restart combat only if the enemy was defeated
+    if (reason === 'enemyDefeated' && window.currentScreen === 'adventure-screen') {
+        const countdownElement = document.getElementById('next-enemy-countdown');
+        const timerElement = document.getElementById('next-enemy-timer');
+        let countdown = 3; // Number of seconds
+
+        timerElement.style.display = 'block';
+        countdownElement.textContent = countdown;
+
+        const countdownInterval = setInterval(() => {
+            countdown--;
+            if (countdown <= 0) {
+                clearInterval(countdownInterval);
                 timerElement.style.display = 'none';
-            }, countdown * 1000);
+            } else {
+                countdownElement.textContent = countdown;
+            }
+        }, 1000);
+
+        combatRestartTimeout = setTimeout(() => {
+            if (window.currentScreen === 'adventure-screen') {
+                startCombat();
+            }
+            timerElement.style.display = 'none';
+        }, countdown * 1000);
     }
 }
-
-
 
 // Function for player attack
 function playerAttack() {
     let totalDamage = calculateDamage(player, enemy);
     applyDamage(enemy, totalDamage, enemy.name);
 
-    // Apply special effects if available
-    if (player.totalStats.specialEffects && player.totalStats.specialEffects.length > 0) {
-        player.totalStats.specialEffects.forEach(effect => {
-            if (Math.random() < effect.chance) {
-                effect.applyEffect(enemy);
-            }
-        });
-    }
+    // Process attacker's effects with 'onHit' trigger
+    processEffects(player, 'onHit', enemy);
+
+    // Process defender's effects with 'whenHit' trigger
+    processEffects(enemy, 'whenHit', player);
 }
 
 // Function for enemy attack
@@ -353,10 +356,11 @@ function enemyAttack() {
     let totalDamage = calculateDamage(enemy, player);
     applyDamage(player, totalDamage, "Player");
 
-    // Enemies can also have special effects
-    if (enemy.specialEffect && Math.random() < enemy.specialEffect.chance) {
-        enemy.specialEffect.applyEffect(player);
-    }
+    // Process attacker's effects with 'onHit' trigger
+    processEffects(enemy, 'onHit', player);
+
+    // Process defender's effects with 'whenHit' trigger
+    processEffects(player, 'whenHit', enemy);
 }
 
 function applyStatusEffect(target, effectName) {
@@ -367,6 +371,156 @@ function applyStatusEffect(target, effectName) {
         target.statusEffects.push(effect);
     } else {
         console.error(`Status effect '${effectName}' not found.`);
+    }
+}
+
+function processEffects(entity, trigger, target) {
+    if (!entity.effects) {
+        console.log(`Entity ${entity.name} has no effects.`);
+        return;
+    }
+
+    console.log(`Processing effects for ${entity.name} with trigger '${trigger}'`);
+
+    entity.effects.forEach(effect => {
+        if (effect.trigger === trigger) {
+            console.log(`Effect found:`, effect);
+            // Check if the effect activates based on chance
+            if (Math.random() < effect.chance) {
+                console.log(`Effect triggered:`, effect);
+                executeEffectAction(effect, entity, target);
+            } else {
+                console.log(`Effect did not trigger due to chance.`);
+            }
+        }
+    });
+}
+
+function executeEffectAction(effect, source, target) {
+    const params = effect.parameters;
+
+    switch (effect.action) {
+        case 'dealDamage':
+            const damage = params.amount;
+            const damageType = params.damageType;
+            const ignoreDefense = params.ignoreDefense || false;
+
+            applyEffectDamage(target, damage, damageType, ignoreDefense);
+            break;
+
+        case 'heal':
+            const healAmount = params.amount;
+            healEntity(source, healAmount);
+            break;
+
+        case 'applyBuff':
+            // Implement buff application
+            applyBuffToEntity(source, params.buff);
+            break;
+
+        case 'conditionalRestoreShield':
+            const maxShieldThreshold = params.maxShieldThreshold;
+            if (source.totalStats.energyShield <= maxShieldThreshold) {
+                source.currentShield = source.totalStats.energyShield;
+                logMessage(`${source.name}'s energy shield is fully restored!`);
+                if (source === player) {
+                    updatePlayerStatsDisplay();
+                } else if (source === enemy) {
+                    updateEnemyStatsDisplay();
+                }
+            }
+            break;
+
+        case 'conditionalRestoreHealth':
+            const maxHealthThreshold = params.maxHealthThreshold;
+            if (source.totalStats.health <= maxHealthThreshold) {
+                source.currentHealth = source.totalStats.health;
+                logMessage(`${source.name}'s health is fully restored!`);
+                if (source === player) {
+                    updatePlayerStatsDisplay();
+                } else if (source === enemy) {
+                    updateEnemyStatsDisplay();
+                }
+            }
+            break;
+
+        
+
+        // Add more cases as needed
+
+        default:
+            console.warn(`Unknown effect action: ${effect.action}`);
+    }
+}
+
+function applyEffectDamage(target, amount, damageType, ignoreDefense) {
+    let actualDamage = amount;
+
+    if (!ignoreDefense) {
+        const defenseStat = matchDamageToDefense(damageType);
+        const defenseValue = target.totalStats.defenseTypes[defenseStat] || 0;
+        actualDamage = Math.max(0, amount - defenseValue);
+    }
+
+    applyDamage(target, actualDamage, target.name, { [damageType]: actualDamage });
+}
+
+function healEntity(entity, amount) {
+    entity.currentHealth = Math.min(entity.totalStats.health, entity.currentHealth + amount);
+    logMessage(`${entity.name} heals for ${amount} HP.`);
+    if (entity === player) {
+        updatePlayerStatsDisplay();
+    } else if (entity === enemy) {
+        updateEnemyStatsDisplay();
+    }
+}
+
+// Function to apply buffs to an entity
+function applyBuffToEntity(entity, buff) {
+    entity.activeBuffs = entity.activeBuffs || [];
+    const existingBuff = entity.activeBuffs.find(b => b.name === buff.name);
+    if (existingBuff) {
+        // Refresh duration
+        existingBuff.duration = buff.duration;
+    } else {
+        entity.activeBuffs.push({ ...buff });
+    }
+    entity.calculateStats();
+    logMessage(`${entity.name} gains buff: ${buff.name}`);
+}
+
+// Function to process status effects and buffs
+function processStatusEffects(entity, deltaTime) {
+    // Process status effects (e.g., debuffs)
+    for (let i = entity.statusEffects.length - 1; i >= 0; i--) {
+        const effect = entity.statusEffects[i];
+        if (effect.duration > 0) {
+            effect.remainingDuration -= deltaTime;
+            if (effect.onTick) effect.onTick(effect);
+
+            if (effect.remainingDuration <= 0) {
+                if (effect.onExpire) effect.onExpire(effect);
+                entity.statusEffects.splice(i, 1); // Remove expired effect
+            }
+        }
+    }
+
+    // Process active buffs
+    if (entity.activeBuffs) {
+        for (let i = entity.activeBuffs.length - 1; i >= 0; i--) {
+            const buff = entity.activeBuffs[i];
+            if (buff.durationType === 'attacks') {
+                // Handle buffs that last a certain number of attacks
+                // Decrement duration elsewhere if needed
+            } else if (buff.durationType === 'time') {
+                buff.duration -= deltaTime;
+                if (buff.duration <= 0) {
+                    entity.activeBuffs.splice(i, 1);
+                    entity.calculateStats();
+                    logMessage(`${entity.name}'s buff ${buff.name} has expired.`);
+                }
+            }
+        }
     }
 }
 
@@ -492,22 +646,6 @@ function applyDamage(target, damage, targetName, damageTypes = null) {
     }
 }
 
-// Function to process status effects
-function processStatusEffects(entity, deltaTime) {
-    for (let i = entity.statusEffects.length - 1; i >= 0; i--) {
-        const effect = entity.statusEffects[i];
-        if (effect.duration > 0) {
-            effect.remainingDuration -= deltaTime;
-            if (effect.onTick) effect.onTick(effect);
-
-            if (effect.remainingDuration <= 0) {
-                if (effect.onExpire) effect.onExpire(effect);
-                entity.statusEffects.splice(i, 1); // Remove expired effect
-            }
-        }
-    }
-}
-
 // Function to handle loot drops
 function dropLoot(enemy) {
     logMessage(`${enemy.name} is dropping loot...`);
@@ -544,8 +682,6 @@ function dropLoot(enemy) {
         logMessage("The enemy had nothing of value.");
     }
 }
-
-
 
 function getRandomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;

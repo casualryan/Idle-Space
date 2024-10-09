@@ -16,9 +16,8 @@ const enemies = [
             
         },
         lootTable: [
-            { itemName: "Synthetic Poison Gland", minQuantity: 1, maxQuantity: 3, dropRate: 1 },
+            { itemName: "Synthetic Poison Gland", minQuantity: 1, maxQuantity: 2, dropRate: .20 },
             { itemName: "Unstable Photon", minQuantity: 1, maxQuantity: 1, dropRate: .05 },
-            
         ],
         experienceValue: 10,
         statusEffects: [],        

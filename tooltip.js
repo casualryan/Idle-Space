@@ -56,11 +56,8 @@ function getItemTooltipContent(item) {
     }
 
     // Display health bonuses (flat values or ranges)
-    if (item.healthBonus !== undefined) {
-        content += `+${item.healthBonus} Health<br>`;
-    }
-    if (item.healthBonusRange) {
-        content += `+${item.healthBonusRange.min} - +${item.healthBonusRange.max} Health<br>`;
+    if (item.healthBonus) {
+        content += `+${item.healthBonus.min} - +${item.healthBonus.max} Health<br>`;
     }
     if (item.healthBonusPercentDisplay !== undefined) {
         content += `+${item.healthBonusPercentDisplay}% Health<br>`;
@@ -70,11 +67,8 @@ function getItemTooltipContent(item) {
     }
 
     // Display energy shield bonuses (flat values or ranges)
-    if (item.energyShieldBonus !== undefined) {
-        content += `+${item.energyShieldBonus} Energy Shield<br>`;
-    }
-    if (item.energyShieldBonusRange) {
-        content += `+${item.energyShieldBonusRange.min} - +${item.energyShieldBonusRange.max} Energy Shield<br>`;
+    if (item.energyShieldBonus) {
+        content += `+${item.energyShieldBonus.min} - +${item.energyShieldBonus.max} Energy Shield<br>`;
     }
     if (item.energyShieldBonusPercentDisplay !== undefined) {
         content += `+${item.energyShieldBonusPercentDisplay}% Energy Shield<br>`;
@@ -108,10 +102,10 @@ function getItemTooltipContent(item) {
         content += `Level Requirement: ${item.levelRequirement}<br>`;
     }
 
-    // // Item description
-    // if (item.description) {
-    //     content += `<em>${item.description}</em><br>`;
-    // }
+    // Item description
+    if (item.description) {
+        content += `<em>${item.description}</em><br>`;
+    }
 
     return content;
 }

@@ -73,17 +73,17 @@
 //     icon: "",
 //     description: "",
 //     damageTypes: {
-        
+
 //         // kinetic: { min: 5, max: 10 },
 //     },
 //     statModifiers: {
 //         damageTypes: {
-            
+
 //             // kinetic: { min: 5, max: 15 },
 //         },
 //     },
 //     defenseTypes: {
-        
+
 //         // toughness: { min: 10, max: 20 },
 //     },
 //     attackSpeedModifierRange: { min: 0, max: 0 },
@@ -115,14 +115,14 @@ const items = [
         weaponType: "Sword",
         icon: "icons/ironsword.png",
         damageTypes: {
-             kinetic: { min: 3, max: 6 }, // Flat Damage
-             mental: { min: 3, max: 6 }
+            kinetic: { min: 3, max: 6 }, // Flat Damage
+            mental: { min: 3, max: 6 }
         },
         statModifiers: {
             damageTypes: {
-             kinetic: { min: 10, max: 20 }, // Percent Damage
+                kinetic: { min: 10, max: 20 }, // Percent Damage
+            },
         },
-    },
         attackSpeedModifierRange: { min: 5, max: 10 },
         criticalChanceModifierRange: { min: 10, max: 20 },
         criticalMultiplierModifierRange: { min: 10, max: 20 },
@@ -134,6 +134,19 @@ const items = [
             },
         ],
         isDisassembleable: true,
+        effects: [
+            {
+                trigger: 'whenHit', // or 'whenHit', 'onHit', etc.
+                chance: 1, // 20% chance
+                action: 'dealDamage',
+                parameters: {
+                    damageType: 'kinetic',
+                    amount: 5,
+                    ignoreDefense: true
+                }
+            }
+        ],
+        description: '20% chance on hit to deal 5 kinetic damage'
     },
 
     {
@@ -199,7 +212,7 @@ const items = [
         specialEffect: {
             name: 'Zap',
             chance: 0.25,
-            applyEffect: function(target) {
+            applyEffect: function (target) {
                 // Apply Zapped status effect
                 applyStatusEffect(target, 'Zapped');
                 // Deal 10 Mental Damage upon application
@@ -226,13 +239,13 @@ const items = [
         attackSpeed: -0.1,  // -10% attack speed
         criticalChance: 0,
         criticalMultiplier: 0,
-        defenseTypes: { 
+        defenseTypes: {
             toughness: 10,
             fortitude: 10,
             heatResistance: 10,
             immunity: 10,
             antimagnet: 10
-         },
+        },
         slot: 'offHand',
         isDisassembleable: true,
     },
@@ -244,15 +257,15 @@ const items = [
         attackSpeed: -0.2,  // -20% attack speed (due to weight)
         criticalChance: 0,
         criticalMultiplier: 0,
-        defenseTypes: { 
-            toughness: {min: 20, max: 30},
-            fortitude: {min: 10, max: 10},
-            heatResistance: {min: 10, max: 10},
-            immunity: {min: 10, max: 10},
-            antimagnet: {min: 10, max: 10}
+        defenseTypes: {
+            toughness: { min: 20, max: 30 },
+            fortitude: { min: 10, max: 10 },
+            heatResistance: { min: 10, max: 10 },
+            immunity: { min: 10, max: 10 },
+            antimagnet: { min: 10, max: 10 }
         },
         healthBonus: { min: 50, max: 100 },
-        healthBonusPercentRange: { min: 15, max: 15 },
+        healthBonusPercentRange: { min: 15, max: 20 },
         slot: 'chest',
         isDisassembleable: true,
         disassembleResults: [
@@ -260,6 +273,17 @@ const items = [
                 name: 'Scrap Metal', quantity: 3
             },
         ],
+        effects: [
+            {
+                trigger: 'whenHit',
+                chance: 0.1, // 10% chance
+                action: 'heal',
+                parameters: {
+                    amount: 30
+                }
+            }
+        ],
+        description: '10% chance when hit to gain 30 life.'
     },
 
     {
@@ -330,7 +354,7 @@ const items = [
         stackable: true,
         isDisassembleable: false,
     },
-    
+
     // Disassembl Targets
 
     {

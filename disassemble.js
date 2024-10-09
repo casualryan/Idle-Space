@@ -16,15 +16,14 @@ function disassembleItem(item) {
 
     // Determine materials received based on item type or properties
     const materialsReceived = getMaterialsFromItem(item);
-    
+
     if (materialsReceived.length === 0) {
         logMessage(`You disassembled ${item.name} but received no materials.`);
-        } 
-        else 
-        {
-    // Add materials to inventory
-    materialsReceived.forEach(material => {
-        addItemToInventory(material);
+    }
+    else {
+        // Add materials to inventory
+        materialsReceived.forEach(material => {
+            addItemToInventory(material);
         });
     }
 

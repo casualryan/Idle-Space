@@ -11,18 +11,18 @@ const locations = [
     {
         name: "Arid Scrapland",
         enemies: [
-            { name: "Scorpionbot", spawnRate: 0.5},
-            { name: "Cactibot", spawnRate: 0.3}, 
-            { name: "Pyro Beetle", spawnRate: 0.2},
+            { name: "Scorpionbot", spawnRate: 50},
+            { name: "Cactibot", spawnRate: 30}, 
+            { name: "Pyro Beetle", spawnRate: 20},
         ],
-        description: "Scorpionbot, Cactibot, and Pyro Beetle."
+        description: "Scorpionbot (50%), Cactibot (30%), and Pyro Beetle (20%)."
     },
     {
         name: "Iron Mountains",
         enemies: [
-            { name: "Steel Golem", spawnRate: 0.8},
+            { name: "Steel Golem", spawnRate: 80},
         ],
-        description: "Towering mountains rich in minerals and home to formidable foes."
+        description: "Steel Golem (80%)."
     },
     {
         name: "Blackwood Haven",

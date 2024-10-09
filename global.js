@@ -1,4 +1,4 @@
-let isCombatActive = false;
+// let isCombatActive = false;
 window.currentScreen = '';
 
 console.log('global.js loaded');
@@ -66,8 +66,11 @@ function applyItemModifiers(stats, item) {
     }
 
     // Apply critical multiplier modifier
-    if (item.criticalMultiplierModifier !== undefined) {
+    if (item.criticalMultiplierModifier !== undefined) {        
         stats.criticalMultiplier += item.criticalMultiplierModifier;
+    }
+    if (item.effects) {
+        stats.effects = stats.effects.concat(item.effects);
     }
 }
 
@@ -216,15 +219,15 @@ let player = {
         },
         // Add other skills as needed
     },
-    activeBuffs: [],  // Correctly defined as a property
+    activeBuffs: [], // Correctly defined as a property
+    effects: [],     // Initialize effects array
     applyBuff: function(buff) {
-        const existingBuff = this.activeBuffs.find(b => b.stat === buff.stat);
+        const existingBuff = this.activeBuffs.find(b => b.name === buff.name);
         if (existingBuff) {
             // Refresh duration
-            existingBuff.expiresAt = Date.now() + buff.duration;
+            existingBuff.duration = buff.duration;
         } else {
-            buff.expiresAt = Date.now() + buff.duration;
-            this.activeBuffs.push(buff);
+            this.activeBuffs.push({ ...buff });
         }
         this.calculateStats();
     },
@@ -236,7 +239,8 @@ let player = {
         stats.damageTypes = {};          // Initialize flat damage types
         stats.damageTypeModifiers = {};  // Initialize percentage damage modifiers
         stats.weaponTypeModifiers = {};
-        stats.specialEffects = [];
+        stats.defenseTypes = {};         // Initialize defense types
+        stats.effects = [];              // Initialize effects array
 
         stats.healthBonus = 0;
         stats.healthBonusPercent = 0;
@@ -245,7 +249,7 @@ let player = {
 
         // Apply all equipped items
         Object.keys(this.equipment).forEach(slot => {
-            if (Array.isArray(this.equipment[slot])) {  // Handle bionic slots
+            if (slot === 'bionicSlots') {  // Handle bionic slots
                 this.equipment[slot].forEach(bionic => {
                     if (bionic) applyItemModifiers(stats, bionic);
                 });
@@ -278,13 +282,20 @@ let player = {
 
         // Apply active buffs
         const now = Date.now();
-        this.activeBuffs = this.activeBuffs.filter(buff => buff.expiresAt > now);
+        this.activeBuffs = this.activeBuffs.filter(buff => buff.duration > 0);
         this.activeBuffs.forEach(buff => {
-            if (buff.stat === 'attackSpeed') {
-                stats.attackSpeed *= (1 + buff.amount);
+            if (buff.statChanges) {
+                for (let stat in buff.statChanges) {
+                    stats[stat] += buff.statChanges[stat];
+                }
             }
-            // Handle other stats as needed
+            if (buff.effects) {
+                stats.effects = stats.effects.concat(buff.effects);
+            }
         });
+
+        // Aggregate effects from equipment
+        stats.effects = stats.effects.concat(stats.itemEffects || []);
 
         this.totalStats = stats;
 
@@ -295,6 +306,9 @@ let player = {
         if (this.currentShield === null) {
             this.currentShield = this.totalStats.energyShield;
         }
+
+        // Update effects array
+        this.effects = stats.effects;
     },
 };
     
@@ -346,11 +360,13 @@ function saveGame(isAutoSave = false) {
             experience: player.experience,
             level: player.level,
             gatheringSkills: player.gatheringSkills,
+            statusEffects: player.statusEffects,
+            activeBuffs: player.activeBuffs,
+            equipment: player.equipment,
         },
-        inventory: inventory.map(item => {
+        inventory: window.inventory.map(item => {
             return JSON.parse(JSON.stringify(item));
         }),
-        equipment: JSON.parse(JSON.stringify(player.equipment)),
     };
 
     localStorage.setItem('idleCombatGameSave', JSON.stringify(gameState));
@@ -359,6 +375,7 @@ function saveGame(isAutoSave = false) {
         logMessage('Game saved successfully.');
     }
 }
+
 
 // Load game function
 function loadGame() {
@@ -371,18 +388,17 @@ function loadGame() {
             player.baseStats = gameState.player.baseStats || JSON.parse(JSON.stringify(playerBaseStats));
             player.currentHealth = gameState.player.currentHealth;
             player.currentShield = gameState.player.currentShield;
-            player.statusEffects = []; // Clear status effects
+            player.statusEffects = gameState.player.statusEffects || [];
             player.experience = gameState.player.experience;
             player.level = gameState.player.level;
             player.gatheringSkills = gameState.player.gatheringSkills || player.gatheringSkills;
+            player.activeBuffs = gameState.player.activeBuffs || [];
+            player.equipment = restoreEquipment(gameState.player.equipment);
 
             // Restore inventory
             window.inventory = gameState.inventory.map(savedItem => {
                 return restoreItem(savedItem);
             });
-
-            // Restore equipped items
-            player.equipment = restoreEquipment(gameState.equipment);
 
             // Recalculate player stats and update displays
             player.calculateStats();
@@ -406,9 +422,23 @@ function loadGame() {
 }
 
 
+
+
 function restoreItem(savedItem) {
-    // Since we saved the entire item, we can simply return it
-    return savedItem;
+    // Find the item template
+    const itemTemplate = items.find(item => item.name === savedItem.name);
+    if (itemTemplate) {
+        // Create a new item instance from the template
+        const itemInstance = generateItemInstance(itemTemplate);
+
+        // Copy over properties from the saved item
+        Object.assign(itemInstance, savedItem);
+
+        return itemInstance;
+    } else {
+        console.warn(`Item template not found for ${savedItem.name}`);
+        return savedItem; // Return the saved item as is
+    }
 }
 
 function restoreEquipment(savedEquipment) {
@@ -439,6 +469,7 @@ function restoreEquipment(savedEquipment) {
 }
 
 
+
 // Reset game function
 function resetGame() {
     if (confirm('Are you sure you want to reset your save? This action cannot be undone.')) {
@@ -451,23 +482,28 @@ function resetGame() {
         player.currentHealth = null;
         player.currentShield = null;
         player.statusEffects = [];
+        player.activeBuffs = [];
+        player.effects = [];
         player.experience = 0;
         player.level = 1;
         player.gatheringSkills = {
-            mining: { level: 1, experience: 0 },
+            Mining: { level: 1, experience: 0 },
+            Medtek: { level: 1, experience: 0 },
+            // Add other skills as needed
         };
 
         // Clear inventory
         window.inventory = []; // Start with an empty inventory
 
-    // Add a starting item
-    const startingItemTemplate = items.find(item => item.name === 'Iron Sword');
-    if (startingItemTemplate) {
-        const startingItem = generateItemInstance(startingItemTemplate);
-        window.inventory.push(startingItem);
-    } else {
-        console.warn('Starting item template not found.');
-    }
+        // Add a starting item
+        const startingItemTemplate = items.find(item => item.name === 'Iron Sword');
+        if (startingItemTemplate) {
+            const startingItem = generateItemInstance(startingItemTemplate);
+            window.inventory.push(startingItem);
+        } else {
+            console.warn('Starting item template not found.');
+        }
+
         player.equipment = {
             mainHand: null,
             offHand: null,
@@ -476,7 +512,7 @@ function resetGame() {
             legs: null,
             feet: null,
             gloves: null,
-            bionicSlots: [null, null, null, null]
+            bionicSlots: [null, null, null, null],
         };
 
         player.calculateStats();
@@ -491,6 +527,7 @@ function resetGame() {
         logMessage('Reset cancelled.');
     }
 }
+
 
 // Auto-save interval (saves every 5 seconds)
 setInterval(() => saveGame(true), 5000); // Adjust the interval as needed
@@ -635,6 +672,11 @@ function showScreen(screenId) {
     }
     if (isCombatActive && screenId !== 'adventure-screen') {
         stopCombat();
+    }
+    if (screenId === 'adventure-screen') {
+        stopCombat();
+        updatePlayerStatsDisplay();
+        updateEnemyStatsDisplay();
     }
 }
 
