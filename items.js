@@ -232,24 +232,6 @@ const items = [
     // Armor
 
     {
-        name: "Steel Shield",
-        type: "Shield",
-        icon: "icons/steel_shield.png",
-        damageTypes: {},
-        attackSpeed: -0.1,  // -10% attack speed
-        criticalChance: 0,
-        criticalMultiplier: 0,
-        defenseTypes: {
-            toughness: 10,
-            fortitude: 10,
-            heatResistance: 10,
-            immunity: 10,
-            antimagnet: 10
-        },
-        slot: 'offHand',
-        isDisassembleable: true,
-    },
-    {
         name: "Metal Carapace",
         type: "Armor",
         icon: "icons/heavy_armor.png",
@@ -313,29 +295,95 @@ const items = [
     // Bionics
 
     {
-        name: "Bionic Arm",
-        type: "Bionic",
-        icon: "icons/bionic_arm.png",
-        damageTypes: { kinetic: 3 },
-        attackSpeed: 0.1,  // +10% attack speed
-        criticalChance: 0.02,
-        criticalMultiplier: 0.1,
-        defenseTypes: {},
+        name: 'Epidermis Alloy',
+        type: 'Bionic',
+        icon: 'icons/epidermis_alloy.png',
+        defenseTypes: {
+            toughness: { min: 20, max: 20 },
+            immunity: { min: 20, max: 20 },
+            heatResistance: { min: 5, max: 5 },
+            antimagnet: { min: -10, max: -10 }
+        },
         slot: 'bionic',
         isDisassembleable: true,
+        disassembleResults: [
+            {
+                name: 'Scrap Metal', quantity: 1
+            },
+        ],
     },
     {
-        name: "Speed Enhancer",
-        type: "Bionic",
-        icon: "icons/speedenhancer.png",
-        damageTypes: {},
-        attackSpeed: 0.75, // +75% attack speed
-        criticalChance: 0,
-        criticalMultiplier: 0,
-        defenseTypes: {},
+        name: 'Health Enhancer',
+        type: 'Bionic',
+        icon: 'icons/healthenhancer.png',
+        healthBonusPercentRange: { min: 20, max: 25 },
         slot: 'bionic',
         isDisassembleable: true,
+        disassembleResults: [
+            {
+                name: 'Scrap Metal', quantity: 1
+            },
+        ],
     },
+
+    {
+        name: 'Reactive Barbs',
+        type: 'Bionic',
+        icon: 'icons/reactive_barbs.png',
+        slot: 'bionic',
+        effects: [
+            {
+                trigger: 'whenHit',
+                chance: 100,
+                action: 'dealDamage',
+                parameters: {
+                    damageType: 'kinetic',
+                    amount: 2,
+                    ignoreDefenses: true
+                }
+            },
+        ],
+        isDisassembleable: true,
+        disassembleResults: [
+            {
+                name: 'Scrap Metal', quantity: 1
+            },
+        ],
+        description: 'When hit, deal 2 Kinetic damage to the target.'
+    },
+
+    {
+        name: 'Reaction Enhancer',
+        type: 'Bionic',
+        icon: 'icons/reactionenhancer.png',
+        slot: 'bionic',
+        attackSpeedModifierRange: { min: 20, max: 35 },
+        isDisassembleable: true,
+        disassembleResults: [
+            {
+                name: 'Scrap Metal', quantity: 1
+            },
+        ],
+        description: 'Increases Attack Speed by 20%-35%.'
+    },
+
+    {
+        name: 'Health Exchanger',
+        type: 'Bionic',
+        icon: 'icons/healthexchanger.png',
+        slot: 'bionic',
+        healthBonus: { min: -30, max: -10 },
+        energyShieldBonus: { min: 40, max: 60 },
+        energyShieldBonusPercentRange: { min: 10, max: 10 },
+        isDisassembleable: true,
+        disassembleResults: [
+            {
+                name: 'Scrap Metal', quantity: 1
+            },
+        ],
+        description: 'Decreases Max Health by 10-30, but increases Max Energy Shield by 40-60 + 10%.'
+    },
+
 
     // Gathering Items
     {
@@ -355,7 +403,7 @@ const items = [
         isDisassembleable: false,
     },
 
-    // Disassembl Targets
+    //Crafting items
 
     {
         name: 'Minor Electronic Circuit',
@@ -401,6 +449,14 @@ const items = [
         stackable: true,
         isDisassembleable: false,
     },
+    {
+        name: 'Titanium Thorn',
+        type: 'material',
+        icon: 'icons/titanium_thorn.png',
+        slot: 'Material',
+        stackable: true,
+        isDisassembleable: false,
+    }
 
     // Add more items with respective slots and effects
 ];

@@ -4,13 +4,13 @@
 const enemies = [
     {
         name: "Spiderbot",
-        health: 20,
+        health: 25,
         energyShield: 0,
-        attackSpeed: 1,
+        attackSpeed: 1.1,
         criticalChance: 0,
         criticalMultiplier: 1.5,
         damageTypes: {
-            kinetic: 3
+            kinetic: 5
         },
         defenseTypes: {
             
@@ -50,8 +50,8 @@ const enemies = [
         criticalChance: 0.07,
         criticalMultiplier: 2.0,
         damageTypes: {
-            kinetic: 20,
-            chemical: 10
+            kinetic: 5,
+            chemical: 20
         },
         defenseTypes: {
             toughness: 10,
@@ -65,20 +65,22 @@ const enemies = [
     },
     {
         name: "Cactibot",
-        health: 130,
-        energyShield: 25,
-        attackSpeed: 1.1,
-        criticalChance: 0.08,
-        criticalMultiplier: 1.8,
+        health: 110,
+        energyShield: 35,
+        attackSpeed: 1.2,
+        criticalChance: 0.15,
+        criticalMultiplier: 1.5,
         damageTypes: {
-            kinetic: 15,
-            pyro: 5
+            kinetic: 25,
         },
         defenseTypes: {
-            toughness: 12,
-            heatResistance: 5
+            toughness: 20,
+            heatResistance: -20,
+            fortitude: 50,
+            immunity: 10,
         },
         lootTable: [
+            { itemName: "Titanium Thorn", dropRate: 0.10 },
         ],
         experienceValue: 70,
         statusEffects: []
@@ -92,7 +94,7 @@ const enemies = [
         criticalChance: 0.05,
         criticalMultiplier: 2.5,
         damageTypes: {
-            kinetic: 30
+            kinetic: 60
         },
         defenseTypes: {
             toughness: 20
@@ -165,7 +167,7 @@ const enemies = [
         },
         lootTable: [            
         ],
-        experienceValue: 65,
+        experienceValue: 500,
         statusEffects: []
     },
     // Continue adding enemies as needed

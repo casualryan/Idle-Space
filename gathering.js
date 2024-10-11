@@ -196,14 +196,14 @@ const gatheringSkills = [
                 name: 'Chip at Fallen Ships',
                 levelRequired: 1,
                 experience: 10,        // Experience gained per action
-                time: 7,              // Time in seconds per action
+                time: 4,              // Time in seconds per action
                 item: { name: 'Scrap Metal', quantity: 1 },
             },
             {
                 name: 'Titanium Harvesting',
                 levelRequired: 10,
                 experience: 25,
-                time: 10,
+                time: 6,
                 item: { name: 'Titanium', quantity: 1 },
             },
             // Add more activities as needed

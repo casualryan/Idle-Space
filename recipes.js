@@ -34,10 +34,67 @@ const recipes = [
         category: "Armor",
         ingredients: {
             "Scrap Metal": 15,
-            "Particle Fuser": 1
+            "Partical Fuser": 1
         },
         craftingTime: 5,
-    }
-    // Add more recipes as needed
+    },
+    {
+        name: "Epidermis Alloy",
+        category: "Bionics",
+        ingredients: {
+            "Scrap Metal": 10,
+            "Partical Fuser": 1
+        },
+        craftingTime: 5,
+    },
+    {
+        name: "Health Enhancer",
+        category: "Bionics",
+        ingredients: {
+            "Scrap Metal": 10,
+            "Partical Fuser": 1
+        },
+        craftingTime: 5,
+    },
+    {
+        name: "Reactive Barbs",
+        category: "Bionics",
+        ingredients: {
+            "Scrap Metal": 10,
+            "Partical Fuser": 1
+        },
+        craftingTime: 5,
+    },
+
+    {
+        name: "Partical Fuser",
+        category: "Material",
+        ingredients: {
+            "Scrap Metal": 30,
+            "Unstable Photon": 5
+        },
+        craftingTime: 5,
+    },
+
+    {
+        name: 'Reaction Enhancer',
+        category: 'Bionics',
+        ingredients: {
+            "Scrap Metal": 10,
+            "Partical Fuser": 1
+        },
+        craftingTime: 5,
+    },
+
+    {
+        name: 'Health Exchanger',
+        category: 'Bionics',
+        ingredients: {
+            "Scrap Metal": 10,
+            "Partical Fuser": 1
+        },
+        craftingTime: 5,
+    },
+
 ];
 
