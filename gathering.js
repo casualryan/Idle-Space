@@ -3,6 +3,10 @@ let gatheringInterval;
 let currentActivity;
 let gatheringProgress = 0;
 let gatheringTimer = 0;
+let inventoryItem = inventory.find(item => item.name === activity.item.name);
+let totalQuantity = inventory
+    .filter(item => item.name === activity.item.name)
+    .reduce((sum, item) => sum + item.quantity, 0);
 
 if (typeof updateInventoryDisplay === 'undefined') {
     // Import or define updateInventoryDisplay function
@@ -88,6 +92,34 @@ function stopGatheringActivity() {
     }
 }
 
+function displayLootPopup(message) {
+    const container = document.getElementById('loot-popups-container');
+    if (!container) {
+        console.error('Loot popups container not found in the DOM.');
+        return;
+    }
+
+    const popup = document.createElement('div');
+    popup.classList.add('loot-popup');
+    popup.textContent = message;
+
+    // Add the popup to the container
+    container.appendChild(popup);
+
+    // Remove the popup after 3 seconds
+    setTimeout(() => {
+        popup.style.opacity = '0';
+        popup.style.transition = 'opacity 0.5s';
+        // Remove the popup from the DOM after the transition
+        setTimeout(() => {
+            container.removeChild(popup);
+        }, 500);
+    }, 3000);
+}
+
+
+
+// Perform the gathering action upon completion
 // Perform the gathering action upon completion
 function performGatheringAction(skillName, activity) {
     // Get the item template from items.js
@@ -98,6 +130,14 @@ function performGatheringAction(skillName, activity) {
         gatheredItem.quantity = activity.item.quantity || 1;
         // Add to inventory
         addItemToInventory(gatheredItem);
+
+        // Calculate total quantity after adding the item
+        let totalQuantity = inventory
+            .filter(item => item.name === activity.item.name)
+            .reduce((sum, item) => sum + item.quantity, 0);
+
+        // Display the popup with the total quantity
+        displayLootPopup(`You gathered ${activity.item.name}. (${totalQuantity})`);
     } else {
         console.error(`Item template not found for ${activity.item.name}`);
     }
@@ -105,12 +145,12 @@ function performGatheringAction(skillName, activity) {
     // Gain experience
     gainGatheringExperience(skillName, activity.experience);
 
-    logMessage(`You have gathered ${activity.item.name}.`);
     console.log(`You have gathered ${activity.item.name}.`);
 
     // Update gathering skill stats
     updateGatheringSkillStats();
 }
+
 
 // Display activities for a given skill
 function displaySkillActivities(skillName) {

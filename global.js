@@ -496,7 +496,7 @@ function resetGame() {
         window.inventory = []; // Start with an empty inventory
 
         // Add a starting item
-        const startingItemTemplate = items.find(item => item.name === 'Iron Sword');
+        const startingItemTemplate = items.find(item => item.name === 'Broken Phase Sword');
         if (startingItemTemplate) {
             const startingItem = generateItemInstance(startingItemTemplate);
             window.inventory.push(startingItem);

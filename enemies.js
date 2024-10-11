@@ -121,7 +121,7 @@ const enemies = [
         },
         lootTable: [
             { itemName: "Crystalized Light", minQuantity: 3, maxQuantity: 3, dropRate: 1 },
-            { itemName: "Electro Blaster", dropRate: 0.2 }
+            { itemName: "Electro Blaster", dropRate: 0.2, maxQuantity: 1, minQuantity: 1 }  
         ],
         experienceValue: 55,
         statusEffects: []

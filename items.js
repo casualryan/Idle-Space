@@ -110,7 +110,7 @@ const items = [
     //Weapons
 
     {
-        name: "Iron Sword",
+        name: "Broken Phase Sword",
         type: "Weapon",
         weaponType: "Sword",
         icon: "icons/ironsword.png",
@@ -444,7 +444,7 @@ const items = [
     {
         name: 'Partical Fuser',
         type: 'material',
-        icon: 'icons/plastic_parts.png',
+        icon: 'icons/partical_fuser.png',
         slot: 'Material',
         stackable: true,
         isDisassembleable: false,
@@ -456,7 +456,7 @@ const items = [
         slot: 'Material',
         stackable: true,
         isDisassembleable: false,
-    }
+    },
 
-    // Add more items with respective slots and effects
+
 ];

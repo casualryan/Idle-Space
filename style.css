@@ -621,7 +621,7 @@ h1 {
     padding: 10px;
     width: 300px;
     position: relative;
-    background-color: rgba(26, 26, 26, 0.8);
+    background-color: rgba(26, 26, 26, .9);
     color: #fff;
     border-radius: 5px;
     

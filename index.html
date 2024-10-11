@@ -50,6 +50,16 @@
                 <!-- Add more non-combat skills as needed -->
             </ul>
         </div>
+        <hr>
+        <!-- Codex Section -->
+        <div class="sidebar-section">
+            <ul class="sidebar-menu">
+                <li data-screen="codex-screen">
+                    <img src="icons/codex-icon.png" alt="Codex Icon">
+                    <span>Codex</span>
+                </li>
+            </ul>
+        </div>
         <!-- Spacer to push settings button to the bottom -->
         <div class="sidebar-spacer"></div>
         <div class="sidebar-bottom">
@@ -161,6 +171,19 @@
             <button id="stop-combat" style="display: none;">Stop Combat</button>
         </div>
 
+        <!-- Codex Screen -->
+        <div id="codex-screen" class="screen">
+            <h2>Codex</h2>
+            <!-- Area Tabs -->
+            <div id="codex-area-tabs" class="area-tabs">
+                <!-- Tabs will be dynamically populated -->
+            </div>
+            <!-- Enemy List -->
+            <div id="codex-enemy-list">
+                <!-- Enemy details will be dynamically populated -->
+            </div>
+        </div>
+
         <!-- Skill Screens (e.g., Mining) -->
         <div id="mining-screen" class="screen">
             <h2>Mining</h2>
@@ -189,7 +212,6 @@
                 <div id="fabrication-progress-bar" class="progress-bar-fill"></div>
             </div>
         </div>
-
 
         <!-- Medtek Screen -->
         <div id="medtek-screen" class="screen">
@@ -243,12 +265,144 @@
     <script src="disassemble.js"></script>
     <script src="enemies.js"></script>
     <script src="combat.js"></script>
-    
-
 
     <!-- Popups -->
     <div id="damage-popups-container"></div>
     <div id="loot-popups-container"></div>
+
+    <!-- Codex Script -->
+    <script>
+        // Codex functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get the area tabs container
+            const areaTabsContainer = document.getElementById('codex-area-tabs');
+            const enemyListContainer = document.getElementById('codex-enemy-list');
+
+            // Function to populate area tabs
+            function populateAreaTabs() {
+                locations.forEach(location => {
+                    const tab = document.createElement('button');
+                    tab.classList.add('codex-area-tab');
+                    tab.textContent = location.name;
+                    tab.addEventListener('click', () => {
+                        displayEnemiesForLocation(location);
+                    });
+                    areaTabsContainer.appendChild(tab);
+                });
+            }
+
+            // Function to display enemies for a location
+            function displayEnemiesForLocation(location) {
+                // Clear previous content
+                enemyListContainer.innerHTML = '';
+
+                // Create a header for the location
+                const locationHeader = document.createElement('h3');
+                locationHeader.textContent = location.name;
+                enemyListContainer.appendChild(locationHeader);
+
+                // For each enemy in the location
+                location.enemies.forEach(locationEnemy => {
+                    // Find the enemy data
+                    const enemyData = enemies.find(e => e.name === locationEnemy.name);
+                    if (enemyData) {
+                        // Create a container for the enemy
+                        const enemyContainer = document.createElement('div');
+                        enemyContainer.classList.add('codex-enemy');
+
+                        // Enemy name and spawn rate
+                        const enemyName = document.createElement('h4');
+                        enemyName.textContent = `${enemyData.name} (Spawn Rate: ${locationEnemy.spawnRate}%)`;
+                        enemyContainer.appendChild(enemyName);
+
+                        // Enemy stats
+                        const statsList = document.createElement('ul');
+                        statsList.classList.add('codex-enemy-stats');
+
+                        // Health
+                        const healthItem = document.createElement('li');
+                        healthItem.textContent = `Health: ${enemyData.health}`;
+                        statsList.appendChild(healthItem);
+
+                        // Energy Shield
+                        const shieldItem = document.createElement('li');
+                        shieldItem.textContent = `Energy Shield: ${enemyData.energyShield}`;
+                        statsList.appendChild(shieldItem);
+
+                        // Attack Speed
+                        const attackSpeedItem = document.createElement('li');
+                        attackSpeedItem.textContent = `Attack Speed: ${enemyData.attackSpeed}`;
+                        statsList.appendChild(attackSpeedItem);
+
+                        // Critical Chance
+                        const critChanceItem = document.createElement('li');
+                        critChanceItem.textContent = `Critical Chance: ${(enemyData.criticalChance * 100).toFixed(2)}%`;
+                        statsList.appendChild(critChanceItem);
+
+                        // Critical Multiplier
+                        const critMultiplierItem = document.createElement('li');
+                        critMultiplierItem.textContent = `Critical Multiplier: ${enemyData.criticalMultiplier}`;
+                        statsList.appendChild(critMultiplierItem);
+
+                        // Damage Types
+                        const damageTypesItem = document.createElement('li');
+                        const damageTypes = Object.entries(enemyData.damageTypes).map(([type, value]) => `${capitalize(type)}: ${value}`).join(', ');
+                        damageTypesItem.textContent = `Damage Types: ${damageTypes}`;
+                        statsList.appendChild(damageTypesItem);
+
+                        // Defense Types
+                        if (enemyData.defenseTypes && Object.keys(enemyData.defenseTypes).length > 0) {
+                            const defenseTypesItem = document.createElement('li');
+                            const defenseTypes = Object.entries(enemyData.defenseTypes).map(([type, value]) => `${capitalize(type)}: ${value}`).join(', ');
+                            defenseTypesItem.textContent = `Defense Types: ${defenseTypes}`;
+                            statsList.appendChild(defenseTypesItem);
+                        }
+
+                        enemyContainer.appendChild(statsList);
+
+                        // Loot Table
+                        if (enemyData.lootTable && enemyData.lootTable.length > 0) {
+                            const lootHeader = document.createElement('h5');
+                            lootHeader.textContent = 'Loot Table:';
+                            enemyContainer.appendChild(lootHeader);
+
+                            const lootList = document.createElement('ul');
+                            lootList.classList.add('codex-enemy-loot');
+
+                            enemyData.lootTable.forEach(lootItem => {
+                                const lootListItem = document.createElement('li');
+                                const dropRate = (lootItem.dropRate * 100).toFixed(2);
+                                lootListItem.textContent = `${lootItem.itemName} (Drop Rate: ${dropRate}%, Quantity: ${lootItem.minQuantity}-${lootItem.maxQuantity})`;
+                                lootList.appendChild(lootListItem);
+                            });
+
+                            enemyContainer.appendChild(lootList);
+                        }
+
+                        enemyListContainer.appendChild(enemyContainer);
+                    } else {
+                        // Enemy data not found
+                        const missingEnemy = document.createElement('div');
+                        missingEnemy.textContent = `Enemy data not found for ${locationEnemy.name}`;
+                        enemyListContainer.appendChild(missingEnemy);
+                    }
+                });
+            }
+
+            // Helper function to capitalize the first letter
+            function capitalize(str) {
+                return str.charAt(0).toUpperCase() + str.slice(1);
+            }
+
+            // Initialize Codex
+            populateAreaTabs();
+
+            // Optionally, display the first area's enemies by default
+            if (locations.length > 0) {
+                displayEnemiesForLocation(locations[0]);
+            }
+        });
+    </script>
 
 </body>
 </html>

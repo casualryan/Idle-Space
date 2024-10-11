@@ -1,4 +1,4 @@
-window.inventory = ["Iron Sword"];
+window.inventory = [];
 window.inventoryChangeListeners = [];
 
 console.log('inventory.js loaded');
