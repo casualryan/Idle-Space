@@ -16,7 +16,7 @@ const enemies = [
             
         },
         lootTable: [
-            { itemName: "Synthetic Poison Gland", minQuantity: 1, maxQuantity: 2, dropRate: .20 },
+            { itemName: "Synthetic Poison Gland", minQuantity: 1, maxQuantity: 2, dropRate: 1 },
             { itemName: "Unstable Photon", minQuantity: 1, maxQuantity: 1, dropRate: .05 },
         ],
         experienceValue: 10,
@@ -37,7 +37,7 @@ const enemies = [
         },
         lootTable: [
             { itemName: "Crystalized Light", minQuantity: 1, maxQuantity: 2, dropRate: 0.30 },
-            { itemName: "Particle Fuser", minQuantity: 1, maxQuantity: 1, dropRate: 0.10 },
+            { itemName: "Partical Fuser", minQuantity: 1, maxQuantity: 1, dropRate: 0.10 },
         ],
         experienceValue: 60,
         statusEffects: []
@@ -120,8 +120,8 @@ const enemies = [
             antimagnet: 5
         },
         lootTable: [
-            { itemName: "Crystalized Light", minQuantity: 3, maxQuantity: 3, dropRate: 1 },
-            { itemName: "Electro Blaster", dropRate: 0.2, maxQuantity: 1, minQuantity: 1 }  
+            { itemName: "Crystalized Light", minQuantity: 2, maxQuantity: 3, dropRate: 1 },
+            { itemName: "Electro Blaster", dropRate: 0.2, maxQuantity: 1, minQuantity: 1 }
         ],
         experienceValue: 55,
         statusEffects: []

@@ -1,5 +1,3 @@
-// itemgenerator.js
-
 function createItemInstance(template) {
     const item = { ...template };
     if (typeof item.quantity === 'undefined') {

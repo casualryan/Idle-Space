@@ -1,9 +1,9 @@
-// let isCombatActive = false;
 window.currentScreen = '';
 
 console.log('global.js loaded');
 console.log('window.inventory at the start:', window.inventory);
 
+// Function to apply item modifiers to stats
 // Function to apply item modifiers to stats
 function applyItemModifiers(stats, item) {
     // Apply flat damage types
@@ -20,9 +20,9 @@ function applyItemModifiers(stats, item) {
     if (item.statModifiers && item.statModifiers.damageTypes) {
         for (let damageType in item.statModifiers.damageTypes) {
             if (!stats.damageTypeModifiers[damageType]) {
-                stats.damageTypeModifiers[damageType] = 0;
+                stats.damageTypeModifiers[damageType] = 1; // Start with a multiplier of 1
             }
-            stats.damageTypeModifiers[damageType] += item.statModifiers.damageTypes[damageType] / 100; // Convert to decimal
+            stats.damageTypeModifiers[damageType] *= (1 + item.statModifiers.damageTypes[damageType] / 100); // Convert percentage to multiplier
         }
     }
 
@@ -35,6 +35,7 @@ function applyItemModifiers(stats, item) {
             stats.defenseTypes[defenseType] += item.defenseTypes[defenseType];
         }
     }
+
     // Apply flat health bonus
     if (item.healthBonus !== undefined) {
         stats.healthBonus = (stats.healthBonus || 0) + item.healthBonus;
@@ -57,22 +58,25 @@ function applyItemModifiers(stats, item) {
 
     // Apply attack speed modifier
     if (item.attackSpeedModifier !== undefined) {
-        stats.attackSpeedModifier += item.attackSpeedModifier;
+        stats.attackSpeedMultiplier = (stats.attackSpeedMultiplier || 1) * (1 + item.attackSpeedModifier); // Convert percentage to multiplier
     }
 
     // Apply critical chance modifier
     if (item.criticalChanceModifier !== undefined) {
-        stats.criticalChance += item.criticalChanceModifier;
+        stats.criticalChance = (stats.criticalChance || 0) + item.criticalChanceModifier;
     }
 
     // Apply critical multiplier modifier
-    if (item.criticalMultiplierModifier !== undefined) {        
-        stats.criticalMultiplier += item.criticalMultiplierModifier;
+    if (item.criticalMultiplierModifier !== undefined) {
+        stats.criticalMultiplier = (stats.criticalMultiplier || 1) * (1 + item.criticalMultiplierModifier);
     }
+
+    // Apply effects
     if (item.effects) {
         stats.effects = stats.effects.concat(item.effects);
     }
 }
+
 
 
 // Function to update player stats display dynamically
@@ -221,32 +225,55 @@ let player = {
     },
     activeBuffs: [], // Correctly defined as a property
     effects: [],     // Initialize effects array
-    applyBuff: function(buff) {
+    applyBuff: function(buffName) {
+        // Find the buff definition by name
+        const buffDef = buffs.find(b => b.name === buffName);
+        if (!buffDef) {
+            console.error(`Buff '${buffName}' not found.`);
+            return;
+        }
+    
+        // Create a deep copy of the buff to avoid modifying the original definition
+        const buff = JSON.parse(JSON.stringify(buffDef));
+        buff.remainingDuration = buff.duration; // Initialize remaining duration
+    
+        // Check if the buff already exists on the player
         const existingBuff = this.activeBuffs.find(b => b.name === buff.name);
         if (existingBuff) {
             // Refresh duration
-            existingBuff.duration = buff.duration;
+            existingBuff.remainingDuration = buff.duration;
         } else {
-            this.activeBuffs.push({ ...buff });
+            this.activeBuffs.push(buff);
         }
+        updatePlayerStatsDisplay();
+    
+        console.log(`Applied buff: ${buff.name}`);
+        logMessage(`${this.name} gains buff: ${buff.name}`);
+    
+        // Recalculate stats to apply the buff immediately
         this.calculateStats();
     },
+    
     calculateStats: function() {
         let stats = JSON.parse(JSON.stringify(this.baseStats));
-
-        // Initialize modifiers
-        stats.attackSpeedModifier = 0.0;
-        stats.damageTypes = {};          // Initialize flat damage types
-        stats.damageTypeModifiers = {};  // Initialize percentage damage modifiers
-        stats.weaponTypeModifiers = {};
-        stats.defenseTypes = {};         // Initialize defense types
-        stats.effects = [];              // Initialize effects array
-
+    
+        // Initialize base stats and modifiers
+        stats.attackSpeed = stats.attackSpeed || 1.0;
+        stats.attackSpeedMultiplier = 1.0;
+        stats.criticalChance = stats.criticalChance || 0;
+        stats.criticalMultiplier = stats.criticalMultiplier || 1.5;
+        stats.criticalMultiplierMultiplier = 1.0;
+    
+        stats.damageTypes = {};
+        stats.damageTypeModifiers = {};
+        stats.defenseTypes = {};
+        stats.effects = [];
+    
         stats.healthBonus = 0;
         stats.healthBonusPercent = 0;
         stats.energyShieldBonus = 0;
         stats.energyShieldBonusPercent = 0;
-
+    
         // Apply all equipped items
         Object.keys(this.equipment).forEach(slot => {
             if (slot === 'bionicSlots') {  // Handle bionic slots
@@ -257,74 +284,155 @@ let player = {
                 applyItemModifiers(stats, this.equipment[slot]);
             }
         });
-
+    
+        // Apply active buffs
+        if (this.activeBuffs) {
+            this.activeBuffs.forEach(buff => {
+                if (buff.statChanges) {
+                    for (let stat in buff.statChanges) {
+                        if (stat === 'attackSpeed') {
+                            stats.attackSpeedMultiplier *= 1 + buff.statChanges[stat];
+                        } else if (stat === 'criticalMultiplier') {
+                            stats.criticalMultiplierMultiplier *= 1 + buff.statChanges[stat];
+                        } else if (stat in stats) {
+                            stats[stat] += buff.statChanges[stat];
+                        } else if (stats.damageTypes[stat] !== undefined) {
+                            // Damage types
+                            stats.damageTypes[stat] = (stats.damageTypes[stat] || 0) + buff.statChanges[stat];
+                        } else if (stats.defenseTypes[stat] !== undefined) {
+                            // Defense types
+                            stats.defenseTypes[stat] = (stats.defenseTypes[stat] || 0) + buff.statChanges[stat];
+                        } else {
+                            // Handle any other stats
+                            stats[stat] = (stats[stat] || 0) + buff.statChanges[stat];
+                        }
+                    }
+                }
+                if (buff.effects) {
+                    stats.effects = stats.effects.concat(buff.effects);
+                }
+            });
+        }
+    
+        // Apply attack speed modifications
+        stats.attackSpeed *= stats.attackSpeedMultiplier;
+        stats.attackSpeed = Math.min(Math.max(stats.attackSpeed, 0.1), 10); // Cap attack speed between 0.1 and 10
+    
+        // Apply critical multiplier modifications
+        stats.criticalMultiplier *= stats.criticalMultiplierMultiplier;
+    
         // Apply percentage modifiers to damage types
         for (let damageType in stats.damageTypes) {
             if (stats.damageTypeModifiers[damageType]) {
-                stats.damageTypes[damageType] *= (1 + stats.damageTypeModifiers[damageType]);
+                stats.damageTypes[damageType] *= stats.damageTypeModifiers[damageType];
             }
             stats.damageTypes[damageType] = Math.round(stats.damageTypes[damageType]);
         }
-
+    
         // Apply health bonuses
         stats.health += stats.healthBonus;
-        stats.health = stats.health * (1 + stats.healthBonusPercent);
+        stats.health *= (1 + stats.healthBonusPercent);
         stats.health = Math.round(stats.health);
-
+    
         // Apply energy shield bonuses
         stats.energyShield += stats.energyShieldBonus;
-        stats.energyShield = stats.energyShield * (1 + stats.energyShieldBonusPercent);
+        stats.energyShield *= (1 + stats.energyShieldBonusPercent);
         stats.energyShield = Math.round(stats.energyShield);
-
-        // Calculate final attack speed
-        stats.attackSpeed = stats.attackSpeed * (1 + stats.attackSpeedModifier);
-        stats.attackSpeed = Math.max(stats.attackSpeed, 0.1); // Minimum attack speed
-
-        // Apply active buffs
-        const now = Date.now();
-        this.activeBuffs = this.activeBuffs.filter(buff => buff.duration > 0);
-        this.activeBuffs.forEach(buff => {
-            if (buff.statChanges) {
-                for (let stat in buff.statChanges) {
-                    stats[stat] += buff.statChanges[stat];
-                }
-            }
-            if (buff.effects) {
-                stats.effects = stats.effects.concat(buff.effects);
-            }
-        });
-
-        // Aggregate effects from equipment
-        stats.effects = stats.effects.concat(stats.itemEffects || []);
-
+    
         this.totalStats = stats;
-
+    
         // Initialize current health and shield if null
-        if (this.currentHealth === null) {
+        if (this.currentHealth === null || this.currentHealth === undefined) {
             this.currentHealth = this.totalStats.health;
         }
-        if (this.currentShield === null) {
+        if (this.currentShield === null || this.currentShield === undefined) {
             this.currentShield = this.totalStats.energyShield;
         }
-
+    
         // Update effects array
         this.effects = stats.effects;
     },
-};
+}
     
 
 // Function to log messages
 function logMessage(message) {
-    const log = document.getElementById("log-messages");
-    if (log) {
-        const messageElement = document.createElement('div');
-        messageElement.textContent = message;
-        log.appendChild(messageElement);
-        log.scrollTop = log.scrollHeight;  // Scroll to the bottom
-    } else {
-        console.log(message);
-    }
+    const logElement = document.getElementById("log-messages");
+    const messageElement = document.createElement("div");
+
+    // Process the message for color codes
+    const processedMessage = processColorCodes(message);
+    messageElement.innerHTML = processedMessage;
+
+    logElement.appendChild(messageElement);
+
+    // Auto-scroll to the bottom
+    logElement.scrollTop = logElement.scrollHeight;
 }
+
+function processColorCodes(message) {
+    // Define color codes and their corresponding HTML styles
+    const colorStyles = {
+        'red': 'color: red;',
+        'blue': 'color: blue;',
+        'green': 'color: green;',
+        'yellow': 'color: yellow;',
+        'flashing': 'animation: flash 1s infinite;',
+        // Add more colors or styles as needed
+    };
+
+    // Regular expression to match color codes
+    const regex = /\{([^\}]+)\}/g;
+
+    let result;
+    let lastIndex = 0;
+    let finalMessage = '';
+
+    while ((result = regex.exec(message)) !== null) {
+        const [fullMatch, code] = result;
+        const index = result.index;
+
+        // Append the text before the code
+        finalMessage += message.substring(lastIndex, index);
+
+        // Check if the code is an end tag
+        if (code === 'end') {
+            finalMessage += '</span>';
+        } else if (colorStyles[code]) {
+            // Start a new span with the corresponding style
+            finalMessage += `<span style="${colorStyles[code]}">`;
+        } else if (code.startsWith('rainbow')) {
+            // Handle rainbow or alternating colors
+            const text = code.substring('rainbow '.length);
+            finalMessage += applyRainbowText(text);
+            // Since we consumed the text, move lastIndex forward
+            lastIndex = regex.lastIndex + text.length + 1;
+            regex.lastIndex = lastIndex;
+            continue;
+        } else {
+            // If the code is not recognized, include it as plain text
+            finalMessage += fullMatch;
+        }
+
+        lastIndex = regex.lastIndex;
+    }
+
+    // Append any remaining text after the last code
+    finalMessage += message.substring(lastIndex);
+
+    return finalMessage;
+}
+
+function applyRainbowText(text) {
+    const colors = ['red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet'];
+    let result = '';
+    for (let i = 0; i < text.length; i++) {
+        const color = colors[i % colors.length];
+        result += `<span style="color: ${color};">${text[i]}</span>`;
+    }
+    return result;
+}
+
 
 // Function to gain experience and handle leveling up
 function gainExperience(amount) {

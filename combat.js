@@ -64,6 +64,7 @@ function startCombat() {
     isCombatActive = true;
 
     // Initialize enemy
+    // Clear buffs at the start of combat
     spawnEnemy();
 
     // Start combat loop
@@ -131,18 +132,89 @@ function spawnEnemy() {
 
     // Add calculateStats method to enemy
     enemy.calculateStats = function () {
-        this.totalStats = JSON.parse(JSON.stringify(this));
-        // Include any stat modifications from buffs
-        if (this.activeBuffs && this.activeBuffs.length > 0) {
+        let stats = JSON.parse(JSON.stringify(this));
+
+        // Initialize base stats and modifiers
+        stats.attackSpeedMultiplier = 1.0;
+        stats.criticalMultiplierMultiplier = 1.0;
+        stats.damageTypes = stats.damageTypes || {};
+        stats.damageTypeModifiers = stats.damageTypeModifiers || {};
+        stats.defenseTypes = stats.defenseTypes || {};
+        stats.effects = this.effects || [];
+
+        // Apply active buffs
+        if (this.activeBuffs) {
             this.activeBuffs.forEach(buff => {
                 if (buff.statChanges) {
                     for (let stat in buff.statChanges) {
-                        this.totalStats[stat] += buff.statChanges[stat];
+                        if (stat === 'attackSpeed') {
+                            stats.attackSpeedMultiplier *= 1 + buff.statChanges[stat];
+                        } else if (stat === 'criticalMultiplier') {
+                            stats.criticalMultiplierMultiplier *= 1 + buff.statChanges[stat];
+                        } else if (stat in stats) {
+                            stats[stat] += buff.statChanges[stat];
+                        } else if (stats.damageTypes[stat] !== undefined) {
+                            stats.damageTypes[stat] = (stats.damageTypes[stat] || 0) + buff.statChanges[stat];
+                        } else if (stats.defenseTypes[stat] !== undefined) {
+                            stats.defenseTypes[stat] = (stats.defenseTypes[stat] || 0) + buff.statChanges[stat];
+                        } else {
+                            stats[stat] = (stats[stat] || 0) + buff.statChanges[stat];
+                        }
                     }
+                }
+                if (buff.effects) {
+                    stats.effects = stats.effects.concat(buff.effects);
                 }
             });
         }
+
+        // Apply attack speed modifications
+        stats.attackSpeed *= stats.attackSpeedMultiplier;
+        stats.attackSpeed = Math.min(Math.max(stats.attackSpeed, 0.1), 10);
+
+        // Apply critical multiplier modifications
+        stats.criticalMultiplier *= stats.criticalMultiplierMultiplier;
+
+        // Apply percentage modifiers to damage types
+        for (let damageType in stats.damageTypes) {
+            if (stats.damageTypeModifiers[damageType]) {
+                stats.damageTypes[damageType] *= stats.damageTypeModifiers[damageType];
+            }
+            stats.damageTypes[damageType] = Math.round(stats.damageTypes[damageType]);
+        }
+
+        this.totalStats = stats;
     };
+
+    // Add applyBuff method to enemy
+    enemy.applyBuff = function (buffName) {
+        // Find the buff definition by name
+        const buffDef = buffs.find(b => b.name === buffName);
+        if (!buffDef) {
+            console.error(`Buff '${buffName}' not found.`);
+            return;
+        }
+
+        // Create a deep copy of the buff to avoid modifying the original definition
+        const buff = JSON.parse(JSON.stringify(buffDef));
+        buff.remainingDuration = buff.duration; // Initialize remaining duration
+
+        // Check if the buff already exists on the enemy
+        const existingBuff = this.activeBuffs.find(b => b.name === buff.name);
+        if (existingBuff) {
+            // Refresh duration
+            existingBuff.remainingDuration = buff.duration;
+        } else {
+            this.activeBuffs.push(buff);
+        }
+
+        console.log(`Applied buff to ${this.name}: ${buff.name}`);
+        logMessage(`${this.name} gains buff: ${buff.name}`);
+
+        // Recalculate stats to apply the buff immediately
+        this.calculateStats();
+    };
+
     enemy.calculateStats();
 
     // Log the enemy appearance
@@ -158,62 +230,62 @@ function updateEnemyStatsDisplay() {
     }
 
     document.getElementById("enemy-name").textContent = enemy.name;
-    document.getElementById("enemy-attack-speed").textContent = enemy.attackSpeed.toFixed(2);
-    document.getElementById("enemy-crit-chance").textContent = (enemy.criticalChance * 100).toFixed(2) + "%";
-    document.getElementById("enemy-crit-multiplier").textContent = enemy.criticalMultiplier.toFixed(2);
+    document.getElementById("enemy-attack-speed").textContent = enemy.totalStats.attackSpeed.toFixed(2);
+    document.getElementById("enemy-crit-chance").textContent = (enemy.totalStats.criticalChance * 100).toFixed(2) + "%";
+    document.getElementById("enemy-crit-multiplier").textContent = enemy.totalStats.criticalMultiplier.toFixed(2);
 
     // Update HP bar
     const enemyHpBar = document.getElementById('enemy-hp-bar');
-    const enemyHpPercentage = (enemy.currentHealth / enemy.health) * 100;
+    const enemyHpPercentage = (enemy.currentHealth / enemy.totalStats.health) * 100;
     enemyHpBar.style.width = enemyHpPercentage + '%';
 
     // Update HP text
     const enemyHpText = document.getElementById('enemy-hp-text');
-    enemyHpText.textContent = `${Math.round(enemy.currentHealth)} / ${Math.round(enemy.health)}`;
+    enemyHpText.textContent = `${Math.round(enemy.currentHealth)} / ${Math.round(enemy.totalStats.health)}`;
 
     const enemyEsBar = document.getElementById('enemy-es-bar');
-    const enemyEsPercentage = (enemy.currentShield / enemy.energyShield) * 100 || 0;
+    const enemyEsPercentage = (enemy.currentShield / enemy.totalStats.energyShield) * 100 || 0;
     enemyEsBar.style.width = enemyEsPercentage + '%';
 
     // Update Energy Shield text
     const enemyEsText = document.getElementById('enemy-es-text');
-    enemyEsText.textContent = `${Math.round(enemy.currentShield)} / ${Math.round(enemy.energyShield)}`;
+    enemyEsText.textContent = `${Math.round(enemy.currentShield)} / ${Math.round(enemy.totalStats.energyShield)}`;
 
     // Update damage types
     const damageTypesList = document.getElementById('enemy-damage-types');
     damageTypesList.innerHTML = '';
-    for (let type in enemy.damageTypes) {
+    for (let type in enemy.totalStats.damageTypes) {
         const li = document.createElement('li');
-        li.textContent = `${capitalize(type)}: ${enemy.damageTypes[type]}`;
+        li.textContent = `${capitalize(type)}: ${enemy.totalStats.damageTypes[type]}`;
         damageTypesList.appendChild(li);
     }
 
     // Update defense types
     const defenseTypesList = document.getElementById('enemy-defense-types');
     defenseTypesList.innerHTML = '';
-    for (let type in enemy.defenseTypes) {
+    for (let type in enemy.totalStats.defenseTypes) {
         const li = document.createElement('li');
-        li.textContent = `${capitalize(type)}: ${enemy.defenseTypes[type]}`;
+        li.textContent = `${capitalize(type)}: ${enemy.totalStats.defenseTypes[type]}`;
         defenseTypesList.appendChild(li);
     }
 
     // Update active effects
     const activeEffectsList = document.getElementById('enemy-active-effects');
     activeEffectsList.innerHTML = '';
-    enemy.statusEffects.forEach(effect => {
+    enemy.activeBuffs.forEach(buff => {
         const li = document.createElement('li');
-        li.textContent = `${effect.name} (${effect.remainingDuration.toFixed(1)}s)`;
+        li.textContent = `${buff.name} (${(buff.remainingDuration / 1000).toFixed(1)}s)`;
         activeEffectsList.appendChild(li);
     });
 }
 
-// Function to reset player stats
 function resetPlayerStats() {
     player.totalStats = JSON.parse(JSON.stringify(player.baseStats));
     player.currentHealth = player.totalStats.health;
     player.currentShield = player.totalStats.energyShield;
     player.statusEffects = [];
     updatePlayerStatsDisplay();
+    clearBuffs(player);
 }
 
 // Function to flee combat
@@ -252,13 +324,21 @@ function combatLoop() {
 
     // Update enemy attack progress
     enemyAttackTimer += deltaTime;
-    const enemyAttackInterval = 3 / enemy.attackSpeed; // Base attack time is now 3 seconds
+    const enemyAttackInterval = 3 / enemy.totalStats.attackSpeed; // Base attack time is now 3 seconds
     const enemyProgress = Math.min((enemyAttackTimer / enemyAttackInterval) * 100, 100);
     document.getElementById('enemy-attack-progress-bar').style.width = enemyProgress + '%';
 
     if (enemyAttackTimer >= enemyAttackInterval) {
         enemyAttack();
         enemyAttackTimer = 0;
+    }
+
+    // Process player buffs
+    processBuffs(player, deltaTime);
+
+    // Process enemy buffs 
+    if (enemy.activeBuffs) {
+        processBuffs(enemy, deltaTime);
     }
 
     // Process status effects for player and enemy
@@ -277,6 +357,12 @@ function combatLoop() {
     }
 }
 
+function clearBuffs(entity) {
+    entity.activeBuffs = [];
+    entity.calculateStats();
+}
+
+// Function to stop combat
 // Function to stop combat
 function stopCombat(reason) {
     if (!isCombatActive) {
@@ -289,17 +375,23 @@ function stopCombat(reason) {
     console.log("Combat interval cleared.");
     logMessage("Combat stopped due to: " + reason);
 
-    // Reset player's HP and shield
-    player.currentHealth = player.totalStats.health;
-    player.currentShield = player.totalStats.energyShield;
-    updatePlayerStatsDisplay();
-
     // Reset attack timers
     playerAttackTimer = 0;
     enemyAttackTimer = 0;
     document.getElementById('player-attack-progress-bar').style.width = '0%';
     document.getElementById('enemy-attack-progress-bar').style.width = '0%';
     document.getElementById('stop-combat').style.display = 'none';
+
+    // Reset player's HP and shield
+    player.currentHealth = player.totalStats.health;
+    player.currentShield = player.totalStats.energyShield;
+    updatePlayerStatsDisplay();
+
+    // Clear buffs for both player and enemy
+    clearBuffs(player);
+    if (enemy) {
+        clearBuffs(enemy);
+    }
 
     // Reset enemy
     enemy = null;
@@ -321,23 +413,21 @@ function stopCombat(reason) {
         countdownElement.textContent = countdown;
 
         const countdownInterval = setInterval(() => {
-            countdown--;
+            countdown -= 1;
+            countdownElement.textContent = countdown;
             if (countdown <= 0) {
                 clearInterval(countdownInterval);
                 timerElement.style.display = 'none';
-            } else {
-                countdownElement.textContent = countdown;
             }
         }, 1000);
 
         combatRestartTimeout = setTimeout(() => {
-            if (window.currentScreen === 'adventure-screen') {
-                startCombat();
-            }
-            timerElement.style.display = 'none';
+            startCombat();
         }, countdown * 1000);
     }
 }
+
+
 
 // Function for player attack
 function playerAttack() {
@@ -396,6 +486,23 @@ function processEffects(entity, trigger, target) {
     });
 }
 
+function processBuffs(entity, deltaTime) {
+    let buffsChanged = false;
+    for (let i = entity.activeBuffs.length - 1; i >= 0; i--) {
+        const buff = entity.activeBuffs[i];
+        buff.remainingDuration -= deltaTime * 1000; // Convert deltaTime to milliseconds
+        if (buff.remainingDuration <= 0) {
+            entity.activeBuffs.splice(i, 1);
+            buffsChanged = true;
+            logMessage(`${entity.name}'s buff ${buff.name} has expired.`);
+        }
+    }
+    if (buffsChanged) {
+        entity.calculateStats();
+        updatePlayerStatsDisplay
+    }
+}
+
 function executeEffectAction(effect, source, target) {
     const params = effect.parameters;
 
@@ -414,8 +521,8 @@ function executeEffectAction(effect, source, target) {
             break;
 
         case 'applyBuff':
-            // Implement buff application
-            applyBuffToEntity(source, params.buff);
+            const buffName = params.buffName;
+            source.applyBuff(buffName);
             break;
 
         case 'conditionalRestoreShield':
@@ -444,8 +551,6 @@ function executeEffectAction(effect, source, target) {
             }
             break;
 
-        
-
         // Add more cases as needed
 
         default:
@@ -467,26 +572,12 @@ function applyEffectDamage(target, amount, damageType, ignoreDefense) {
 
 function healEntity(entity, amount) {
     entity.currentHealth = Math.min(entity.totalStats.health, entity.currentHealth + amount);
-    logMessage(`${entity.name} heals for ${amount} HP.`);
+    logMessage(`{green} ${entity.name} heals for ${amount} HP.{end}`);
     if (entity === player) {
         updatePlayerStatsDisplay();
     } else if (entity === enemy) {
         updateEnemyStatsDisplay();
     }
-}
-
-// Function to apply buffs to an entity
-function applyBuffToEntity(entity, buff) {
-    entity.activeBuffs = entity.activeBuffs || [];
-    const existingBuff = entity.activeBuffs.find(b => b.name === buff.name);
-    if (existingBuff) {
-        // Refresh duration
-        existingBuff.duration = buff.duration;
-    } else {
-        entity.activeBuffs.push({ ...buff });
-    }
-    entity.calculateStats();
-    logMessage(`${entity.name} gains buff: ${buff.name}`);
 }
 
 // Function to process status effects and buffs
@@ -504,27 +595,8 @@ function processStatusEffects(entity, deltaTime) {
             }
         }
     }
-
-    // Process active buffs
-    if (entity.activeBuffs) {
-        for (let i = entity.activeBuffs.length - 1; i >= 0; i--) {
-            const buff = entity.activeBuffs[i];
-            if (buff.durationType === 'attacks') {
-                // Handle buffs that last a certain number of attacks
-                // Decrement duration elsewhere if needed
-            } else if (buff.durationType === 'time') {
-                buff.duration -= deltaTime;
-                if (buff.duration <= 0) {
-                    entity.activeBuffs.splice(i, 1);
-                    entity.calculateStats();
-                    logMessage(`${entity.name}'s buff ${buff.name} has expired.`);
-                }
-            }
-        }
-    }
 }
 
-// Function to calculate damage
 function calculateDamage(attacker, defender) {
     let totalDamage = 0;
     let isCriticalHit = Math.random() < attacker.totalStats.criticalChance;
@@ -614,7 +686,7 @@ function applyDamage(target, damage, targetName, damageTypes = null) {
 
     if (damage > 0) {
         target.currentHealth = Math.max(0, target.currentHealth - damage);
-        logMessage(`${targetName} takes ${damage} damage.`);
+        logMessage(`${targetName} takes {red}${damage} damage.{end}`);
 
         // Display damage popup
         if (target === player) {
@@ -667,7 +739,7 @@ function dropLoot(enemy) {
 
                 addItemToInventory(droppedItem);
 
-                const lootMessage = `You received: ${droppedItem.name} x${droppedItem.quantity}`;
+                const lootMessage = `You received: {flashing}${droppedItem.name} x${droppedItem.quantity}{end}`;
                 logMessage(lootMessage);
                 displayLootPopup(lootMessage); // Display loot popup
                 updateInventoryDisplay();

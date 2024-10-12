@@ -658,3 +658,8 @@ ul#inventory li:hover .tooltip,
     top: -5px;
     left: 105%;
 }
+
+@keyframes flash {
+    0%, 50%, 100% { opacity: 1; }
+    25%, 75% { opacity: 0; }
+}

@@ -236,10 +236,6 @@ function updateEquipmentDisplay() {
                 tooltip.style.display = 'none';
             });
 
-            // Add click event to unequip
-            itemIcon.addEventListener('click', () => {
-                unequipItemWithConfirmation(slotName);
-            });
         } else {
             // Display slot name
             slotElement.textContent = capitalize(slotName.replace('Hand', ' Hand'));
@@ -288,81 +284,6 @@ function updateEquipmentDisplay() {
         }
     });
 }
-
-// Function to generate tooltip content
-// function getItemTooltipContent(item) {
-//     let content = `<strong>${item.name}</strong><br>`;
-//     content += `Type: ${item.type}<br>`;
-//     if (item.weaponType) {
-//         content += `Weapon Type: ${item.weaponType}<br>`;
-//     }
-
-//     // Display flat damage types
-//     if (item.damageTypes) {
-//         for (let damageType in item.damageTypes) {
-//             content += `Damage: ${item.damageTypes[damageType]} ${capitalize(damageType)}<br>`;
-//         }
-//     }
-
-//     // Display percentage damage type modifiers
-//     if (item.statModifiers && item.statModifiers.damageTypes) {
-//         for (let damageType in item.statModifiers.damageTypes) {
-//             content += `+${item.statModifiers.damageTypes[damageType]}% ${capitalize(damageType)} Damage<br>`;
-//         }
-//     }
-
-//     // Display defense types
-//     if (item.defenseTypes) {
-//         for (let defenseType in item.defenseTypes) {
-//             content += `+${item.defenseTypes[defenseType]} ${capitalize(defenseType)}<br>`;
-//         }
-//     }
-
-//     // Display health bonuses
-//     if (item.healthBonus !== undefined) {
-//         content += `+${item.healthBonus} Health<br>`;
-//     }
-//     if (item.healthBonusPercentDisplay !== undefined) {
-//         content += `+${item.healthBonusPercentDisplay}% Health<br>`;
-//     }
-
-//     // Display energy shield bonuses
-//     if (item.energyShieldBonus !== undefined) {
-//         content += `+${item.energyShieldBonus} Energy Shield<br>`;
-//     }
-//     if (item.energyShieldBonusPercentDisplay !== undefined) {
-//         content += `+${item.energyShieldBonusPercentDisplay}% Energy Shield<br>`;
-//     }
-
-//     // Other stats
-//     if (item.attackSpeedModifierPercent !== undefined) {
-//         content += `Attack Speed: ${item.attackSpeedModifierPercent}%<br>`;
-//     }
-//     if (item.criticalChanceModifierPercent !== undefined) {
-//         content += `Critical Chance: ${item.criticalChanceModifierPercent}%<br>`;
-//     }
-//     if (item.criticalMultiplierModifierPercent !== undefined) {
-//         content += `Critical Multiplier: ${item.criticalMultiplierModifierPercent}%<br>`;
-//     }
-
-//     if (item.levelRequirement !== undefined) {
-//         content += `Level Requirement: ${item.levelRequirement}<br>`;
-//     }
-//     if (item.description) {
-//         content += `${item.description}<br>`;
-//     }
-
-//     console.log('Tooltip content:', content);
-//     return content;
-// }
-
-// Helper function to capitalize the first letter
-// function capitalize(str) {
-//     if (typeof str !== 'string' || str.length === 0) {
-//         return '';
-//     }
-//     return str.charAt(0).toUpperCase() + str.slice(1);
-// }
 
 // Function to show confirmation popup with optional secondary action
 function showConfirmationPopup(message, onConfirm, onSecondary = null) {
@@ -562,15 +483,17 @@ function showItemOptionsPopup(item) {
     const buttonsContainer = document.createElement('div');
     buttonsContainer.className = 'popup-buttons';
 
-    // Equip Button
-    const equipButton = document.createElement('button');
-    equipButton.textContent = 'Equip';
-    equipButton.addEventListener('click', () => {
-        equipItem(item);
-        document.body.removeChild(popup);
-        document.body.removeChild(overlay);
-    });
-    buttonsContainer.appendChild(equipButton);
+    // Equip Button (only if item is equippable)
+    if (item.slot) {
+        const equipButton = document.createElement('button');
+        equipButton.textContent = 'Equip';
+        equipButton.addEventListener('click', () => {
+            equipItem(item);
+            document.body.removeChild(popup);
+            document.body.removeChild(overlay);
+        });
+        buttonsContainer.appendChild(equipButton);
+    }
 
     // Disassemble Button (if applicable)
     if (item.isDisassembleable) {
@@ -597,10 +520,3 @@ function showItemOptionsPopup(item) {
     document.body.appendChild(popup);
 }
 
-// Initialize equipment slots and update displays
-document.addEventListener('DOMContentLoaded', () => {
-    initializeEquipmentSlots();
-    updateInventoryDisplay();
-    updateEquipmentDisplay();
-    updatePlayerStatsDisplay();
-});

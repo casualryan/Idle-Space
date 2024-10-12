@@ -136,13 +136,11 @@ const items = [
         isDisassembleable: true,
         effects: [
             {
-                trigger: 'whenHit', // or 'whenHit', 'onHit', etc.
-                chance: 1, // 20% chance
-                action: 'dealDamage',
+                trigger: 'onHit', // or 'whenHit', 'onHit', etc.
+                chance: 0.5, // 20% chance
+                action: 'applyBuff',
                 parameters: {
-                    damageType: 'kinetic',
-                    amount: 5,
-                    ignoreDefense: true
+                    buffName: 'Haste'
                 }
             }
         ],
@@ -190,6 +188,28 @@ const items = [
         criticalChanceModifierRange: { min: 20, max: 40 },
         criticalMultiplierModifierRange: { min: 5, max: 15 },
         defenseTypes: {},
+        effects: [
+            {
+                trigger: 'onHit',
+                chance: .5,
+                action: 'dealDamage',
+                parameters: {
+                    damageType: 'kinetic',
+                    amount: 10,
+                    ignoreDefense: true
+                } 
+            },
+            {
+                trigger: 'onHit',
+                chance: .5,
+                action: 'dealDamage',
+                parameters: {
+                    damageType: 'magnetic',
+                    amount: 10,
+                    ignoreDefense: true
+                }
+            }
+        ],
         slot: 'mainHand',
         disassembleResults: [
             {
