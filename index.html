@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>Idle Combat Game</title>
@@ -7,6 +8,7 @@
     <!-- Add Google Font -->
     <link href="https://fonts.googleapis.com/css2?family=Orbitron&display=swap" rel="stylesheet">
 </head>
+
 <body>
     <!-- Sidebar Navigation -->
     <div id="sidebar">
@@ -107,17 +109,25 @@
                 <!-- Player Stats -->
                 <div class="stats" id="player-stats">
                     <h2>Player Stats</h2>
+                    <p>Name: <span id="player-name">Player</span></p>
                     <p>Level: <span id="player-level">1</span></p>
                     <p>Experience: <span id="player-experience">0</span></p>
+
+                    <!-- Player HP Bar Container -->
                     <div class="hp-bar-container">
                         <div id="player-hp-bar" class="hp-bar"></div>
+                        <!-- Slices and damage numbers will be added here dynamically -->
                     </div>
                     <div class="hp-text" id="player-hp-text">0 / 0</div>
+
+                    <!-- Player Energy Shield Bar Container -->
                     <div class="es-bar-container">
                         <div id="player-es-bar" class="es-bar"></div>
+                        <!-- Slices and damage numbers will be added here dynamically -->
                     </div>
                     <div class="es-text" id="player-es-text">0 / 0</div>
-                    <!-- Moved Attack Progress Bar Below HP/ES Bars -->
+
+                    <!-- Attack Progress Bar -->
                     <h3>Attack Progress</h3>
                     <div class="progress-container">
                         <div id="player-attack-progress-bar" class="progress-bar attack-bar"></div>
@@ -139,15 +149,22 @@
                     <div id="next-enemy-timer" style="display: none;">
                         Next enemy in <span id="next-enemy-countdown">2</span> seconds...
                     </div>
+
+                    <!-- Enemy HP Bar Container -->
                     <div class="hp-bar-container">
-                        <div id="enemy-hp-bar" class="hp-bar enemy-hp-bar"></div>
+                        <div id="enemy-hp-bar" class="hp-bar"></div>
+                        <!-- Slices and damage numbers will be added here dynamically -->
                     </div>
                     <div class="hp-text" id="enemy-hp-text">0 / 0</div>
+
+                    <!-- Enemy Energy Shield Bar Container -->
                     <div class="es-bar-container">
-                        <div id="enemy-es-bar" class="es-bar enemy-es-bar"></div>
+                        <div id="enemy-es-bar" class="es-bar"></div>
+                        <!-- Slices and damage numbers will be added here dynamically -->
                     </div>
                     <div class="es-text" id="enemy-es-text">0 / 0</div>
-                    <!-- Moved Attack Progress Bar Below HP/ES Bars -->
+
+                    <!-- Attack Progress Bar -->
                     <h3>Attack Progress</h3>
                     <div class="progress-container">
                         <div id="enemy-attack-progress-bar" class="progress-bar attack-bar"></div>
@@ -207,29 +224,26 @@
             <div id="fabrication-categories">
                 <!-- Categories will be dynamically populated -->
             </div>
-            <button id="stop-fabrication" style="display: none;">Stop Fabrication</button>
-            <div id="fabrication-progress" class="progress-bar">
-                <div id="fabrication-progress-bar" class="progress-bar-fill"></div>
-            </div>
         </div>
+    </div>
 
-        <!-- Medtek Screen -->
-        <div id="medtek-screen" class="screen">
-            <h2>Medtek</h2>
-            <!-- Activities Div -->
-            <div class="activities"></div>
-            <!-- Medtek Progress -->
-            <h3>Progress</h3>
-            <div class="progress-container">
-                <div id="medtek-progress-bar" class="progress-bar gathering-bar"></div>
-            </div>
-            <!-- Stop Medtek Button -->
-            <button id="stop-medtek" style="display: none;">Stop Crafting</button>
-            <!-- Medtek Skill Stats -->
-            <div id="medtek-skill-stats"></div>
+    <!-- Medtek Screen -->
+    <div id="medtek-screen" class="screen">
+        <h2>Medtek</h2>
+        <!-- Activities Div -->
+        <div class="activities"></div>
+        <!-- Medtek Progress -->
+        <h3>Progress</h3>
+        <div class="progress-container">
+            <div id="medtek-progress-bar" class="progress-bar gathering-bar"></div>
         </div>
+        <!-- Stop Medtek Button -->
+        <button id="stop-medtek" style="display: none;">Stop Crafting</button>
+        <!-- Medtek Skill Stats -->
+        <div id="medtek-skill-stats"></div>
+    </div>
 
-        <!-- Add other skill screens similarly -->
+    <!-- Add other skill screens similarly -->
 
     </div>
 
@@ -273,7 +287,7 @@
     <!-- Codex Script -->
     <script>
         // Codex functionality
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             // Get the area tabs container
             const areaTabsContainer = document.getElementById('codex-area-tabs');
             const enemyListContainer = document.getElementById('codex-enemy-list');
@@ -405,4 +419,5 @@
     </script>
 
 </body>
+
 </html>

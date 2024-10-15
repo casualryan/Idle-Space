@@ -120,7 +120,7 @@ const items = [
         },
         statModifiers: {
             damageTypes: {
-                kinetic: { min: 10, max: 20 }, // Percent Damage
+                kinetic: { min: 100, max: 200 }, // Percent Damage
             },
         },
         attackSpeedModifierRange: { min: 5, max: 10 },
@@ -137,14 +137,15 @@ const items = [
         effects: [
             {
                 trigger: 'onHit', // or 'whenHit', 'onHit', etc.
-                chance: 0.5, // 20% chance
-                action: 'applyBuff',
+                chance: 1, // 20% chance
+                action: 'dealDamage',
                 parameters: {
-                    buffName: 'Haste'
+                    damageType: 'kinetic',
+                    amount: 5,
                 }
             }
         ],
-        description: '20% chance on hit to deal 5 kinetic damage'
+        description: '20% chance on hit to deal 5 kinetic damage, ignoring defense.'
     },
 
     {
@@ -402,6 +403,23 @@ const items = [
             },
         ],
         description: 'Decreases Max Health by 10-30, but increases Max Energy Shield by 40-60 + 10%.'
+    },
+    {
+        name: 'Kinetic Booster',
+        type: 'Bionic',
+        icon: 'icons/kinetic_booster.png',
+        slot: 'bionic',
+        statModifiers: {
+            damageTypes: {
+                kinetic: { min: 50, max: 100 },
+            },
+        },
+        isDisassembleable: true,
+        disassembleResults: [
+            {
+                name: 'Scrap Metal', quantity: 1
+            },
+        ],
     },
 
 

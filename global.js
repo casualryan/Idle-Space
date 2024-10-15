@@ -775,9 +775,6 @@ function showScreen(screenId) {
     if (isGathering) {
         stopGatheringActivity();
     }
-    if (isFabricating) {
-        stopFabrication();
-    }
     if (isCombatActive && screenId !== 'adventure-screen') {
         stopCombat();
     }

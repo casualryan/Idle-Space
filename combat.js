@@ -8,6 +8,9 @@ let enemyAttackTimer = 0;
 let playerHasFled = false;
 let combatRestartTimeout;
 let isCombatActive = false; // Ensure this variable is defined
+let lastCombatLoopTime;
+let adventureStartCountdownInterval;
+
 
 document.addEventListener('DOMContentLoaded', () => {
     // Initial stat displays
@@ -35,11 +38,32 @@ function startAdventure(location) {
         logMessage("You are already in combat!");
         return;
     }
+
     clearLog();
     currentLocation = location;
     playerHasFled = false;
     logMessage(`You arrive at ${location.name}.`);
-    startCombat();
+
+    // Start the countdown before starting combat
+    const countdownElement = document.getElementById('next-enemy-countdown');
+    const timerElement = document.getElementById('next-enemy-timer');
+    let countdown = 3; // Number of seconds before combat starts
+
+    timerElement.style.display = 'block';
+    countdownElement.textContent = countdown;
+
+    const countdownInterval = setInterval(() => {
+        countdown -= 1;
+        countdownElement.textContent = countdown;
+        if (countdown <= 0) {
+            clearInterval(countdownInterval);
+            timerElement.style.display = 'none';
+            startCombat();
+        }
+    }, 1000);
+
+    // Store the interval so we can clear it if needed
+    adventureStartCountdownInterval = countdownInterval;
 }
 
 function clearLog() {
@@ -64,10 +88,14 @@ function startCombat() {
     isCombatActive = true;
 
     // Initialize enemy
-    // Clear buffs at the start of combat
     spawnEnemy();
+    clearBuffs(player);
+    if (enemy) {
+        clearBuffs(enemy);
+    }
 
     // Start combat loop
+    lastCombatLoopTime = Date.now();
     combatInterval = setInterval(combatLoop, 100);
     console.log("Combat started.");
 
@@ -223,6 +251,53 @@ function spawnEnemy() {
     updateEnemyStatsDisplay();
 }
 
+function updatePlayerStatsDisplay() {
+    document.getElementById("player-name").textContent = player.name;
+    document.getElementById("player-level").textContent = player.level || 1;
+    document.getElementById("player-experience").textContent = player.experience || 0;
+    document.getElementById("player-attack-speed").textContent = player.totalStats.attackSpeed.toFixed(2);
+    document.getElementById("player-crit-chance").textContent = (player.totalStats.criticalChance * 100).toFixed(2) + "%";
+    document.getElementById("player-crit-multiplier").textContent = player.totalStats.criticalMultiplier.toFixed(2);
+
+    // Update HP text only (since the HP bar width is managed by animations)
+    const playerHpText = document.getElementById('player-hp-text');
+    playerHpText.textContent = `${Math.round(player.currentHealth)} / ${Math.round(player.totalStats.health)}`;
+
+    // Update Energy Shield text only
+    const playerEsText = document.getElementById('player-es-text');
+    playerEsText.textContent = `${Math.round(player.currentShield)} / ${Math.round(player.totalStats.energyShield)}`;
+
+    // Update damage types
+    const damageTypesList = document.getElementById('player-damage-types');
+    damageTypesList.innerHTML = '';
+    for (let type in player.totalStats.damageTypes) {
+        const li = document.createElement('li');
+        li.textContent = `${capitalize(type)}: ${player.totalStats.damageTypes[type]}`;
+        damageTypesList.appendChild(li);
+    }
+
+    // Update defense types
+    const defenseTypesList = document.getElementById('player-defense-types');
+    defenseTypesList.innerHTML = '';
+    for (let type in player.totalStats.defenseTypes) {
+        const li = document.createElement('li');
+        li.textContent = `${capitalize(type)}: ${player.totalStats.defenseTypes[type]}`;
+        defenseTypesList.appendChild(li);
+    }
+
+    // Update active effects
+    const activeEffectsList = document.getElementById('player-active-effects');
+    activeEffectsList.innerHTML = '';
+    if (player.activeBuffs) {
+        player.activeBuffs.forEach(buff => {
+            const li = document.createElement('li');
+            li.textContent = `${buff.name} (${(buff.remainingDuration / 1000).toFixed(1)}s)`;
+            activeEffectsList.appendChild(li);
+        });
+    }
+}
+
+
 function updateEnemyStatsDisplay() {
     if (!enemy) {
         initializeEnemyStatsDisplay();
@@ -296,20 +371,30 @@ function fleeCombat() {
         currentLocation = null;
     } else {
         logMessage("You are not in combat.");
+        // If not in combat, but a countdown is active, cancel it
+        if (adventureStartCountdownInterval) {
+            clearInterval(adventureStartCountdownInterval);
+            adventureStartCountdownInterval = null;
+            const timerElement = document.getElementById('next-enemy-timer');
+            timerElement.style.display = 'none';
+            logMessage("You have canceled the adventure.");
+            currentLocation = null;
+            displayAdventureLocations();
+        }
     }
 
-    // Clear any pending combat restart
-    if (combatRestartTimeout) {
-        clearTimeout(combatRestartTimeout);
-        combatRestartTimeout = null;
-        console.log("Pending combat restart canceled due to fleeing.");
-    }
+    // Update the adventure locations display
+    displayAdventureLocations();
 }
+
+
 
 function combatLoop() {
     if (!isCombatActive) return;
 
-    const deltaTime = 0.1; // 100ms in seconds
+    let now = Date.now();
+    let deltaTime = (now - lastCombatLoopTime) / 1000; // Convert ms to seconds
+    lastCombatLoopTime = now;
 
     // Update player attack progress
     playerAttackTimer += deltaTime;
@@ -333,36 +418,38 @@ function combatLoop() {
         enemyAttackTimer = 0;
     }
 
-    // Process player buffs
+    // Process buffs
     processBuffs(player, deltaTime);
-
-    // Process enemy buffs 
     if (enemy.activeBuffs) {
         processBuffs(enemy, deltaTime);
     }
 
-    // Process status effects for player and enemy
+    // Process status effects
     if (player.currentHealth > 0) {
         processStatusEffects(player, deltaTime);
     }
-    if (enemy.currentHealth > 0) {
+    if (enemy && enemy.currentHealth > 0) {
         processStatusEffects(enemy, deltaTime);
     }
 
     // Check for combat end
     if (player.currentHealth <= 0) {
         stopCombat('playerDefeated');
-    } else if (enemy.currentHealth <= 0) {
+    } else if (enemy && enemy.currentHealth <= 0) {
         stopCombat('enemyDefeated');
     }
+
+    updatePlayerStatsDisplay();
+    updateEnemyStatsDisplay();
 }
 
 function clearBuffs(entity) {
+    console.log(`clearBuffs called for ${entity.name} (clearbuffs)`);
     entity.activeBuffs = [];
+    console.log(`${entity.name} activeBuffs length after clearing: ${entity.activeBuffs.length} (clearbuffs)`);
     entity.calculateStats();
 }
 
-// Function to stop combat
 // Function to stop combat
 function stopCombat(reason) {
     if (!isCombatActive) {
@@ -385,13 +472,21 @@ function stopCombat(reason) {
     // Reset player's HP and shield
     player.currentHealth = player.totalStats.health;
     player.currentShield = player.totalStats.energyShield;
-    updatePlayerStatsDisplay();
+    
+
+    const playerHpBar = document.getElementById('player-hp-bar');
+    playerHpBar.style.width = '100%';
+
+    const playerEsBar = document.getElementById('player-es-bar');
+    playerEsBar.style.width = '100%';
 
     // Clear buffs for both player and enemy
+    console.log("Clearing buffs for player and enemy. (stopCombat)");
     clearBuffs(player);
     if (enemy) {
         clearBuffs(enemy);
     }
+    updatePlayerStatsDisplay();
 
     // Reset enemy
     enemy = null;
@@ -499,18 +594,32 @@ function processBuffs(entity, deltaTime) {
     }
     if (buffsChanged) {
         entity.calculateStats();
-        updatePlayerStatsDisplay
+        if (entity === player) {
+            updatePlayerStatsDisplay();
+        } else if (entity === enemy) {
+            updateEnemyStatsDisplay();
+        }
     }
 }
+
 
 function executeEffectAction(effect, source, target) {
     const params = effect.parameters;
 
     switch (effect.action) {
         case 'dealDamage':
-            const damage = params.amount;
+            let damage = params.amount;
             const damageType = params.damageType;
             const ignoreDefense = params.ignoreDefense || false;
+
+            // Adjust damage by source's damage type modifiers
+            if (source.totalStats.damageTypeModifiers && source.totalStats.damageTypeModifiers[damageType]) {
+                const modifier = source.totalStats.damageTypeModifiers[damageType];
+                damage *= modifier; // Modifiers are multiplicative
+            }
+
+            // Round the damage to avoid fractional damage
+            damage = Math.round(damage);
 
             applyEffectDamage(target, damage, damageType, ignoreDefense);
             break;
@@ -557,6 +666,7 @@ function executeEffectAction(effect, source, target) {
             console.warn(`Unknown effect action: ${effect.action}`);
     }
 }
+
 
 function applyEffectDamage(target, amount, damageType, ignoreDefense) {
     let actualDamage = amount;
@@ -647,76 +757,190 @@ function calculateDamage(attacker, defender) {
 // Function to apply damage to target
 function applyDamage(target, damage, targetName, damageTypes = null) {
     if (damageTypes) {
-        // If specific damage types are provided, calculate damage accordingly
-        let totalDamage = 0;
-        for (let damageType in damageTypes) {
-            let baseDamage = damageTypes[damageType];
-            let resistanceStat = matchDamageToDefense(damageType);
-            let resistance = target.totalStats.defenseTypes[resistanceStat] || 0;
-
-            let reducedDamage = baseDamage * (1 - (resistance / 100)); // Reduce damage based on resistance
-
-            totalDamage += reducedDamage;
-        }
-        damage = totalDamage;
+        // Damage calculation as before
     }
 
     // Round damage to the nearest whole number
     damage = Math.round(damage);
 
+    let totalDamage = damage; // Keep track of total damage before shield absorption
+
+    let shieldAbsorbed = 0;
+
     if (target.currentShield > 0) {
-        let shieldAbsorbed = Math.min(target.currentShield, damage);
+        shieldAbsorbed = Math.min(target.currentShield, damage);
         target.currentShield -= shieldAbsorbed;
         damage -= shieldAbsorbed;
 
-        // Round shield absorbed to nearest whole number
-        shieldAbsorbed = Math.round(shieldAbsorbed);
-
-        logMessage(`${targetName} absorbs ${shieldAbsorbed} damage with their shield.`);
-
-        // Display shield damage popup
+        // Animate shield bar chunk
         if (shieldAbsorbed > 0) {
-            if (target === player) {
-                displayDamagePopup(`Your shield absorbed ${shieldAbsorbed} damage`, true);
-            } else {
-                displayDamagePopup(`${targetName}'s shield absorbed ${shieldAbsorbed} damage`, false);
-            }
+            animateShieldBarChunk(target, shieldAbsorbed);
         }
+
+        // Log shield absorption
+        logMessage(`${targetName} absorbs ${shieldAbsorbed} damage with their shield.`);
     }
 
     if (damage > 0) {
         target.currentHealth = Math.max(0, target.currentHealth - damage);
-        logMessage(`${targetName} takes {red}${damage} damage.{end}`);
 
-        // Display damage popup
-        if (target === player) {
-            displayDamagePopup(`You have taken ${damage} damage`, true);
-        } else {
-            displayDamagePopup(`${targetName} has taken ${damage} damage`, false);
-        }
+        // Animate HP bar chunk
+        animateHpBarChunk(target, damage);
+
+        // Log damage taken
+        logMessage(`${targetName} takes {red}${damage} damage.{end}`);
     }
 
+    // Update stats displays
     if (target === enemy) {
         updateEnemyStatsDisplay();
     } else {
         updatePlayerStatsDisplay();
     }
 
+    // Check for defeat
     if (target.currentHealth <= 0) {
         logMessage(`${targetName} has been defeated!`);
-        // Remove all status effects from the defeated entity
         target.statusEffects = [];
         if (target === enemy) {
             dropLoot(enemy);
-            // Grant experience to the player
             gainExperience(enemy.experienceValue || 0);
             updatePlayerStatsDisplay();
-            stopCombat('enemyDefeated');  // Stop combat on enemy defeat
+            stopCombat('enemyDefeated');
         } else if (target === player) {
-            stopCombat('playerDefeated');  // Stop combat on player defeat
+            stopCombat('playerDefeated');
         }
     }
 }
+
+
+
+function animateHpBarChunk(target, damageAmount) {
+    let hpBar, hpContainer, totalHp, currentHp;
+
+    if (target === player) {
+        hpBar = document.getElementById('player-hp-bar');
+        hpContainer = hpBar.parentElement;
+        totalHp = player.totalStats.health;
+        currentHp = player.currentHealth;
+    } else if (target === enemy) {
+        hpBar = document.getElementById('enemy-hp-bar');
+        hpContainer = hpBar.parentElement;
+        totalHp = enemy.totalStats.health;
+        currentHp = enemy.currentHealth;
+    } else {
+        console.error('Unknown target for HP bar animation.');
+        return;
+    }
+
+    // Get container width in pixels
+    const containerWidth = hpContainer.offsetWidth;
+
+    // Get current HP width in pixels
+    const currentWidth = hpBar.offsetWidth;
+
+    // Calculate damage width in pixels
+    const damageWidth = (damageAmount / totalHp) * containerWidth;
+
+    // Calculate new HP width
+    let newWidth = currentWidth - damageWidth;
+    if (newWidth < 0) newWidth = 0;
+
+    // Position for the slice (start at the new HP width)
+    const slicePosition = newWidth;
+
+    // Create the HP slice
+    const slice = document.createElement('div');
+    slice.classList.add('hp-slice');
+    slice.style.width = `${damageWidth}px`;
+    slice.style.left = `${slicePosition}px`; // Position the slice at the new HP level
+    hpContainer.appendChild(slice);
+
+    // Update the HP bar width
+    hpBar.style.width = `${(currentHp / totalHp) * 100}%`;
+
+    // Create the damage number
+    const damageNumber = document.createElement('div');
+    damageNumber.classList.add('damage-number');
+    damageNumber.textContent = `-${Math.round(damageAmount)}`;
+    damageNumber.style.left = `${slicePosition + damageWidth / 2 - 10}px`; // Center above the slice
+    damageNumber.style.top = `-25px`; // Position above the HP bar
+    hpContainer.appendChild(damageNumber);
+
+    // Remove slice after animation completes
+    slice.addEventListener('animationend', () => {
+        hpContainer.removeChild(slice);
+    });
+
+    // Remove damage number after animation completes
+    damageNumber.addEventListener('animationend', () => {
+        hpContainer.removeChild(damageNumber);
+    });
+}
+
+function animateShieldBarChunk(target, shieldDamageAmount) {
+    let esBar, esContainer, totalEs, currentEs;
+
+    if (target === player) {
+        esBar = document.getElementById('player-es-bar');
+        esContainer = esBar.parentElement;
+        totalEs = player.totalStats.energyShield;
+        currentEs = player.currentShield;
+    } else if (target === enemy) {
+        esBar = document.getElementById('enemy-es-bar');
+        esContainer = esBar.parentElement;
+        totalEs = enemy.totalStats.energyShield;
+        currentEs = enemy.currentShield;
+    } else {
+        console.error('Unknown target for energy shield bar animation.');
+        return;
+    }
+
+    // Get container width in pixels
+    const containerWidth = esContainer.offsetWidth;
+
+    // Get current ES width in pixels
+    const currentWidth = esBar.offsetWidth;
+
+    // Calculate damage width in pixels
+    const damageWidth = (shieldDamageAmount / totalEs) * containerWidth;
+
+    // Calculate new ES width
+    let newWidth = currentWidth - damageWidth;
+    if (newWidth < 0) newWidth = 0;
+
+    // Position for the slice (start at the new ES width)
+    const slicePosition = newWidth;
+
+    // Create the ES slice
+    const slice = document.createElement('div');
+    slice.classList.add('es-slice');
+    slice.style.width = `${damageWidth}px`;
+    slice.style.left = `${slicePosition}px`; // Position the slice at the new ES level
+    esContainer.appendChild(slice);
+
+    // Update the ES bar width
+    esBar.style.width = `${(currentEs / totalEs) * 100}%`;
+
+    // Create the damage number
+    const damageNumber = document.createElement('div');
+    damageNumber.classList.add('damage-number');
+    damageNumber.textContent = `-${Math.round(shieldDamageAmount)}`;
+    damageNumber.style.left = `${slicePosition + damageWidth / 2 - 10}px`; // Center above the slice
+    damageNumber.style.top = `-25px`; // Position above the shield bar
+    esContainer.appendChild(damageNumber);
+
+    // Remove slice after animation completes
+    slice.addEventListener('animationend', () => {
+        esContainer.removeChild(slice);
+    });
+
+    // Remove damage number after animation completes
+    damageNumber.addEventListener('animationend', () => {
+        esContainer.removeChild(damageNumber);
+    });
+}
+
 
 // Function to handle loot drops
 function dropLoot(enemy) {

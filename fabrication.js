@@ -3,30 +3,14 @@ console.log('fabricating.js loaded');
 console.log('window.inventory at the start:', window.inventory);
 console.log('addInventoryChangeListener at the start:', typeof addInventoryChangeListener);
 
-let isFabricating = false;
-let fabricationInterval;
-let currentRecipe;
-let fabricationStartTime;
-let fabricationProgressBar;
-let stopFabricationButton;
-let tooltipDiv;
+const ongoingFabrications = {}; // Tracks active fabrications by recipe name
 
 document.addEventListener('DOMContentLoaded', () => {
-
     console.log('DOMContentLoaded event fired in fabricating.js');
     console.log('window.inventory inside DOMContentLoaded:', window.inventory);
     console.log('addInventoryChangeListener inside DOMContentLoaded:', typeof addInventoryChangeListener);
-    // Assign DOM elements after the DOM is fully loaded
-    fabricationProgressBar = document.getElementById('fabrication-progress-bar');
-    stopFabricationButton = document.getElementById('stop-fabrication');
 
-    if (stopFabricationButton) {
-        stopFabricationButton.addEventListener('click', stopFabrication);
-    } else {
-        console.error('Stop Fabrication button not found.');
-    }
-
-    // Add the inventory change listener here
+    // Add the inventory change listener
     addInventoryChangeListener(() => {
         if (currentScreen === 'fabrication-screen') {
             displayFabricationRecipes();
@@ -37,16 +21,17 @@ document.addEventListener('DOMContentLoaded', () => {
     displayFabricationRecipes();
 });
 
-// Listen for screen changes
+// Listen for screen changes to update fabrication recipes
 window.addEventListener('screenChanged', (event) => {
     if (event.detail.screenId === 'fabrication-screen') {
         displayFabricationRecipes();
     }
 });
 
-function startFabrication(recipe) {
-    if (isFabricating) {
-        logMessage('Already fabricating an item.');
+// Function to start fabrication for a specific recipe
+function startFabrication(recipe, button, progressBar) {
+    if (ongoingFabrications[recipe.name]) {
+        logMessage(`Already fabricating ${recipe.name}.`);
         return;
     }
 
@@ -56,67 +41,118 @@ function startFabrication(recipe) {
         return;
     }
 
-    isFabricating = true;
-    currentRecipe = recipe;
-    fabricationStartTime = Date.now();
+    // Deduct materials from inventory
+    removeMaterialsFromInventory(recipe.ingredients);
 
-    fabricationProgressBar.style.width = '0%';
-    stopFabricationButton.style.display = 'block';
+    // Update inventory display
+    updateInventoryDisplay();
 
-    // Update progress bar every 100ms
-    fabricationInterval = setInterval(() => {
-        updateFabricationProgress();
-    }, 100);
+    // Change button text to "Stop Fabrication"
+    const buttonTextElement = button.querySelector('.button-text');
+    if (buttonTextElement) {
+        buttonTextElement.textContent = 'Stop Fabrication';
+    } else {
+        console.error('Button text element not found.');
+    }
+
+    // Show and reset progress bar
+    progressBar.style.display = 'block';
+    progressBar.style.width = '0%';
+
+    // Set fabrication duration in milliseconds (convert seconds to ms)
+    const fabricationDuration = (recipe.craftingTime || 5) * 1000; // Default to 5 seconds if not specified
+
+    const startTime = Date.now();
+
+    // Function to update progress
+    function updateProgress() {
+        const elapsed = Date.now() - startTime;
+        const progressPercent = Math.min((elapsed / fabricationDuration) * 100, 100);
+        progressBar.style.width = `${progressPercent}%`;
+
+        // Logging for debugging
+        console.log(`Fabricating ${recipe.name}: ${elapsed}ms elapsed, Progress: ${progressPercent.toFixed(2)}%`);
+
+        if (elapsed >= fabricationDuration) {
+            completeFabrication(recipe, button, progressBar);
+        }
+    }
+
+    // Start interval to update progress every 100ms
+    const intervalId = setInterval(updateProgress, 100);
+
+    // Store fabrication state
+    ongoingFabrications[recipe.name] = {
+        intervalId: intervalId,
+        button: button,
+        progressBar: progressBar
+    };
+
+    console.log(`Started fabrication of ${recipe.name}. Duration: ${fabricationDuration}ms`);
+    logMessage(`Started fabricating: ${recipe.name}`);
 }
 
-function updateFabricationProgress() {
-    if (!isFabricating) return;
+// Function to stop fabrication for a specific recipe
+function stopFabrication(recipe, button, progressBar) {
+    if (ongoingFabrications[recipe.name]) {
+        clearInterval(ongoingFabrications[recipe.name].intervalId);
+        delete ongoingFabrications[recipe.name];
 
-    const elapsed = (Date.now() - fabricationStartTime) / 1000; // Convert to seconds
-    const duration = currentRecipe.craftingTime || 0;
-    const progressPercent = Math.min((elapsed / duration) * 100, 100);
-    fabricationProgressBar.style.width = progressPercent + '%';
+        // Change button text back to "Fabricate"
+        const buttonTextElement = button.querySelector('.button-text');
+        if (buttonTextElement) {
+            buttonTextElement.textContent = 'Fabricate';
+        } else {
+            console.error('Button text element not found.');
+        }
 
-    if (elapsed >= duration) {
-        completeFabrication();
+        // Reset and hide progress bar
+        progressBar.style.width = '0%';
+        progressBar.style.display = 'none';
+        logMessage(`Fabrication of ${recipe.name} has been stopped.`);
+
+        // Optionally, refund materials when fabrication is stopped
+        // Uncomment the line below to enable material refunds
+        // refundMaterials(recipe.ingredients);
     }
 }
 
-function completeFabrication() {
-    clearInterval(fabricationInterval);
-    isFabricating = false;
-    stopFabricationButton.style.display = 'none';
-    fabricationProgressBar.style.width = '0%';
+// Function to complete fabrication for a specific recipe
+function completeFabrication(recipe, button, progressBar) {
+    if (ongoingFabrications[recipe.name]) {
+        clearInterval(ongoingFabrications[recipe.name].intervalId);
+        delete ongoingFabrications[recipe.name];
+    }
 
-    // Remove required materials from inventory
-    removeMaterialsFromInventory(currentRecipe.ingredients);
+    // Change button text back to "Fabricate"
+    const buttonTextElement = button.querySelector('.button-text');
+    if (buttonTextElement) {
+        buttonTextElement.textContent = 'Fabricate';
+    } else {
+        console.error('Button text element not found.');
+    }
+
+    // Reset and hide progress bar
+    progressBar.style.width = '0%';
+    progressBar.style.display = 'none';
 
     // Create the crafted item
-    const itemTemplate = items.find(i => i.name === currentRecipe.name);
+    const itemTemplate = items.find(i => i.name === recipe.name);
     if (itemTemplate) {
         const craftedItem = generateItemInstance(itemTemplate);
         addItemToInventory(craftedItem);
         logMessage(`You have fabricated: ${craftedItem.name}`);
+        console.log(`Fabrication of ${craftedItem.name} completed.`);
     } else {
-        console.error(`Item template not found for ${currentRecipe.name}`);
+        console.error(`Item template not found for ${recipe.name}`);
+        logMessage(`Fabrication completed, but item template for ${recipe.name} was not found.`);
     }
 
-    currentRecipe = null;
     updateInventoryDisplay();
     displayFabricationRecipes();
 }
 
-function stopFabrication() {
-    if (isFabricating) {
-        clearInterval(fabricationInterval);
-        isFabricating = false;
-        stopFabricationButton.style.display = 'none';
-        fabricationProgressBar.style.width = '0%';
-        logMessage('Fabrication stopped.');
-        currentRecipe = null;
-    }
-}
-
+// Function to display fabrication recipes
 function displayFabricationRecipes() {
     const categoriesDiv = document.getElementById('fabrication-categories');
     if (!categoriesDiv) {
@@ -158,6 +194,7 @@ function displayFabricationRecipes() {
     }
 }
 
+// Function to create a recipe card with fabricate/stop button and embedded progress bar
 function createRecipeCard(recipe) {
     const recipeCard = document.createElement('div');
     recipeCard.className = 'recipe-card';
@@ -217,18 +254,54 @@ function createRecipeCard(recipe) {
         tooltip.style.display = 'none';
     });
 
-    // Fabricate button
+    // Fabricate Button with embedded Progress Bar
     const fabricateButton = document.createElement('button');
-    fabricateButton.textContent = 'Fabricate';
+    fabricateButton.className = 'fabricate-button';
     fabricateButton.disabled = !hasRequiredMaterials(recipe.ingredients);
-    fabricateButton.addEventListener('click', () => startFabrication(recipe));
+
+    // Create a span for the button text
+    const buttonText = document.createElement('span');
+    buttonText.className = 'button-text';
+    buttonText.textContent = 'Fabricate';
+    buttonText.style.position = 'relative';
+    buttonText.style.zIndex = '1';
+
+    // Progress Bar Inside the Button
+    const progressBar = document.createElement('div');
+    progressBar.className = 'button-progress-bar';
+    progressBar.style.width = '0%';
+    progressBar.style.height = '100%';
+    progressBar.style.position = 'absolute';
+    progressBar.style.top = '0';
+    progressBar.style.left = '0';
+    progressBar.style.backgroundColor = 'rgba(0, 255, 0, 0.3)';
+    progressBar.style.transition = 'width 0.1s linear';
+    progressBar.style.pointerEvents = 'none';
+    progressBar.style.borderRadius = '5px';
+    progressBar.style.display = 'none'; // Hidden initially
+
+    // Append progressBar before buttonText to ensure it's behind the text
+    fabricateButton.appendChild(progressBar);
+    fabricateButton.appendChild(buttonText);
+
+    // Positioning and Styling for Relative Parent
+    fabricateButton.style.position = 'relative';
+    fabricateButton.style.overflow = 'hidden';
+
+    fabricateButton.addEventListener('click', () => {
+        if (!ongoingFabrications[recipe.name]) {
+            startFabrication(recipe, fabricateButton, progressBar);
+        } else {
+            stopFabrication(recipe, fabricateButton, progressBar);
+        }
+    });
+
     recipeCard.appendChild(fabricateButton);
 
     return recipeCard;
 }
 
-
-
+// Function to check if player has required materials
 function hasRequiredMaterials(ingredients) {
     for (let materialName in ingredients) {
         const requiredQuantity = ingredients[materialName];
@@ -241,6 +314,7 @@ function hasRequiredMaterials(ingredients) {
     return true;
 }
 
+// Function to remove materials from inventory
 function removeMaterialsFromInventory(ingredients) {
     for (let materialName in ingredients) {
         const requiredQuantity = ingredients[materialName];
@@ -248,6 +322,7 @@ function removeMaterialsFromInventory(ingredients) {
     }
 }
 
+// Function to remove a specific quantity of an item from inventory
 function removeItemQuantityFromInventory(itemName, quantity) {
     const inventoryItem = window.inventory.find(item => item.name === itemName);
     if (inventoryItem) {
@@ -272,6 +347,7 @@ function removeItemQuantityFromInventory(itemName, quantity) {
     notifyInventoryChange();
 }
 
+// Function to refund materials (optional, uncomment if needed)
 function refundMaterials(ingredients) {
     for (let materialName in ingredients) {
         const quantity = ingredients[materialName];
@@ -287,7 +363,7 @@ function refundMaterials(ingredients) {
     updateInventoryDisplay();
 }
 
-
+// Optional: Format item stats for tooltip (ensure this function is correctly implemented elsewhere)
 function formatItemStats(itemTemplate) {
     const stats = [];
 
@@ -350,6 +426,7 @@ function formatItemStats(itemTemplate) {
     return stats.join('<br>');
 }
 
+// Helper function to capitalize the first letter
 function capitalizeFirstLetter(string) {
     return string.charAt(0).toUpperCase() + string.slice(1);
 }

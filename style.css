@@ -150,57 +150,97 @@ button:active {
     margin-right: 10px;
 }
 
-/* HP Bars */
-.hp-bar-container {
-    width: 100%;
-    background-color: #333;
-    height: 30px;
+/* HP and ES Bar Containers */
+.hp-bar-container,
+.es-bar-container {
+    position: relative;
+    width: 100%; /* Adjust based on your layout */
+    height: 25px; /* Adjust as needed */
+    background-color: #555;
+    border: 1px solid #000;
     border-radius: 5px;
     overflow: hidden;
-    box-shadow: inset 0 0 5px #000;
-    margin-bottom: 5px;
+    margin-bottom: 10px; /* Spacing below the bars */
 }
 
+/* HP Bars */
 .hp-bar {
+    width: 100%; /* Starts at full width */
     height: 100%;
-    width: 100%;
-    background: linear-gradient(90deg, #ff3300, #cc0000);
-    box-shadow: 0 0 10px #ff0000;
-    transition: width 0.3s;
-}
-
-.enemy-hp-bar {
-    background: linear-gradient(90deg, #cc0000, #990000);
-    box-shadow: 0 0 10px #cc0000;
-}
-
-.hp-text {
-    text-align: center;
-    margin-bottom: 10px;
+    background-color: #0f0; /* Green color for HP */
+    transition: width 0.3s linear;
 }
 
 /* Energy Shield Bars */
-.es-bar-container {
-    width: 100%;
-    background-color: #333;
-    height: 15px;
-    border-radius: 5px;
-    overflow: hidden;
-    box-shadow: inset 0 0 5px #000;
-    margin-bottom: 5px;
-}
-
 .es-bar {
+    width: 100%; /* Starts at full width */
     height: 100%;
-    width: 100%;
-    background: linear-gradient(90deg, #00ccff, #0066cc);
-    box-shadow: 0 0 10px #00ccff;
-    transition: width 0.3s;
+    background-color: #00f; /* Blue color for energy shield */
+    transition: width 0.3s linear;
 }
 
-.enemy-es-bar {
-    background: linear-gradient(90deg, #0066cc, #003366);
-    box-shadow: 0 0 10px #0066cc;
+/* HP and ES Text */
+.hp-text,
+.es-text {
+    text-align: center;
+    margin-bottom: 5px;
+    font-size: 0.9em;
+}
+
+
+
+/* HP Bar Slice */
+.hp-slice {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    background-color: rgba(255, 0, 0, 0.9); /* Semi-transparent red for HP slices */
+    animation: sliceAnimation 1s forwards;
+    pointer-events: none;
+}
+
+/* Energy Shield Bar Slice */
+.es-slice {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    background-color: rgba(0, 0, 255, 0.9); /* Semi-transparent blue for shield slices */
+    animation: sliceAnimation 1s forwards;
+    pointer-events: none;
+}
+
+/* Damage Number */
+.damage-number {
+    position: absolute;
+    color: red;
+    font-weight: bold;
+    font-size: 16px;
+    animation: damageNumberAnimation 1s forwards;
+    pointer-events: none;
+}
+
+/* Slice Animation */
+@keyframes sliceAnimation {
+    from {
+        transform: translateY(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateY(20px); /* Falls down */
+        opacity: 0;
+    }
+}
+
+/* Damage Number Animation */
+@keyframes damageNumberAnimation {
+    from {
+        transform: translateY(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateY(-20px); /* Floats up */
+        opacity: 0;
+    }
 }
 
 .es-text {
@@ -662,4 +702,49 @@ ul#inventory li:hover .tooltip,
 @keyframes flash {
     0%, 50%, 100% { opacity: 1; }
     25%, 75% { opacity: 0; }
+}
+
+/* Fabricate Button */
+.fabricate-button {
+    position: relative;
+    overflow: hidden;
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    background-color: #f0f0f0;
+    color: #000;
+    outline: none; /* Removes default focus outline */
+    transition: background-color 0.3s;
+}
+
+.fabricate-button:hover:not(:disabled) {
+    background-color: #e0e0e0;
+}
+
+.fabricate-button:disabled {
+    background-color: #ddd;
+    cursor: not-allowed;
+}
+
+/* Button Text */
+.button-text {
+    position: relative;
+    z-index: 1; /* Ensures text is above the progress bar */
+    display: inline-block;
+}
+
+/* Fabricate Button Progress Bar */
+.button-progress-bar {
+    width: 0%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    background-color: rgba(0, 255, 0, 0.3);
+    transition: width 0.1s linear;
+    pointer-events: none;
+    border-radius: 5px;
+    z-index: 0; /* Ensures progress bar is behind the button text */
 }

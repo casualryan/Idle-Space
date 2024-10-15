@@ -96,5 +96,13 @@ const recipes = [
         craftingTime: 5,
     },
 
+    {
+        name: 'Kinetic Booster',
+        category: 'Bionics',
+        ingredients: {
+            "Scrap Metal": 3,
+        },
+    }
+
 ];
 
