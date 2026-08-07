@@ -5,7 +5,7 @@ export default {
     slot: 'bionic',
     statModifiers: {
         damageTypes: {
-            kinetic: { min: 50, max: 100 },
+            kinetic: { min: 10, max: 18 },
         },
     },
     isDisassembleable: true,

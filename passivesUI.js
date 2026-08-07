@@ -9,6 +9,7 @@ if (typeof player.passivePoints === 'undefined') {
 }
 const TIER_UNLOCK_THRESHOLD_INCREMENT = 3;
 const MAX_PASSIVE_RANK = 4; // Maximum number of points that can be manually allocated
+const MAX_EFFECTIVE_RANK = 8; // Absolute cap for passive effectiveness (alloc + gear)
 
 // Initialize gear bonuses if they don't exist
 if (!player.gearPassiveBonuses) {
@@ -42,6 +43,7 @@ function getPassiveTooltipContent(passive) {
     const allocatedRank = player.passiveAllocations[passive.name] || 0;
     const gearBonus = player.gearPassiveBonuses[passive.name] || 0;
     const effectiveRank = allocatedRank + gearBonus;
+    const wasted = Math.max(0, effectiveRank - MAX_EFFECTIVE_RANK);
     
     let tip = `<div style="color: #e0f2ff; font-family: 'Orbitron', sans-serif; text-shadow: 0 0 5px rgba(0, 255, 204, 0.5); max-width: 300px; white-space: normal;">`;
     
@@ -63,6 +65,13 @@ function getPassiveTooltipContent(passive) {
         tip += ` <span style="color:#00ffcc">(+${gearBonus} from gear)</span>`;
     }
     tip += `</div>`;
+    
+    // Overcap note
+    if (wasted > 0) {
+        tip += `<div style="background: rgba(60, 0, 20, 0.45); padding: 4px; margin-bottom: 6px; border-radius: 2px; border-left: 2px solid #ff6b6b; color:#ffd6d9;">` +
+               `Overcap: +${wasted} provides no additional benefit (cap ${MAX_EFFECTIVE_RANK}).` +
+               `</div>`;
+    }
     
     // Current bonus with styling
     tip += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
@@ -144,17 +153,15 @@ function getPassiveTooltipContent(passive) {
             case 'defenseTypes':
                 for (const defenseType in changes) {
                     const defenseValue = changes[defenseType][Math.min(effectiveRank, changes[defenseType].length - 1)];
-                    tip += `<div style="padding: 2px 0;"><span style="color: #ffffff;">+${defenseValue} ${capitalize(defenseType)}</span></div>`;
+                    tip += `<div style="padding: 2px 0;"><span style="color: #ffffff;">+${defenseValue} ${formatDefenseTypeLabel(defenseType)}</span></div>`;
                 }
                 break;
                 
             case 'damageGroups':
                 for (const groupType in changes) {
-                    if (!player.passiveBonuses.damageGroups[groupType]) {
-                        player.passiveBonuses.damageGroups[groupType] = 0;
-                    }
                     const groupIndex = Math.min(effectiveRank, changes[groupType].length - 1);
-                    player.passiveBonuses.damageGroups[groupType] += changes[groupType][groupIndex];
+                    const groupValue = changes[groupType][groupIndex];
+                    tip += `<div style="padding: 2px 0;"><span style="color: #ffffff;">+${groupValue}% ${capitalize(groupType)} Damage</span></div>`;
                 }
                 break;
                 
@@ -186,7 +193,7 @@ function getPassiveTooltipContent(passive) {
         }
     }
     
-    if (hasNextLevel) {
+    if (hasNextLevel && effectiveRank < MAX_EFFECTIVE_RANK) {
         tip += `</div><div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
         tip += `<span style="color: #00ffcc;">Next Level Bonus:</span>`;
         
@@ -313,7 +320,7 @@ function getPassiveTooltipContent(passive) {
                             if (hasAddedNextStats) tip += `<br>`;
                             hasAddedNextStats = true;
                             const nextValue = changes[defenseType][nextRank];
-                            tip += `<div style="padding: 2px 0;"><span style="color: #ffffff;">+${nextValue} ${capitalize(defenseType)}</span></div>`;
+                            tip += `<div style="padding: 2px 0;"><span style="color: #ffffff;">+${nextValue} ${formatDefenseTypeLabel(defenseType)}</span></div>`;
                         }
                     }
                     break;
@@ -442,10 +449,11 @@ function displayPassivesScreen() {
             const fontSizeClass = nameLength > 12 ? 'long-name' : nameLength > 8 ? 'medium-name' : 'short-name';
             
             // Create card inner HTML with sci-fi styling
+            const overcap = Math.max(0, effectiveRank - MAX_EFFECTIVE_RANK);
             card.innerHTML = `
                 <div class="passive-card-inner ${unlocked ? '' : 'locked'}">
                     <div class="passive-name ${fontSizeClass}">${passive.name}</div>
-                    <div class="passive-rank">Rank: ${allocatedRank}/${MAX_PASSIVE_RANK}${gearBonus > 0 ? `<span class="gear-bonus"> +${gearBonus}</span>` : ''}</div>
+                    <div class="passive-rank">Rank: ${allocatedRank}/${MAX_PASSIVE_RANK}${gearBonus > 0 ? `<span class=\"gear-bonus\"> +${gearBonus}</span>` : ''}${overcap > 0 ? `<span class=\"gear-bonus overcap\"> (wasted +${overcap})</span>` : ''}</div>
                     <div class="passive-buttons">
                         <button class="passive-minus-btn" ${allocatedRank <= 0 ? 'disabled' : ''}>–</button>
                         <button class="passive-plus-btn" ${(!unlocked) || (player.passivePoints <= 0) || (allocatedRank >= MAX_PASSIVE_RANK) ? 'disabled' : ''}>+</button>
@@ -483,6 +491,22 @@ function displayPassivesScreen() {
     tiersContainer.appendChild(glowEffect);
 }
 
+function hidePassivesTooltip() {
+    if (typeof window.forceHideTooltip === 'function') {
+        window.forceHideTooltip();
+    }
+}
+
+function refreshPassivesScreen() {
+    resetGearPassiveBonuses();
+    hidePassivesTooltip();
+    displayPassivesScreen();
+}
+
+function openPassivesScreen() {
+    showScreen('passives-screen');
+}
+
 function investPassivePoint(passive) {
     const current = player.passiveAllocations[passive.name] || 0;
     
@@ -512,6 +536,7 @@ function investPassivePoint(passive) {
     player.currentHealth = Math.round(player.totalStats.health * healthPercent);
     player.currentShield = Math.round(player.totalStats.energyShield * shieldPercent);
     
+    hidePassivesTooltip();
     displayPassivesScreen();
 }
 
@@ -539,20 +564,9 @@ function removePassivePoint(passive) {
     player.currentHealth = Math.max(1, Math.round(player.totalStats.health * healthPercent));
     player.currentShield = Math.round(player.totalStats.energyShield * shieldPercent);
     
+    hidePassivesTooltip();
     displayPassivesScreen();
 }
-
-document.addEventListener('DOMContentLoaded', () => {
-    const passivesMenuItem = document.querySelector('li[data-screen="passives-screen"]');
-    if (passivesMenuItem) {
-        passivesMenuItem.addEventListener('click', () => {
-            showScreen('passives-screen');
-            // Reset and reapply all passive bonuses from gear whenever we view the screen
-            resetGearPassiveBonuses();
-            displayPassivesScreen();
-        });
-    }
-});
 
 function applyAllPassivesToPlayer() {
     // Reset all passive bonuses to default values
@@ -745,3 +759,15 @@ function applyPassiveEffect(passive, level) {
 function capitalize(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
 }
+
+function formatDefenseTypeLabel(defenseType) {
+    const labels = {
+        physicalResistance: 'Physical Resistance',
+        elementalResistance: 'Elemental Resistance',
+        chemicalResistance: 'Chemical Resistance'
+    };
+    return labels[defenseType] || capitalize(defenseType);
+}
+
+window.refreshPassivesScreen = refreshPassivesScreen;
+window.openPassivesScreen = openPassivesScreen;

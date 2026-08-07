@@ -1,11 +1,13 @@
 export default {
     name: 'Scrap Metal Boots',
-    type: 'Boots',
-    icon: 'icons/iron_boots.png',
-    healthBonus: { min: 15, max: 15 },
-    healthBonusPercentRange: { min: 10, max: 10 },
+    type: 'Armor',
+    icon: 'icons/scrap_metal_boots.png',
     slot: 'feet',
-    isDisassembleable: false,
-    disassembleResults: [],
-    description: "Metal boots fashioned from discarded scrap."
-}; 
+    levelRequirement: { min: 1, max: 1 },
+    healthBonus: { min: 12, max: 22 },
+    isDisassembleable: true,
+    disassembleResults: [
+        { name: 'Scrap Metal', quantity: 2 }
+    ],
+    description: 'Starter foot protection built from salvaged scrap.'
+};

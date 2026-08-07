@@ -3,7 +3,7 @@ export default {
         name: "Broken Phase Sword",
         type: "Weapon",
         weaponType: "Sword",
-        icon: "icons/ironsword.png",
+        icon: "icons/broken_phase_sword.png",
         bAttackSpeed: .75,
         damageTypes: {
             kinetic: { min: 6, max: 6 },

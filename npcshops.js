@@ -34,7 +34,9 @@ const npcs = [
             { itemName: "Mod Pool Test Blade", price: 1, stock: 999, defaultStock: 999, levelReq: 1 },
             { itemName: "Dual Pool Test Staff", price: 1, stock: 999, defaultStock: 999, levelReq: 1 },
             { itemName: "Wired Test Dagger", price: 1, stock: 999, defaultStock: 999, levelReq: 1 },
-            { itemName: "Red Test Chip", price: 1, stock: 999, defaultStock: 999, levelReq: 1 }
+            { itemName: "Red Test Chip", price: 1, stock: 999, defaultStock: 999, levelReq: 1 },
+            { itemName: "Critical Test Bionic", price: 1, stock: 999, defaultStock: 999, levelReq: 1 },
+            { itemName: "Pyro Booster", price: 1, stock: 999, defaultStock: 999, levelReq: 1 }
         ]
     },
     {
@@ -93,6 +95,27 @@ const npcs = [
                 stock: 1,
                 defaultStock: 1,
                 levelReq: 1
+            },
+            {
+                itemName: "Synthesized Alloy Chestplate",
+                price: 1,
+                stock: 5,
+                defaultStock: 5,
+                levelReq: 1
+            },
+            {
+                itemName: "Big Brute Basher",
+                price: 100,
+                stock: 5,
+                defaultStock: 5,
+                levelReq: 1
+            },
+            {
+                itemName: "Ionizing Whip",
+                price: 100,
+                stock: 5,
+                defaultStock: 5,
+                levelReq: 1
             }
         ]
     },
@@ -132,6 +155,11 @@ function displayNPCList() {
         });
         npcListDiv.appendChild(npcButton);
     });
+
+    // Open the first available shop by default so the screen isn't empty
+    if (!window.currentNPC && npcs.length > 0) {
+        displayNPCShop(npcs[0]);
+    }
 }
 
 // Display a single NPC's shop in #npc-shop-container
@@ -395,6 +423,10 @@ function cleanupShopUI() {
     window.addEventListener('screenChanged', (e) => {
         if (e.detail.screenId === 'shops-screen') {
             displayNPCList();
+            // If no NPC currently open, open the first by default
+            if (!window.currentNPC && npcs.length > 0) {
+                displayNPCShop(npcs[0]);
+            }
         } else if (window.currentNPC) {
             // Clean up shop UI when leaving shops screen
             cleanupShopUI();

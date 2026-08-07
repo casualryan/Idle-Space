@@ -1,0 +1,492 @@
+================================================================================
+                    IDLE COMBAT - CORE SYSTEMS BIBLE
+================================================================================
+Version: implementation-aligned rewrite for current codebase
+Audience: remake teams, systems designers, planning AI, technical design
+Purpose: authoritative core-systems reference (not content roster, not UI tour)
+
+Legend:
+  [IMPLEMENTED] = shipped in current code
+  [PROTOTYPE]   = partially wired / behavior intentionally deferred
+  [PLANNED]     = documented future intent, not live in core loop
+
+Authority hierarchy for item and weapon math:
+  1) CURRENT_ITEM_SYSTEM.md
+  2) ITEM_SCHEMA_GUIDE.txt
+  3) This document (system integration and runtime behavior)
+
+================================================================================
+0. EXECUTIVE MODEL [IMPLEMENTED]
+================================================================================
+
+Game model:
+- Idle/autobattler RPG where build planning is the primary player skill.
+- Combat is simulation-driven, not input-driven.
+- Core identity is loadout engineering: weapon profile, passives, style, procs,
+  wires/chips, and zone selection.
+
+Primary loops:
+1) Delve loop:
+   choose location -> auto-fight sequence -> collect staged rewards -> resolve.
+2) Build loop:
+   equip items/bionics, socket chips, allocate passives and combat style nodes.
+3) Economy loop:
+   mining/fabrication/shops -> resources -> stronger crafted or dropped gear.
+
+Hard account/system constants:
+- Max player level: 51.
+- Save slots: 5.
+- Autosave interval: 5 seconds.
+
+================================================================================
+1. RUNTIME ARCHITECTURE MAP [IMPLEMENTED]
+================================================================================
+
+Primary runtime modules:
+- global.js
+  Owns player state, save/load/reset, autosave, shared UI refresh hooks.
+- combat.js
+  Owns combat and delve runtime loops, attack resolution flow, applyDamage path.
+- stats.js
+  Owns player/enemy stat construction and typed damage calculation logic.
+- skills.js + skillResolver.js
+  Owns Combat Styles definitions, profile resolution, and hit-context rules.
+- passives.js + passivesUI.js
+  Owns passive data + allocation + application pipeline.
+- itemgenerator.js
+  Owns instance rolling: ranges, rollGroups, wires, rolledModifiers, local weapon
+  modifier routing.
+- inventory.js
+  Owns equip/unequip and wire/chip management constraints.
+- activityManager.js
+  Global singleton for non-combat timed activities.
+- gathering.js
+  Mining flow + gathering progression + activity-manager integration.
+
+Global managers and contracts:
+- window.activityManager: single background activity state machine.
+- window.computeWeaponLocalProfile: canonical local weapon damage calculator.
+- window.combatStyles / window.resolveSkillProfile: style execution contract.
+
+================================================================================
+2. ENTITY AND LOADOUT MODEL [IMPLEMENTED]
+================================================================================
+
+Equipment slots:
+- mainHand, offHand, head, chest, legs, feet, gloves
+- bionicSlots[4]
+
+Non-body attachment system:
+- Wires/chips are socketed on item instances, not character body slots.
+
+Default inventory capacity:
+- maxInventorySlots = 30 (saved and restorable).
+
+Combat style equip model:
+- One active style equipped at a time via player.equippedSkillId.
+- No basic attack fallback path by design.
+
+================================================================================
+3. COMBAT LOOP AND TIMING [IMPLEMENTED]
+================================================================================
+
+Tick model:
+- combatLoop runs at 100ms interval.
+
+Attack pacing:
+- Player attack interval = (1 / player.attackSpeed) * style.attackTimeMultiplier.
+- Enemy attack uses enemy totalStats.attackSpeed cadence.
+
+Player attack flow:
+1) playerAttack()
+2) executeEquippedSkill(player, enemy)
+3) multi-hit cycle per resolved style profile
+4) per-hit damage calculation and application
+5) optional combo phase after full skill execution
+
+Enemy attack flow:
+1) enemyAttack()
+2) calculateDamage(enemy, player)
+3) applyDamage(player, ...)
+4) trigger enemy onHit and player whenHit effects
+5) optional enemy combo phase
+
+State transitions:
+- startCombat() initializes combat timers and validates entities.
+- stopCombat(reason) resolves rewards/progression/cleanup based on reason.
+
+================================================================================
+4. DELVE SYSTEM [IMPLEMENTED]
+================================================================================
+
+Definition:
+- A delve is a location-defined sequence of fights (numFights).
+- currentMonsterIndex tracks sequence progress.
+
+Per-fight behavior inside a delve:
+- HP/shield persist between fights.
+- Buffs are cleared between fights (with Medtek preservation hook support).
+- 3 second inter-fight pause.
+- attack timers reset on new spawn.
+
+Delve outcomes:
+- enemyDefeated: push rewards to delve bag and continue sequence.
+- delveCompleted: finalize staged rewards, full recover, optional auto-redeploy.
+- playerFled/playerDefeated: delve failure, staged delve bag is forfeited.
+
+Auto-redeploy:
+- Controlled by localStorage key autoRedeploy.
+
+Empowered enemies:
+- Spawn-time roll per enemy entry.
+- Empowered bonus: +50% health, +50% shield, +50% outgoing damage, name prefix.
+
+XP zone scaling:
+- XP reward uses zone penalty helper based on zone recommended level vs player.
+
+================================================================================
+5. STATS SYSTEM [IMPLEMENTED]
+================================================================================
+
+Core player stat build order (calculatePlayerStats):
+1) clone base stats
+2) apply passive bonuses
+3) apply mining permanent bonuses
+4) apply equipment (special main-hand weapon handling)
+5) apply bionics with bionicSync multiplier
+6) apply slotted chip stats
+7) apply buffs
+8) finalize attack speed, health, shield, clamps
+
+Health and shield formulas:
+- health = (maxHealth + healthBonus) * (1 + healthBonusPercent)
+- shield = (maxEnergyShield + energyShieldBonus) * (1 + energyShieldBonusPercent)
+
+Attack speed model:
+- Clamped to [0.1, 10].
+- Final speed applies local weapon stage before global percentage stack.
+
+Damage groups:
+- physical: kinetic, slashing
+- elemental: pyro, cryo, electric
+- chemical: corrosive, radiation
+
+Resistance model:
+- Typed resistance per mapped defense bucket.
+- Hard cap: 80% reduction.
+
+Proc efficiency model:
+- weaponEfficiency influences onHit/onCritical item effects.
+- armorEfficiency influences whenHit item effects.
+- bionicEfficiency influences bionic-triggered effects.
+- Effective chance formula: baseChance + (baseChance * efficiency/100), then clamp.
+
+Note on armorPenetration:
+- Present on some items as authored stat.
+- Not currently applied in calculateDamage combat math path.
+
+================================================================================
+6. DAMAGE PIPELINE [IMPLEMENTED]
+================================================================================
+
+6.1 Weapon-local stage (pre-global)
+-----------------------------------
+Canonical local source fields:
+- weaponBaseDamage
+- weaponLocalFlatDamage
+- weaponLocalTypeIncrease
+- weaponLocalGroupIncrease
+- weaponDamageConversion
+- weaponLocalAttackSpeedPercent
+
+Local damage order:
+1) read base (weaponBaseDamage; fallback from legacy damageTypes if needed)
+2) add local flat damage
+3) apply conversion
+4) apply local increased modifiers (type + group)
+5) compute final local ranges and export one flat contribution to global pool
+
+Duplicate prevention:
+- Main-hand direct legacy damageTypes merge is suppressed when local profile is used.
+- If both weaponBaseDamage and legacy damageTypes coexist, legacy base is ignored.
+
+6.2 Global combat stage (per hit)
+---------------------------------
+calculateDamage(attacker, defender, attackContext):
+1) read attacker.totalStats.damageTypes
+2) apply damageTypeModifiers and damageGroupModifiers
+3) apply mastery and global damageMultipliers
+4) compute total potential
+5) roll precision/deflection skewed fraction (10% to 100%)
+6) critical check (supports force/skip/bonus/multiplier context)
+7) split rolled damage by adjusted typed proportions
+8) apply defender typed resistances (80% cap)
+9) return rounded total + typed breakdown
+
+Skill scaling:
+- Style hit profile scales result per-hit after calculateDamage via hit context.
+
+Debuff attach point:
+- After applyDamage, dominant damage type is evaluated for debuff roll.
+
+================================================================================
+7. COMBAT STYLES SYSTEM [IMPLEMENTED + PROTOTYPE]
+================================================================================
+
+System replacement:
+- Legacy Combat Skills system is replaced by Combat Styles.
+- Legacy IDs are migrated/aliased for compatibility.
+
+Active style behavior:
+- Exactly one equipped style controls attack execution.
+- Style base profile fields:
+  attackTimeMultiplier, damageMultiplier, hitCount,
+  procOnHit, procOnCritical, comboAfterSkill, comboProcStrength,
+  critChanceMultiplier, critChanceBonus, debuffApplyBonus.
+
+Current base styles:
+- balancedStyle
+- twinStyle
+- heavyStyle
+- rapidStyle
+- focusedStyle
+- guardedStyle
+
+Style points:
+- Thresholds: levels 6,11,16,21,26,31,36,41,46,51.
+- skillPoints legacy field is kept at 0; style points are the live system.
+
+[PROTOTYPE] style tree effects:
+- Node trees are authored, allocatable, persisted, and validated.
+- Resolver explicitly defers node stat effects in combat profile output.
+- Practical meaning: base style profile affects combat; node bonuses do not yet.
+
+================================================================================
+8. PASSIVE SYSTEM [IMPLEMENTED]
+================================================================================
+
+Allocation rules:
+- +1 passive point on level-up.
+- Tier unlock rule: tier N requires (N-1)*3 spent in lower tiers.
+- Manual allocation cap per passive: 4.
+
+Effective rank behavior:
+- effectiveRank = allocatedRank + gearPassiveBonus.
+- UI communicates overcap past 8 as wasted.
+- Runtime value selection clamps by each passive array length
+  (min(effectiveRank, changes.length-1)).
+- This means practical caps can differ by passive if arrays differ in length.
+
+Application model:
+- applyAllPassivesToPlayer() rebuilds passiveBonuses object from allocations and
+  gear bonuses.
+- Recalculated on allocation changes and equip/unequip operations.
+
+================================================================================
+9. BUFFS, DEBUFFS, AND STATUS [IMPLEMENTED]
+================================================================================
+
+Buff model:
+- Timed stat changes processed in combat loop.
+- clearBuffs supports injector-preservation hook when requested.
+
+Debuff model:
+- Debuff base chance: 0.10.
+- Debuff chance can be increased by active style hit context bonus.
+- Dominant damage type chooses debuff family candidates.
+- Enemy-to-player application is blocked in this path.
+
+Status effects:
+- Separate from debuff registry, with independent tick/expiry processing.
+
+Effect trigger model:
+- Supported trigger names in processing path: onHit, onCritical, whenHit, bionic.
+- onHeal exists as schema term but has no central effect-processing driver in the
+  main combat trigger pipeline today.
+
+================================================================================
+10. ITEM, GENERATION, AND INSTANCE MODEL [IMPLEMENTED]
+================================================================================
+
+Source of truth docs:
+- CURRENT_ITEM_SYSTEM.md (weapon-local architecture and migration behavior)
+- ITEM_SCHEMA_GUIDE.txt (schema and generator contracts)
+
+Template categories:
+- weapons, armor, bionics, materials, chips.
+
+Generation responsibilities:
+- Roll range-based values.
+- Resolve level requirements and top-level percent conversions.
+- Apply rollGroups additive selections.
+- Roll wire socket colors and caps.
+- Roll random modifiers by level band and grade weighting.
+- Persist rolledModifiers and rolledWires on instances.
+
+Weapon-specific generation behavior:
+- Canonical generated base: weaponBaseDamage for weapon templates/instances.
+- Legacy template damageTypes still tolerated as migration input.
+- Offensive random modifier routing for weapons targets local fields, not direct
+  global damage fields.
+
+================================================================================
+11. WIRES AND CHIPS [IMPLEMENTED]
+================================================================================
+
+Runtime socket shape:
+- rolledWires: [{ color, chip? }, ...]
+
+Color rules:
+- Standard wire colors enforce matching chip color.
+- Black wire accepts any chip color.
+
+Global uniqueness rule:
+- At most one black chip can be equipped across all currently equipped gear.
+
+Rebuild behavior:
+- Socketing/unsocketing triggers stat and passive refresh paths.
+
+================================================================================
+12. ACTIVITY SYSTEM AND NON-COMBAT LOOPS [IMPLEMENTED]
+================================================================================
+
+12.1 Global timed activity manager
+----------------------------------
+- activityManager tick interval: 100ms.
+- Single active activity at a time.
+- startActivity/cancelActivity/getState/subscribe lifecycle API.
+- clearActivityOnLoad resets active state on load.
+
+Combat/delve interactions:
+- starting combat or delve cancels active non-combat activity.
+
+12.2 Gathering (Mining)
+-----------------------
+- Mining is integrated with activityManager.
+- Mining level cap: 30.
+- Permanent mining-derived player bonuses:
+  flatHealth = level * 5
+  healthPercent = floor(level/3)
+
+12.3 Fabrication
+----------------
+- Active crafting system, but not wired through activityManager.
+- Uses its own fabrication runtime tracking model.
+
+12.4 Medtek
+-----------
+- Injector crafting system exists.
+- Injectors are timed buffs in current implementation, not delve-scope-only picks.
+
+================================================================================
+13. SAVE/LOAD, VERSIONING, AND MIGRATIONS [IMPLEMENTED]
+================================================================================
+
+Snapshot/version:
+- buildGameStateSnapshot includes meta.version = 3.
+- Includes combat styles state and activity state.
+
+Slot model:
+- 5 save slots.
+- Autosave target key is tracked separately and points to last explicit save/load
+  slot (not arbitrary UI selection).
+
+Restore and normalization behaviors:
+- restoreItem performs key migrations for damage/defense legacy fields.
+- Weapon restore migration:
+  legacy damageTypes -> weaponBaseDamage when canonical field missing.
+  if both exist, canonical wins and legacy duplicate is removed.
+- Legacy skills save shape maps into combat styles structure.
+- normalizeGatheringSkills and normalizeCombatStylesState invoked on load.
+
+Reset behavior:
+- resetGame restores baseline player state, equipment, slots, styles, and currency.
+
+================================================================================
+14. CORE INVARIANTS AND GUARANTEES [IMPLEMENTED]
+================================================================================
+
+Combat and damage:
+- Resistance reduction cannot exceed 80%.
+- Attack speed is clamped between 0.1 and 10.
+- Debuff base chance starts at 10% before style bonuses.
+
+Mutual exclusion:
+- One background activity at a time.
+- Active combat/delve and non-combat activity are mutually exclusive by enforced
+  cancellation/blocks.
+
+Progression:
+- Player max level is 51.
+- Style point grants are fixed threshold-based.
+
+Equipment constraints:
+- Exactly 4 bionic slots.
+- Global one-black-chip-equipped rule.
+
+Persistence:
+- Generated item instance rolls persist across save/load (no reroll on restore).
+
+================================================================================
+15. IMPLEMENTED VS PROTOTYPE VS PLANNED MATRIX
+================================================================================
+
+[IMPLEMENTED]
+- Real-time combat loop and delve sequencing.
+- Weapon-local damage stage with one-time export to global damage pool.
+- Combat styles base profile execution.
+- Passive allocation and application.
+- Typed debuff and status systems.
+- Wires/chips socketing and black-chip uniqueness.
+- Save v3 snapshot and restore migrations.
+- Activity manager plus mining integration.
+
+[PROTOTYPE]
+- Combat style node trees: allocatable/persistent UI data, not yet applied to
+  combat resolver math.
+- Some schema-declared fields exist in content but are not active in final combat
+  formulas (for example armorPenetration in damage math).
+
+[PLANNED]
+- Larger mission/meta-progression layers and other roadmap systems not wired into
+  this runtime document should remain external to core implementation assumptions.
+
+================================================================================
+16. REMAKE GUIDELINES (SYSTEMS-FIRST)
+================================================================================
+
+If remaking core systems, preserve these contracts first:
+1) Separation of concerns:
+   combat runtime, stat build runtime, item generation, and save migration must
+   remain independently testable modules.
+2) Deterministic pipeline ordering:
+   local weapon stage before global modifiers; tick and timer ownership explicit.
+3) Migration-tolerant data model:
+   old save fields should degrade safely into canonical fields without duplication.
+4) Data-driven extensibility:
+   styles, passives, locations, enemies, and item templates should remain
+   authorable data with minimal code branching.
+5) Explicit constraints:
+   enforce hard caps and uniqueness rules at runtime, not just in UI.
+
+Recommended validation suite for any remake:
+- Combat damage parity test by type/group/resistance combinations.
+- Weapon-local conversion and local-AS ordering regression tests.
+- Save/load migration tests across legacy and current snapshots.
+- Activity/combat mutual-exclusion tests.
+- Chip socket and black-chip uniqueness rule tests.
+
+================================================================================
+17. LEGACY NOTES (FOR REFERENCE ONLY)
+================================================================================
+
+Deprecated concepts kept only for migration context:
+- Legacy Combat Skills IDs are mapped to Combat Styles.
+- Legacy weapon damageTypes as direct primary weapon source is deprecated.
+- Legacy defense keys are migrated to physical/elemental/chemical resistance keys.
+
+Do not use legacy sections as current design authority.
+
+================================================================================
+END OF CORE SYSTEMS BIBLE
+================================================================================

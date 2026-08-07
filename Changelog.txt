@@ -1,0 +1,25 @@
+9/2/25
+
+Changes:
+
+added changelog (long overdue lol)
+added exp penalty to zones 5+ levels lower than player. At 10 levels lower, no exp is given
+added coulple dev tool options in settings, these will be removed eventually
+
+Fixes:
+
+fixed shop screen opening to a basically blank screen; should now always open to first shop automatically
+
+9/5/25
+
+Changes:
+
+added 2 new endgame weapons (testing)
+added 1 new body armor (testing)
+swapped left and right click functionality in inventory (this makes way more sense lol)
+removed a couple outdated items
+changed the item schema to be accurate and have notes
+
+Fixes:
+
+tooltips now have proper grouping and organization

@@ -7,9 +7,9 @@ export default {
     criticalChance: 0,
     criticalMultiplier: 0,
     defenseTypes: {
-        sturdiness: { min: 20, max: 30 },  // Physical defense
-        structure: { min: 10, max: 10 },   // Elemental defense
-        stability: { min: 10, max: 10 }    // Chemical defense
+        physicalResistance: { min: 20, max: 30 },  // Physical defense
+        elementalResistance: { min: 10, max: 10 },   // Elemental defense
+        chemicalResistance: { min: 10, max: 10 }    // Chemical defense
     },
     healthBonus: { min: 50, max: 100 },
     healthBonusPercentRange: { min: 15, max: 20 },

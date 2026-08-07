@@ -10,9 +10,9 @@ export default {
         kinetic: 5
     },
     defenseTypes: {
-        sturdiness: 15,
-        structure: 25,
-        stability: 0
+        physicalResistance: 15,
+        elementalResistance: 25,
+        chemicalResistance: 0
     },
     lootConfig: {
         baseDropChance: 0.8,

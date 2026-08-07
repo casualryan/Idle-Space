@@ -130,18 +130,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // Wait a bit for the DOM to fully initialize before setting up UI sounds
     setTimeout(setupUISounds, 1000);
     
-    // Add audio toggle to settings
-    const settingsContainer = document.querySelector('.settings-buttons');
-    if (settingsContainer) {
-        const soundToggleBtn = document.createElement('button');
-        soundToggleBtn.id = 'toggle-sound';
-        soundToggleBtn.textContent = 'Sound: ON';
+    const soundToggleBtn = document.getElementById('toggle-sound');
+    if (soundToggleBtn) {
+        soundToggleBtn.textContent = `Sound: ${soundEnabled ? 'ON' : 'OFF'}`;
         soundToggleBtn.addEventListener('click', () => {
             const isEnabled = toggleSound();
             soundToggleBtn.textContent = `Sound: ${isEnabled ? 'ON' : 'OFF'}`;
             playSound('UI_SELECT');
         });
-        settingsContainer.appendChild(soundToggleBtn);
     }
 });
 

@@ -11,9 +11,9 @@ export default {
         pyro: 10
     },
     defenseTypes: {
-        sturdiness: 15,
-        structure: 25,
-        stability: 15
+        physicalResistance: 15,
+        elementalResistance: 25,
+        chemicalResistance: 15
     },
     lootConfig: {
         baseDropChance: 0.8,

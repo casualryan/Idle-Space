@@ -4,7 +4,7 @@ export default {
     type: "Weapon",
     weaponType: "Sword", 
     icon: "icons/ironsword.png", // TODO: Create proper icon
-    bAttackSpeed: 2.2,
+    bAttackSpeed: .8,
     levelRequirement: 1,
     salePrice: 1000,
     damageTypes: {

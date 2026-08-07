@@ -20,9 +20,9 @@ export default {
     
     // Defense properties
     defenseTypes: {
-        sturdiness: "10-20", // Physical defense
-        structure: "5-15",   // Elemental defense
-        stability: "5-10"    // Chemical defense
+        physicalResistance: "10-20", // Physical defense
+        elementalResistance: "5-15",   // Elemental defense
+        chemicalResistance: "5-10"    // Chemical defense
     },
     
     // Health and shield bonuses

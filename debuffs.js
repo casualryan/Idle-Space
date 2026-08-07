@@ -44,14 +44,9 @@ const debuffs = {
             // Store original resistances to restore them later
             this.originalResistances = {};
             if (target.totalStats.defenseTypes) {
-                if (target.totalStats.defenseTypes.kinetic) {
-                    this.originalResistances.kinetic = target.totalStats.defenseTypes.kinetic;
-                    target.totalStats.defenseTypes.kinetic -= target.totalStats.defenseTypes.kinetic * (this.resistanceReduction / 100);
-                }
-                if (target.totalStats.defenseTypes.slashing) {
-                    this.originalResistances.slashing = target.totalStats.defenseTypes.slashing;
-                    target.totalStats.defenseTypes.slashing -= target.totalStats.defenseTypes.slashing * (this.resistanceReduction / 100);
-                }
+                const physicalResistance = target.totalStats.defenseTypes.physicalResistance || 0;
+                this.originalResistances.physicalResistance = physicalResistance;
+                target.totalStats.defenseTypes.physicalResistance = physicalResistance - (physicalResistance * (this.resistanceReduction / 100));
             }
         },
         onRemove: function(target) {
@@ -165,7 +160,7 @@ const debuffs = {
             this.originalResistances = {};
             if (target.totalStats && target.totalStats.defenseTypes) {
                 // Define the defense types to affect
-                const defenseTypesToReduce = ['sturdiness', 'structure', 'stability'];
+                const defenseTypesToReduce = ['physicalResistance', 'elementalResistance', 'chemicalResistance'];
                 for (const type of defenseTypesToReduce) {
                     this.originalResistances[type] = target.totalStats.defenseTypes[type] || 0;
                     // Apply flat reduction
@@ -179,7 +174,7 @@ const debuffs = {
         onRemove: function(target) {
             // Restore original resistances
             if (this.originalResistances && target.totalStats && target.totalStats.defenseTypes) {
-                 const defenseTypesToRestore = ['sturdiness', 'structure', 'stability'];
+                 const defenseTypesToRestore = ['physicalResistance', 'elementalResistance', 'chemicalResistance'];
                  for (const type of defenseTypesToRestore) {
                     // Restore only if we have a stored original value
                     if (this.originalResistances.hasOwnProperty(type)) {
@@ -426,7 +421,7 @@ const debuffs = {
         onApply: function(target, applier) {
             this.lastTickTime = Date.now();
             // If already has the debuff, increase stacks
-            const existingDebuff = target.activeDebuffs ? target.activeDebuffs.find(d => d.name === "radPoisoning") : null;
+            const existingDebuff = target.activeDebuffs ? target.activeDebuffs.find(d => d.name === this.name) : null;
             if (existingDebuff) {
                 existingDebuff.stacks = Math.min(existingDebuff.stacks + 1, this.maxStacks);
                 this.stacks = existingDebuff.stacks;
@@ -456,7 +451,7 @@ const debuffs = {
         duration: 10, // Duration in seconds
         stackable: true,
         stacks: 1,
-        maxStacks: 5,
+        maxStacks: 10,
         tickInterval: 0.5, // Damage tick every 0.5 seconds
         lastTickTime: 0,
         baseDamagePercent: 0.10, // 10% of original damage
@@ -466,7 +461,7 @@ const debuffs = {
             this.sourceDamage = sourceDamage || 0;
             
             // If already has the debuff, increase stacks
-            const existingDebuff = target.activeDebuffs ? target.activeDebuffs.find(d => d.name === "seepingWound") : null;
+            const existingDebuff = target.activeDebuffs ? target.activeDebuffs.find(d => d.name === this.name) : null;
             if (existingDebuff) {
                 existingDebuff.stacks = Math.min(existingDebuff.stacks + 1, this.maxStacks);
                 this.stacks = existingDebuff.stacks;
@@ -771,8 +766,12 @@ function tryApplyDebuffFromDamage(source, target, damageInfo) {
     
     console.log(`tryApplyDebuffFromDamage: Found ${typedDebuffs.length} debuffs for type ${dominantType}`);
     
-    // Check if we should apply a debuff
-    const shouldApply = shouldApplyDebuff();
+    // Check if we should apply a debuff (skill mods may add bonus chance)
+    let debuffChance = DEBUFF_BASE_CHANCE;
+    if (source && source._activeSkillDebuffBonus) {
+        debuffChance += source._activeSkillDebuffBonus;
+    }
+    const shouldApply = shouldApplyDebuff(debuffChance);
     console.log(`tryApplyDebuffFromDamage: shouldApplyDebuff() returned ${shouldApply}`);
     
     if (shouldApply) {

@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Orbitron&display=swap" rel="stylesheet">
     
     <!-- Vite entry point - load before any other scripts that depend on window.weapons -->
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="./src/main.js"></script>
 </head>
 
 <body>
@@ -30,6 +30,11 @@
                 <li data-screen="passives-screen">
                     <img src="icons/passives-icon.png" alt="Passives Icon">
                     <span>Passives</span>
+                </li>
+                <li data-screen="skills-screen">
+                    <img src="icons/passives-icon.png" alt="Combat Styles Icon">
+                    <span>Combat Styles</span>
+                </li>
             </ul>
         </div>
         <hr>
@@ -93,6 +98,7 @@
 
     <!-- Main Content Area -->
     <div id="main-content">
+        <div id="global-status-banner" class="global-status-banner" aria-live="polite"></div>
         <!-- Inventory Screen -->
         <div id="inventory-screen" class="screen active">
             <h2 id="inventory-header">Inventory</h2>
@@ -123,20 +129,34 @@
         <!-- Equipment Screen -->
         <div id="equipment-screen" class="screen">
             <h2>Equipment</h2>
-            <div id="equipment-paper-doll">
-                <!-- Paper-doll layout -->
-                <div id="head-slot" class="equipment-slot" data-slot="head">Head</div>
-                <div id="chest-slot" class="equipment-slot" data-slot="chest">Chest</div>
-                <div id="legs-slot" class="equipment-slot" data-slot="legs">Legs</div>
-                <div id="feet-slot" class="equipment-slot" data-slot="feet">Feet</div>
-                <div id="mainHand-slot" class="equipment-slot" data-slot="mainHand">MainHand</div>
-                <div id="offHand-slot" class="equipment-slot" data-slot="offHand">OffHand</div>
-                <div id="gloves-slot" class="equipment-slot" data-slot="gloves">Gloves</div>
-                <!-- Bionic Slots -->
-                <div id="bionic-slot-0" class="bionic-slot equipment-slot" data-slot="bionic-slot-0">Bionic 1</div>
-                <div id="bionic-slot-1" class="bionic-slot equipment-slot" data-slot="bionic-slot-1">Bionic 2</div>
-                <div id="bionic-slot-2" class="bionic-slot equipment-slot" data-slot="bionic-slot-2">Bionic 3</div>
-                <div id="bionic-slot-3" class="bionic-slot equipment-slot" data-slot="bionic-slot-3">Bionic 4</div>
+            <div id="equipment-screen-layout">
+                <div class="equipment-layout-left">
+                    <div id="equipment-paper-doll">
+                        <!-- Paper-doll layout -->
+                        <div id="head-slot" class="equipment-slot" data-slot="head">Head</div>
+                        <div id="chest-slot" class="equipment-slot" data-slot="chest">Chest</div>
+                        <div id="legs-slot" class="equipment-slot" data-slot="legs">Legs</div>
+                        <div id="feet-slot" class="equipment-slot" data-slot="feet">Feet</div>
+                        <div id="mainHand-slot" class="equipment-slot" data-slot="mainHand">MainHand</div>
+                        <div id="offHand-slot" class="equipment-slot" data-slot="offHand">OffHand</div>
+                        <div id="gloves-slot" class="equipment-slot" data-slot="gloves">Gloves</div>
+                        <!-- Bionic Slots -->
+                        <div id="bionic-slot-0" class="bionic-slot equipment-slot" data-slot="bionic-slot-0">Bionic 1</div>
+                        <div id="bionic-slot-1" class="bionic-slot equipment-slot" data-slot="bionic-slot-1">Bionic 2</div>
+                        <div id="bionic-slot-2" class="bionic-slot equipment-slot" data-slot="bionic-slot-2">Bionic 3</div>
+                        <div id="bionic-slot-3" class="bionic-slot equipment-slot" data-slot="bionic-slot-3">Bionic 4</div>
+                    </div>
+                </div>
+                <div class="equipment-layout-right">
+                    <div id="equipment-stats-panel" class="equipment-side-panel">
+                        <h3>Equipment Stats</h3>
+                        <div class="equipment-panel-empty">Equip gear to view live totals.</div>
+                    </div>
+                    <div id="equipment-build-panel" class="equipment-side-panel">
+                        <h3>Build Summary</h3>
+                        <div class="equipment-panel-empty">Build insights appear here.</div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -149,6 +169,10 @@
             <div id="passive-tiers"></div>
         </div>
 
+        <div id="skills-screen" class="screen">
+            <h2>Combat Styles</h2>
+            <div id="combat-styles-root"></div>
+        </div>
 
         <!-- Shops Screen -->
         <div id="shops-screen" class="screen">
@@ -174,6 +198,9 @@
                     <p>Level: <span id="player-level">1</span></p>
                     <p>Experience: <span id="player-experience">0</span></p>
 
+                    <!-- Active Effects (Buffs & Debuffs) Icons -->
+                    <div id="player-effects-bar" class="effects-bar"></div>
+
                     <!-- Player HP Bar Container -->
                     <div class="hp-bar-container">
                         <div id="player-hp-bar" class="hp-bar"></div>
@@ -198,7 +225,7 @@
                     <h3>Damage Types</h3>
                     <ul id="player-damage-types" class="stat-list"></ul>
                     <div id="player-damage-type-modifiers" style="list-style-type: none;"></div>
-                    <h3>Defense Types</h3>
+                    <h3>Resistance Types</h3>
                     <ul id="player-defense-types" class="stat-list"></ul>
                     <h3>Other Stats</h3>
                     <div>Precision: <span id="player-precision"></span></div>
@@ -220,12 +247,8 @@
                     <h3>Combat Mechanics</h3>
                     <div>Severed Limb Chance: <span id="player-severed-limb-chance"></span>%</div>
                     <div>Max Severed Limbs: <span id="player-max-severed-limbs"></span></div>
-                    <h3>Active Effects</h3>
-                    <ul id="player-active-effects" class="stat-list"></ul>
                     
-                    <!-- Debuff container -->
-                    <h3>Active Debuffs</h3>
-                    <div id="player-debuffs" class="debuff-container"></div>
+                    
 
                 </div>
                 <!-- Enemy Stats -->
@@ -235,6 +258,9 @@
                     <div id="next-enemy-timer" style="display: none;">
                         Next enemy in <span id="next-enemy-countdown">2</span> seconds...
                     </div>
+
+                    <!-- Active Effects (Buffs & Debuffs) Icons -->
+                    <div id="enemy-effects-bar" class="effects-bar"></div>
 
                     <!-- Enemy HP Bar Container -->
                     <div class="hp-bar-container">
@@ -258,14 +284,10 @@
                     <p>Critical Multiplier: <span id="enemy-crit-multiplier">0</span></p>
                     <h3>Damage Types</h3>
                     <ul id="enemy-damage-types" class="stat-list"></ul>
-                    <h3>Defense Types</h3>
+                    <h3>Resistance Types</h3>
                     <ul id="enemy-defense-types" class="stat-list"></ul>
-                    <h3>Active Effects</h3>
-                    <ul id="enemy-active-effects" class="stat-list"></ul>
                     
-                    <!-- Debuff container -->
-                    <h3>Active Debuffs</h3>
-                    <div id="enemy-debuffs" class="debuff-container"></div>
+                    
 
                 </div>
                 <!-- Combat Log -->
@@ -285,25 +307,47 @@
 
         <!-- Mining Screen -->
         <div id="mining-screen" class="screen">
-            <h2>Mining</h2>
-            <div id="mining-activities" class="activities"></div>
-            <h3>Progress</h3>
-            <div class="progress-container">
-                <div id="mining-progress-bar" class="progress-bar gathering-bar"></div>
+            <header class="mining-page-header">
+                <h2>Mining</h2>
+                <p class="mining-description">Extract raw materials used in fabrication. Leveling Mining grants permanent health bonuses.</p>
+            </header>
+            <div class="mining-layout">
+                <section class="mining-operations">
+                    <h3 class="mining-section-title">Mining Operations</h3>
+                    <div id="mining-activities" class="activities mining-activity-grid"></div>
+                </section>
+                <aside class="mining-profile">
+                    <div id="mining-skill-stats"></div>
+                </aside>
             </div>
-            <button id="stop-mining" style="display: none;">Stop Mining</button>
-            <div id="gathering-skill-stats"></div>
+            <section id="mining-active-panel" class="mining-active-panel" style="display: none;">
+                <h3 class="mining-section-title">Currently Mining</h3>
+                <div class="mining-active-name" id="mining-active-name">—</div>
+                <div class="mining-active-meta">
+                    <span id="mining-active-time">—</span>
+                    <span id="mining-active-yield">—</span>
+                </div>
+                <div class="progress-container mining-activity-progress">
+                    <div id="mining-progress-bar" class="progress-bar gathering-bar"></div>
+                </div>
+                <button id="stop-mining" style="display: none;">Stop Mining</button>
+            </section>
         </div>
 
         <!-- fabrication-screen -->
         <div id="fabrication-screen" class="screen">
             <h2>Fabrication</h2>
+            <input id="fabrication-search" type="text" placeholder="Search recipes..." />
             <div id="fabrication-categories">
                 <!-- Categories will be dynamically populated -->
             </div>
             <div id="recipe-container" class="recipe-container">
                 <!-- Recipes will be dynamically populated -->
             </div>
+            <section id="fabrication-active-panel" class="fabrication-active-panel" style="display: none;">
+                <h3 class="fabrication-section-title">Active Fabrications</h3>
+                <div id="fabrication-active-list"></div>
+            </section>
         </div>
 
         <!-- Medtek Screen -->
@@ -321,36 +365,72 @@
 
     <!-- Settings Menu (Modal) -->
     <div id="settings-menu" class="modal">
-        <div class="modal-content">
-            <span id="close-settings" class="close-button">&times;</span>
-            <h2>Settings</h2>
-            <div class="settings-buttons">
-                <button id="save-game">Save Game</button>
-                <button id="load-game">Load Game</button>
-                <button id="reset-game">Reset Save</button>
+        <div class="modal-content settings-modal">
+            <span id="close-settings" class="close-button" aria-label="Close settings">&times;</span>
+            <div class="settings-modal-header">
+                <button type="button" id="settings-back" class="settings-back-btn" hidden aria-label="Back to settings menu">&larr; Back</button>
+                <h2 id="settings-title">Settings</h2>
             </div>
-            <div class="settings-buttons" style="margin-top:8px; gap:8px; display:flex; flex-wrap:wrap;">
-                <button id="sell-all">Sell All</button>
-                <button id="disassemble-all">Disassemble All</button>
-            </div>
-            <hr>
-            <h3>Gameplay</h3>
-            <label style="display:flex; align-items:center; gap:8px; color:#cfe6ff;">
-                <input id="setting-disable-sell-confirm" type="checkbox">
-                Disable sell confirmation
-            </label>
-            <hr>
-            <h3>Keybinds</h3>
-            <div id="keybinds-container" class="keybinds-grid">
-                <div class="keybind-row"><label>Inventory</label><input id="kb-inventory" type="text" maxlength="1" value="I"></div>
-                <div class="keybind-row"><label>Equipment</label><input id="kb-equipment" type="text" maxlength="1" value="E"></div>
-                <div class="keybind-row"><label>Passives</label><input id="kb-passives" type="text" maxlength="1" value="P"></div>
-                <div class="keybind-row"><label>Adventure</label><input id="kb-adventure" type="text" maxlength="1" value="A"></div>
-                <div class="keybind-row"><label>Settings</label><input id="kb-settings" type="text" maxlength="1" value="S"></div>
-            </div>
-            <div style="margin-top:10px; display:flex; gap:8px;">
-                <button id="kb-save" class="btn-small">Save Keybinds</button>
-                <button id="kb-reset" class="btn-small">Reset Defaults</button>
+            <div class="settings-modal-body">
+                <div id="settings-panel-main" class="settings-panel">
+                    <nav class="settings-nav" aria-label="Settings categories">
+                        <button type="button" class="settings-nav-item" data-settings-panel="save">
+                            <span class="settings-nav-label">Save &amp; Load</span>
+                            <span class="settings-nav-desc">Slots, save, load, reset</span>
+                        </button>
+                        <button type="button" class="settings-nav-item" data-settings-panel="gameplay">
+                            <span class="settings-nav-label">Gameplay</span>
+                            <span class="settings-nav-desc">Quality-of-life options</span>
+                        </button>
+                        <button type="button" class="settings-nav-item" data-settings-panel="keybinds">
+                            <span class="settings-nav-label">Keybinds</span>
+                            <span class="settings-nav-desc">Keyboard shortcuts</span>
+                        </button>
+                        <button type="button" class="settings-nav-item" data-settings-panel="dev">
+                            <span class="settings-nav-label">Dev Tools</span>
+                            <span class="settings-nav-desc">Debug helpers</span>
+                        </button>
+                    </nav>
+                </div>
+
+                <div id="settings-panel-save" class="settings-panel" hidden>
+                    <p id="active-save-slot-label" class="active-save-slot-label">Autosave writes to slot 1</p>
+                    <div id="save-slots-list" class="save-slots-grid save-slots-scroll"></div>
+                    <div class="settings-action-grid" id="save-settings-actions">
+                        <button type="button" id="save-game" class="settings-btn settings-btn-primary">Save</button>
+                        <button type="button" id="load-game" class="settings-btn settings-btn-primary">Load</button>
+                        <button type="button" id="reset-game" class="settings-btn settings-btn-danger">Reset</button>
+                        <button type="button" id="toggle-sound" class="settings-btn settings-btn-secondary">Sound: ON</button>
+                    </div>
+                </div>
+
+                <div id="settings-panel-gameplay" class="settings-panel" hidden>
+                    <label class="settings-checkbox-row">
+                        <input id="setting-disable-sell-confirm" type="checkbox">
+                        <span>Disable sell confirmation</span>
+                    </label>
+                </div>
+
+                <div id="settings-panel-keybinds" class="settings-panel" hidden>
+                    <div id="keybinds-container" class="keybinds-grid">
+                        <div class="keybind-row"><label for="kb-inventory">Inventory</label><input id="kb-inventory" type="text" maxlength="1" value="I"></div>
+                        <div class="keybind-row"><label for="kb-equipment">Equipment</label><input id="kb-equipment" type="text" maxlength="1" value="E"></div>
+                        <div class="keybind-row"><label for="kb-passives">Passives</label><input id="kb-passives" type="text" maxlength="1" value="P"></div>
+                        <div class="keybind-row"><label for="kb-adventure">Adventure</label><input id="kb-adventure" type="text" maxlength="1" value="A"></div>
+                        <div class="keybind-row"><label for="kb-settings">Settings</label><input id="kb-settings" type="text" maxlength="1" value="S"></div>
+                    </div>
+                    <div class="settings-action-grid settings-action-grid--compact">
+                        <button type="button" id="kb-save" class="settings-btn settings-btn-primary">Save Keybinds</button>
+                        <button type="button" id="kb-reset" class="settings-btn settings-btn-secondary">Reset Defaults</button>
+                    </div>
+                </div>
+
+                <div id="settings-panel-dev" class="settings-panel" hidden>
+                    <div class="settings-action-grid settings-action-grid--stacked">
+                        <button type="button" id="dev-add-level" class="settings-btn settings-btn-secondary">Add +1 Level</button>
+                        <button type="button" id="dev-add-credits" class="settings-btn settings-btn-secondary">Add +1,000,000 Credits</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -368,8 +448,11 @@
     <script src="enemies.js"></script>
     <script src="injectors.js"></script>
     <script src="passives.js"></script>
+    <script src="skills.js"></script>
+    <script src="skillResolver.js"></script>
     <script src="gathering_activities.js"></script>
     <script src="tooltip.js"></script>
+    <script src="activityManager.js"></script>
     <script src="global.js"></script>
     <script src="inventory.js"></script>
     <script src="gathering.js"></script>
@@ -378,6 +461,7 @@
     <script src="buffs.js"></script>
     <script src="itemgenerator.js"></script>
     <script src="passivesUI.js"></script>
+    <script src="skillsUI.js"></script>
     <script src="sounds.js"></script>
     <script src="statusEffects.js"></script>
     <script src="locations.js"></script>
@@ -389,7 +473,7 @@
     <script src="codex.js"></script>
     
     <!-- Item verification script to ensure weapons are properly loaded -->
-    <script type="module" src="/src/itemsVerifier.js"></script>
+    <script type="module" src="./src/itemsVerifier.js"></script>
 
     <!-- Popups -->
     <div id="damage-popups-container"></div>

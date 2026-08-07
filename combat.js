@@ -1,20 +1,8 @@
 // combat.js
 
-// Import debuffs.js at the top of the file (add this line at the very beginning)
-document.addEventListener('DOMContentLoaded', function() {
-    loadScript('debuffs.js');
-});
-
-// Helper function to load scripts
-function loadScript(src) {
-    return new Promise(function(resolve, reject) {
-        const script = document.createElement('script');
-        script.src = src;
-        script.onload = resolve;
-        script.onerror = reject;
-        document.head.appendChild(script);
-    });
-}
+// ============================================================================
+// 1. GLOBAL VARIABLES & INITIALIZATION
+// ============================================================================
 
 let currentLocation = null;
 let enemy = null;
@@ -27,16 +15,15 @@ let isCombatActive = false;
 let lastCombatLoopTime;
 let adventureStartCountdownInterval;
 let healthRegenInterval = null;
-let playerNextAttackTime = 0; // Add this line to define playerNextAttackTime
-let enemyNextAttackTime = 0; // Add this line to define enemyNextAttackTime
+let playerNextAttackTime = 0;
+let enemyNextAttackTime = 0;
 
-// ------------------- NEW Delve Variables -------------------
+// Delve Variables
 let isDelveInProgress = false;
 let currentDelveLocation = null;
 let currentMonsterIndex = 0; // which monster in the sequence
 let interFightPauseTimer = null;
 let delveBag = { items: [], credits: 0 };
-
 
 document.addEventListener('DOMContentLoaded', () => {
     updatePlayerStatsDisplay();
@@ -163,6 +150,987 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+// ============================================================================
+// 2. CORE COMBAT LOOP
+// ============================================================================
+
+// Fix startCombat function to avoid recursive issues
+function startCombat() {
+    if (isCombatActive) {
+        console.log("Combat already active");
+        return;
+    }
+
+    if (!currentLocation) {
+        console.error("No current location set. Cannot start combat.");
+        return;
+    }
+
+    if (window.activityManager && typeof window.activityManager.isActivityActive === 'function' && window.activityManager.isActivityActive()) {
+        window.activityManager.cancelActivity('combatStart', { silent: true });
+        if (typeof syncGatheringStateFromManager === 'function') {
+            syncGatheringStateFromManager();
+        }
+        logMessage('Non-combat activity paused for combat.');
+    } else if (isGathering) {
+        stopGatheringActivity();
+    }
+
+    // Full player stats reset and initialization
+    console.log("Starting combat - full player stats initialization");
+    resetPlayerStats();
+
+    isCombatActive = true;
+
+    // Initialize enemy (but don't call spawnEnemy recursively from spawnEnemyForSequence)
+    if (!enemy) {
+        spawnEnemy();
+    }
+
+    // Don't need to clear buffs again since resetPlayerStats already did it
+
+    if (enemy) {
+        clearBuffs(enemy);
+        ensureEntityInitialization(enemy, false);
+    } else {
+        console.error("Failed to spawn enemy");
+        stopCombat('enemySpawnFailed');
+        return;
+    }
+
+    // Ensure both attack timers are reset
+    playerAttackTimer = 0;
+    enemyAttackTimer = 0;
+
+    // Initialize attack times based on attack speeds
+    refreshPlayerAttackInterval();
+    enemyNextAttackTime = 1 / (enemy.totalStats.attackSpeed || 1);
+
+    startHealthRegen();
+
+    // Start combat loop
+    lastCombatLoopTime = Date.now();
+    combatInterval = setInterval(combatLoop, 100);
+    console.log("Combat started.");
+
+    // Safely access the stop-combat button
+    const stopCombatButton = document.getElementById('stop-combat');
+    if (stopCombatButton) {
+        stopCombatButton.style.display = 'block';
+    } else {
+        console.warn("'stop-combat' button not found in the DOM");
+    }
+
+    // Debug output player stats
+    console.log("Player stats at combat start:", {
+        currentHealth: player.currentHealth,
+        totalHealth: player.totalStats.health,
+        currentShield: player.currentShield,
+        totalShield: player.totalStats.energyShield
+    });
+
+    // Force update displays immediately
+    updatePlayerStatsDisplay();
+    updateEnemyStatsDisplay();
+
+    // Update the adventure locations display (e.g., change to 'Flee' button)
+    displayAdventureLocations();
+}
+
+function combatLoop() {
+    if (!isCombatActive) return;
+
+    let now = Date.now();
+    let deltaTime = (now - lastCombatLoopTime) / 1000;
+    lastCombatLoopTime = now;
+
+    // Process attack timers
+    if (player) {
+        // Initialize player attack time if needed
+        if (playerNextAttackTime <= 0) {
+            refreshPlayerAttackInterval();
+        }
+
+        // Player attack timer
+        playerAttackTimer += deltaTime;
+        if (playerAttackTimer >= playerNextAttackTime) {
+            playerAttackTimer = 0;
+            refreshPlayerAttackInterval();
+
+            // Only call playerAttack if player and enemy both exist
+            if (player && enemy) {
+                playerAttack();
+            }
+        }
+
+        // Update player progress bar
+        let playerProgress = Math.min((playerAttackTimer / playerNextAttackTime) * 100, 100);
+        document.getElementById('player-attack-progress-bar').style.width = `${playerProgress}%`;
+    }
+
+    // Process enemy attack timer separately to avoid null issues
+    if (enemy && enemy.totalStats) {
+        // Initialize enemy attack time if needed
+        if (enemyNextAttackTime <= 0) {
+            enemyNextAttackTime = 1 / (enemy.totalStats.attackSpeed || 1);
+        }
+
+        // Enemy attack timer
+        enemyAttackTimer += deltaTime;
+        if (enemyAttackTimer >= enemyNextAttackTime) {
+            enemyAttackTimer = 0;
+            enemyNextAttackTime = 1 / (enemy.totalStats.attackSpeed || 1);
+
+            // Only call enemyAttack if player and enemy both exist
+            if (player && enemy) {
+                enemyAttack();
+            }
+        }
+
+        // Update enemy progress bar
+        let enemyProgress = Math.min((enemyAttackTimer / enemyNextAttackTime) * 100, 100);
+        document.getElementById('enemy-attack-progress-bar').style.width = `${enemyProgress}%`;
+    }
+
+    // Safely process entity buffs and status effects
+    try {
+        if (player) {
+            processBuffs(player, deltaTime);
+            if (player.currentHealth > 0) {
+                processStatusEffects(player, deltaTime);
+            }
+        }
+
+        if (enemy) {
+            if (enemy.activeBuffs) {
+                processBuffs(enemy, deltaTime);
+            }
+            if (enemy.currentHealth > 0) {
+                processStatusEffects(enemy, deltaTime);
+
+                // Process debuffs on the enemy
+                if (window.processDebuffs && typeof window.processDebuffs === 'function' && enemy.activeDebuffs) {
+                    window.processDebuffs(enemy, deltaTime);
+                }
+            }
+        }
+    } catch (error) {
+        console.error("Error processing effects:", error);
+    }
+
+    // Check end conditions
+    if (player && player.currentHealth <= 0) {
+        stopCombat('playerDefeated');
+        return;
+    }
+    else if (enemy && enemy.currentHealth <= 0) {
+        // We handle that in applyDamage
+    }
+
+    // Update displays at end of loop
+    updatePlayerStatsDisplay();
+    updateEnemyStatsDisplay();
+}
+
+// Function to stop combat
+function stopCombat(reason) {
+    // Allow delveCompleted to proceed even if combat is already inactive
+    if (!isCombatActive && !isDelveInProgress && reason !== 'delveCompleted') {
+        console.log("Combat already inactive. stopCombat() aborted.");
+        return;
+    }
+
+    if (isCombatActive) {
+        isCombatActive = false;
+        clearInterval(combatInterval);
+        combatInterval = null;
+    }
+
+    // Clear any inter-fight timers
+    if (interFightPauseTimer) {
+        clearTimeout(interFightPauseTimer);
+        interFightPauseTimer = null;
+    }
+
+    // Log the reason combat was stopped
+    if (reason) {
+        logMessage(`Combat stopped due to: ${reason}`);
+    }
+
+    // Reset combat UI and timers
+    playerAttackTimer = 0;
+    enemyAttackTimer = 0;
+    playerNextAttackTime = 0;  // Reset playerNextAttackTime
+    enemyNextAttackTime = 0;   // Reset enemyNextAttackTime
+    document.getElementById('player-attack-progress-bar').style.width = '0%';
+    document.getElementById('enemy-attack-progress-bar').style.width = '0%';
+
+    // Hide the flee button
+    const fleeButton = document.getElementById('stop-combat');
+    if (fleeButton) {
+        fleeButton.style.display = 'none';
+        fleeButton.disabled = false; // Make sure it's enabled for next time
+    }
+
+    // Only restore player health when fleeing or completing a delve
+    // NOT between delve fights
+    if (reason === 'playerFled' || reason === 'delveCompleted' || reason === 'playerDefeated') {
+        player.currentHealth = player.totalStats.health;
+        player.currentShield = player.totalStats.energyShield;
+        updatePlayerStatsDisplay();
+
+        // Always restart health regeneration after combat ends with fleeing, defeat, or delve completion
+        startHealthRegen();
+    }
+
+    // Clear any active debuffs on the player and enemy
+    if (player && player.activeDebuffs && player.activeDebuffs.length > 0) {
+        for (const debuff of player.activeDebuffs) {
+            if (debuff.onRemove) {
+                debuff.onRemove(player);
+            }
+        }
+        player.activeDebuffs = [];
+    }
+
+    if (enemy && enemy.activeDebuffs && enemy.activeDebuffs.length > 0) {
+        for (const debuff of enemy.activeDebuffs) {
+            if (debuff.onRemove) {
+                debuff.onRemove(enemy);
+            }
+        }
+        enemy.activeDebuffs = [];
+    }
+
+    // Handle delve state based on reason
+    if (isDelveInProgress) {
+        if (reason === 'playerFled' || reason === 'playerDefeated') {
+            stopDelveWithFailure();
+
+            // Return to adventure location selection
+            isDelveInProgress = false;
+            currentDelveLocation = null;
+            currentMonsterIndex = 0;
+            displayAdventureLocations();
+
+            // Restart health regeneration as we're no longer in a delve
+            stopHealthRegen();
+            startHealthRegen();
+        }
+        else if (reason === 'enemyDefeated') {
+            dropLoot(enemy);
+
+            // Don't end the delve, we'll handle the next monster
+            currentMonsterIndex++;
+
+            // Clear buffs between fights, but preserve any future medtek injectors
+            clearBuffs(player, true);
+            if (enemy) {
+                clearBuffs(enemy);
+            }
+
+            // Don't restore health between delve fights
+            // Wait 3 seconds before beginning the next fight
+            interFightPauseTimer = setTimeout(() => {
+                beginNextMonsterInSequence();
+            }, 3000);
+        }
+    }
+    
+    // Handle delve completion outside the isDelveInProgress condition
+    if (reason === 'delveCompleted') {
+        console.log("stopCombat - delveCompleted - before setting flags - isDelveInProgress:", isDelveInProgress);
+        // Mark success regardless of current isDelveInProgress flag value
+        isDelveInProgress = false;
+        currentDelveLocation = null;
+        currentMonsterIndex = 0;
+        console.log("stopCombat - delveCompleted - after setting flags - isDelveInProgress:", isDelveInProgress);
+        
+        // Call displayAdventureLocations to refresh the UI
+        displayAdventureLocations();
+        // Auto re-deploy if user has it enabled
+        try {
+            const auto = localStorage.getItem('autoRedeploy') === 'true';
+            if (auto && window.lastDelveLocation) {
+                setTimeout(() => startAdventure(window.lastDelveLocation), 500);
+            }
+        } catch (e) { /* ignore */ }
+        console.log("stopCombat - delveCompleted - after displayAdventureLocations");
+
+        // Restart health regeneration as we're no longer in a delve
+        stopHealthRegen();
+        startHealthRegen();
+    }
+
+    // Non-delve combat: award loot directly to inventory
+    if (reason === 'enemyDefeated' && enemy && !isDelveInProgress) {
+        dropLoot(enemy);
+    }
+
+    // Clean up combat state
+    if (enemy) clearBuffs(enemy);
+    enemy = null;
+    updateEnemyStatsDisplay();
+    initializeEnemyStatsDisplay();
+
+    // Stop health regeneration if we're completely stopping combat, but not for inter-fight pauses
+    if (!isDelveInProgress || reason === 'playerFled' || reason === 'playerDefeated' || reason === 'delveCompleted') {
+        stopHealthRegen();
+    }
+}
+
+// Function to flee combat
+function fleeCombat() {
+    if (isCombatActive) {
+        stopCombat('playerFled');
+        logMessage("You have fled from combat.");
+        currentLocation = null;
+    } else {
+        logMessage("You are not in combat.");
+        // If not in combat, but a countdown is active, cancel it
+        if (adventureStartCountdownInterval) {
+            clearInterval(adventureStartCountdownInterval);
+            adventureStartCountdownInterval = null;
+            const timerElement = document.getElementById('next-enemy-timer');
+            timerElement.style.display = 'none';
+            logMessage("You have canceled the adventure.");
+            currentLocation = null;
+            displayAdventureLocations();
+        }
+    }
+
+    // Update the adventure locations display
+    displayAdventureLocations();
+}
+
+// ============================================================================
+// 3. ENTITY MANAGEMENT
+// ============================================================================
+
+// Define spawnEnemy function
+function spawnEnemy() {
+    if (!currentLocation || !currentLocation.enemies || currentLocation.enemies.length === 0) {
+        console.error("No enemies defined for current location.");
+        return null;
+    }
+
+    // Create a pool of enemies based on spawn rates
+    let enemyPool = [];
+    for (let locEnemy of currentLocation.enemies) {
+        // Use weight/spawnRate to determine how many copies go into the pool
+        const weight = locEnemy.spawnRate || 1;
+        for (let i = 0; i < weight; i++) {
+            enemyPool.push(locEnemy.name);
+        }
+    }
+
+    if (enemyPool.length === 0) {
+        console.error("Enemy pool is empty.");
+        return null;
+    }
+
+    // Select a random enemy from the pool
+    const randomIndex = Math.floor(Math.random() * enemyPool.length);
+    const selectedEnemyName = enemyPool[randomIndex];
+
+    // Now spawn this enemy
+    spawnEnemyForSequence(selectedEnemyName, false);
+}
+
+function spawnEnemyForSequence(monsterName, isEmpowered = false) {
+    // Reset attack timers
+    playerAttackTimer = 0;
+    enemyAttackTimer = 0;
+
+	// Look up the enemy template (prefer window.enemies if available)
+	const enemyPool = (Array.isArray(window.enemies) && window.enemies.length)
+		? window.enemies
+		: (typeof enemies !== 'undefined' ? enemies : []);
+	const enemyTemplate = enemyPool.find(e => e.name === monsterName);
+	if (!enemyTemplate) {
+		// Fallback: try a tolerant comparison ignoring punctuation/case
+		const normalize = (s) => (s || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+		const target = normalize(monsterName);
+		const fallback = enemyPool.find(e => e && normalize(e.name) === target) || null;
+		if (!fallback) {
+			console.error(`Enemy template not found: ${monsterName}`);
+			stopCombat('enemyTemplateNotFound');
+			return;
+		}
+		// use fallback if found
+		enemy = JSON.parse(JSON.stringify(fallback));
+	} else {
+		// Clone from the template
+		enemy = JSON.parse(JSON.stringify(enemyTemplate));
+	}
+
+	// Initialize basic properties
+	enemy.statusEffects = [];
+	enemy.activeBuffs = [];
+	enemy.effects = enemy.effects || [];
+
+    // Initialize enemy's current health
+    enemy.currentHealth = enemy.health;
+    enemy.currentShield = enemy.energyShield || 0;
+
+    // Calculate initial totalStats using the centralized function
+    if (typeof calculateEnemyStats === 'function') {
+        calculateEnemyStats(enemy);
+    } else {
+        console.error("calculateEnemyStats function not found during enemy spawn!");
+    }
+
+    // Apply empowered bonuses if applicable
+    if (isEmpowered) {
+        // Boost stats
+        enemy.health = Math.round(enemy.health * 1.5);
+        enemy.currentHealth = enemy.health; // Reset current health to new max
+
+        if (enemy.energyShield) {
+            enemy.energyShield = Math.round(enemy.energyShield * 1.5);
+            enemy.currentShield = enemy.energyShield;
+        }
+
+        // Boost all damage types by 50%
+        if (enemy.damageTypes) {
+            for (let damageType in enemy.damageTypes) {
+                enemy.damageTypes[damageType] = Math.round(enemy.damageTypes[damageType] * 1.5);
+            }
+        }
+
+        // Add 'Empowered' to the name
+        enemy.name = "Empowered " + enemy.name;
+
+        // Update totalStats again after empowerment using the centralized function
+        if (typeof calculateEnemyStats === 'function') {
+            calculateEnemyStats(enemy);
+        } else {
+            console.error("calculateEnemyStats function not found after empowerment!");
+        }
+
+        // Add a visual indicator
+        logMessage(`An empowered ${monsterName} appears!`);
+    }
+
+    clearLog();
+    updateEnemyStatsDisplay();
+
+    // Initialize attack timers if combat is already active
+    if (isCombatActive) {
+        refreshPlayerAttackInterval();
+        enemyNextAttackTime = 1 / (enemy.totalStats.attackSpeed || 1);
+    }
+
+    if (!isCombatActive) {
+        startCombat();
+    }
+
+    // Make the Flee button clickable
+    const fleeButton = document.getElementById('stop-combat');
+    if (fleeButton) {
+        fleeButton.disabled = false;
+    }
+
+    logMessage(`A ${enemy.name} appears!`);
+
+    // Debug info
+    console.log("Enemy spawned:", enemy);
+}
+
+// Add this function to ensure entities are properly initialized
+function ensureEntityInitialization(entity, isPlayer) {
+    if (!entity) {
+        console.error(`Attempted to initialize ${isPlayer ? 'player' : 'enemy'} but entity is null`);
+        return false;
+    }
+
+    // Ensure basic properties exist
+    if (!entity.effects) entity.effects = [];
+    if (!entity.statusEffects) entity.statusEffects = [];
+    if (!entity.activeBuffs) entity.activeBuffs = [];
+    if (!entity.activeDebuffs) entity.activeDebuffs = [];
+
+    // Ensure totalStats exists
+    if (!entity.totalStats) {
+        entity.totalStats = {};
+    }
+
+    // Ensure damage types and defense types exist in totalStats
+    if (!entity.totalStats.damageTypes) {
+        entity.totalStats.damageTypes = {};
+    }
+
+    if (!entity.totalStats.defenseTypes) {
+        entity.totalStats.defenseTypes = {};
+    }
+
+    // Ensure health values
+    if (entity.currentHealth === undefined || entity.currentHealth === null) {
+        console.warn(`Initializing ${isPlayer ? 'player' : 'enemy'} currentHealth`);
+        if (isPlayer) {
+            entity.currentHealth = entity.totalStats?.health || 100;
+        } else {
+            entity.currentHealth = entity.health || 100;
+        }
+    }
+
+    if (entity.currentShield === undefined || entity.currentShield === null) {
+        console.warn(`Initializing ${isPlayer ? 'player' : 'enemy'} currentShield`);
+        if (isPlayer) {
+            entity.currentShield = entity.totalStats?.energyShield || 0;
+        } else {
+            entity.currentShield = entity.energyShield || 0;
+        }
+    }
+
+    // Ensure attack speed is set
+    if (!entity.totalStats.attackSpeed) {
+        if (isPlayer) {
+            entity.totalStats.attackSpeed = 1; // Default value if not set
+        } else {
+            // For enemy, use base attackSpeed or default to 1
+            entity.totalStats.attackSpeed = entity.attackSpeed || 1;
+        }
+    }
+
+    // Ensure totalStats
+    if (isPlayer) {
+        // For player, use calculateStats method
+        if (typeof entity.calculateStats === 'function') {
+            entity.calculateStats();
+        } else {
+            console.error("Player's calculateStats method is missing!");
+            return false;
+        }
+    } else {
+        // For enemy, use the new centralized function
+        try {
+            // Ensure calculateEnemyStats is available (from stats.js)
+            if (typeof calculateEnemyStats === 'function') {
+                calculateEnemyStats(enemy);
+            } else {
+                 console.error("calculateEnemyStats function not found!");
+                 return false;
+            }
+        } catch (error) {
+            console.error("Error calculating enemy stats:", error);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function resetPlayerStats() {
+    // First initialize base stats
+    player.baseStats = JSON.parse(JSON.stringify(playerBaseStats));
+
+    // Calculate total stats
+    player.calculateStats();
+
+    // Set current health and shield to full
+    player.currentHealth = player.totalStats.health;
+    player.currentShield = player.totalStats.energyShield;
+
+    // Clear status effects
+    player.statusEffects = [];
+
+    // Update display
+    updatePlayerStatsDisplay();
+
+    // Clear any buffs
+    clearBuffs(player);
+
+    console.log("Player stats reset:", player);
+}
+
+// ============================================================================
+// 4. ACTIONS
+// ============================================================================
+
+function refreshPlayerAttackInterval() {
+    if (!player) return;
+    playerNextAttackTime = typeof getPlayerAttackInterval === 'function'
+        ? getPlayerAttackInterval(player)
+        : 1 / (player.totalStats?.attackSpeed || 1);
+}
+
+function runSkillHitProcs(attacker, defender, damageResult, profile, hitIndex) {
+    if (!attacker || !defender) return;
+
+    attacker.effects = attacker.effects || [];
+    defender.effects = defender.effects || [];
+
+    if (attacker.effects.length > 0) {
+        if (typeof shouldProcOnHit === 'function' && shouldProcOnHit(profile, 'onHit', hitIndex)) {
+            processEffects(attacker, 'onHit', defender);
+        }
+        if (damageResult.isCritical && typeof shouldProcOnHit === 'function' && shouldProcOnHit(profile, 'onCritical', hitIndex)) {
+            processEffects(attacker, 'onCritical', defender, damageResult.total);
+        }
+    }
+
+    if (defender.effects && defender.effects.length > 0) {
+        processEffects(defender, 'whenHit', attacker);
+    }
+
+    if (defender.activeDebuffs && Array.isArray(defender.activeDebuffs)) {
+        for (const debuff of defender.activeDebuffs) {
+            if (debuff && debuff.onReceiveHit) {
+                debuff.onReceiveHit(defender, { total: damageResult.total, ...damageResult.damageBreakdown }, attacker);
+            }
+        }
+    }
+}
+
+function executeEquippedSkill(attacker, defender) {
+    if (!isCombatActive) {
+        console.log("executeEquippedSkill called but combat is not active");
+        return;
+    }
+
+    if (!attacker || !defender) {
+        console.warn("executeEquippedSkill called but attacker or defender is null");
+        return;
+    }
+
+    if (!ensureEntityInitialization(attacker, attacker === player) || !ensureEntityInitialization(defender, defender === player)) {
+        console.warn("Entity initialization failed in executeEquippedSkill");
+        return;
+    }
+
+    try {
+        // Debuff onAttack once per skill cycle (e.g. stagger)
+        if (defender.activeDebuffs && Array.isArray(defender.activeDebuffs)) {
+            for (const debuff of defender.activeDebuffs) {
+                if (debuff && debuff.onAttack) {
+                    const result = debuff.onAttack(defender, attacker);
+                    if (result === false) {
+                        return;
+                    }
+                }
+            }
+        }
+
+        const profile = typeof resolveSkillProfile === 'function'
+            ? resolveSkillProfile(attacker)
+            : { hitCount: 1, damageMultiplier: 1, displayName: 'Attack', comboAfterSkill: true, comboProcStrength: 0, debuffApplyBonus: 0 };
+
+        attacker._activeSkillDebuffBonus = profile.debuffApplyBonus || 0;
+
+        let lastDamageResult = null;
+        const attackerLabel = attacker.name || 'Player';
+        const defenderName = defender.name || 'Enemy';
+
+        for (let hit = 0; hit < profile.hitCount; hit++) {
+            if (!isCombatActive || !attacker || !defender) break;
+
+            const hitCtx = typeof buildHitContext === 'function'
+                ? buildHitContext(profile, hit)
+                : { damageMultiplier: profile.damageMultiplier };
+
+            let damageResult;
+            if (typeof calculateDamage === 'function') {
+                damageResult = calculateDamage(attacker, defender, hitCtx);
+                window.__lastIsCrit = !!damageResult.isCritical;
+                window.__lastIsDebuff = false;
+            } else {
+                damageResult = { total: 0, damageBreakdown: {}, isCritical: false };
+            }
+
+            if (typeof scaleDamageResult === 'function' && hitCtx.damageMultiplier !== 1) {
+                damageResult = scaleDamageResult(damageResult, hitCtx.damageMultiplier);
+            }
+
+            if (typeof addToCombatLog === 'function' && damageResult.total > 0) {
+                const critText = damageResult.isCritical
+                    ? ' <span style="color: yellow; font-weight: bold;">(CRITICAL!)</span>'
+                    : '';
+                const hitLabel = profile.hitCount > 1
+                    ? ` (${hit + 1}/${profile.hitCount})`
+                    : '';
+                addToCombatLog(
+                    `${attackerLabel} — ${profile.displayName}${hitLabel} for ${damageResult.total} damage${critText}`,
+                    '#ffffff',
+                    false
+                );
+            }
+
+            if (!defender) break;
+
+            applyDamage(defender, damageResult.total, defenderName, damageResult.damageBreakdown);
+
+            if (!attacker || !defender) break;
+
+            runSkillHitProcs(attacker, defender, damageResult, profile, hit);
+            lastDamageResult = damageResult;
+
+            if (!defender) break;
+        }
+
+        attacker._activeSkillDebuffBonus = 0;
+
+        if (profile.comboAfterSkill !== false && lastDamageResult && attacker && defender) {
+            processComboAttacks(attacker, defender, lastDamageResult, profile);
+        }
+    } catch (error) {
+        console.error("Error in executeEquippedSkill:", error);
+        if (attacker) attacker._activeSkillDebuffBonus = 0;
+    }
+}
+
+// Function for player attack — always uses equipped combat skill
+function playerAttack() {
+    executeEquippedSkill(player, enemy);
+}
+
+function enemyAttack() {
+    // Exit early if combat is no longer active
+    if (!isCombatActive) {
+        console.log("enemyAttack called but combat is not active");
+        return;
+    }
+
+    // Additional safety checks
+    if (!player || !enemy) {
+        console.warn("enemyAttack called but player or enemy is null");
+        return;
+    }
+
+    // Ensure entities are properly initialized
+    if (!ensureEntityInitialization(player, true) || !ensureEntityInitialization(enemy, false)) {
+        console.warn("Entity initialization failed in enemyAttack");
+        return;
+    }
+
+    try {
+        // Process any debuffs that might prevent the attack
+        if (enemy.activeDebuffs && Array.isArray(enemy.activeDebuffs)) {
+            for (const debuff of enemy.activeDebuffs) {
+                if (debuff && debuff.onAttack) {
+                    const result = debuff.onAttack(enemy, player);
+                    if (result === false) {
+                        // Attack was prevented by a debuff
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Get damage calculation with breakdown using the centralized function
+        let damageResult;
+         if (typeof calculateDamage === 'function') {
+             damageResult = calculateDamage(enemy, player);
+             window.__lastIsCrit = !!damageResult.isCritical;
+             window.__lastIsDebuff = false;
+         } else {
+             console.error("calculateDamage function not found!");
+             damageResult = { total: 0, damageBreakdown: {}, isCritical: false }; // Default to no damage
+         }
+
+        // Add combat log entry for damage info
+        if (typeof addToCombatLog === 'function' && damageResult.total > 0) {
+            const critText = damageResult.isCritical ? ' <span style="color: yellow; font-weight: bold;">(CRITICAL!)</span>' : '';
+            addToCombatLog(`${enemy.name} attacks for ${damageResult.total} damage${critText}`, '#ffffff', false);
+        }
+
+        // Check again if player is null before proceeding
+        if (!player) {
+            console.warn("Player became null during enemyAttack");
+            return;
+        }
+
+        applyDamage(player, damageResult.total, "Player", damageResult.damageBreakdown);
+
+        // Check again after damage application if entities still exist
+        if (!player || !enemy) {
+            console.warn("Entity became null after damage application in enemyAttack");
+            return;
+        }
+
+        // Ensure both player and enemy have their effects arrays properly initialized
+        player.effects = player.effects || [];
+        enemy.effects = enemy.effects || [];
+
+        // Process effects with explicit empty array check
+        if (enemy && enemy.effects && Array.isArray(enemy.effects) && enemy.effects.length > 0) {
+            processEffects(enemy, 'onHit', player);
+        }
+
+        // Check if player is still valid before proceeding
+        if (!player) {
+            console.warn("Player became null during effect processing");
+            return;
+        }
+
+        if (player && player.effects && Array.isArray(player.effects) && player.effects.length > 0) {
+            processEffects(player, 'whenHit', enemy);
+        }
+        
+        // Process combo attacks for enemy
+        processComboAttacks(enemy, player, damageResult);
+        
+    } catch (error) {
+        console.error("Error in enemyAttack:", error);
+    }
+}
+
+function processComboAttacks(attacker, defender, originalDamageResult, skillProfile = null) {
+    // Safety checks
+    if (!attacker || !defender || !attacker.totalStats) {
+        return;
+    }
+
+    if (skillProfile && skillProfile.comboAfterSkill === false) {
+        return;
+    }
+    
+    // Check if attacker has combo attack chance
+    const comboChance = attacker.totalStats.comboAttack || 0;
+    if (comboChance <= 0) {
+        return; // No combo attack chance
+    }
+    
+    // Check if combo attack triggers
+    if (Math.random() * 100 > comboChance) {
+        return; // Combo attack didn't trigger
+    }
+    
+    // Calculate number of combo hits
+    const baseComboHits = 1; // Base 1 additional hit
+    const additionalHits = Number(attacker.totalStats.additionalComboAttacks || 0);
+    const totalComboHits = baseComboHits + additionalHits;
+    
+    // Calculate combo damage (base 20% of original damage)
+    const baseComboDamagePercent = 20;
+    const comboEffectiveness = attacker.totalStats.comboEffectiveness || 0;
+    const finalComboDamagePercent = baseComboDamagePercent + comboEffectiveness;
+    
+    const attackerName = attacker.name || 'Unknown';
+    const defenderName = defender.name || 'Unknown';
+    
+    console.log(`${attackerName} triggers combo attack! ${totalComboHits} additional hit(s) for ${finalComboDamagePercent}% damage each.`);
+    
+    // Add combat log entry
+    if (typeof addToCombatLog === 'function') {
+        addToCombatLog(`${attackerName} triggers combo attack! (${totalComboHits} hit${totalComboHits > 1 ? 's' : ''})`, '#ffaa00', false);
+    }
+    
+    // Execute combo hits
+    for (let i = 0; i < totalComboHits; i++) {
+        // Check if combat is still active and entities exist
+        if (!isCombatActive || !attacker || !defender) {
+            break;
+        }
+        
+        // Calculate combo damage for each hit type
+        let totalComboDamage = 0;
+        const comboDamageBreakdown = {};
+        
+        for (const damageType in originalDamageResult.damageBreakdown) {
+            const originalDamage = originalDamageResult.damageBreakdown[damageType];
+            const comboDamage = Math.round(originalDamage * finalComboDamagePercent / 100);
+            
+            if (comboDamage > 0) {
+                comboDamageBreakdown[damageType] = comboDamage;
+                totalComboDamage += comboDamage;
+            }
+        }
+        
+        // Apply combo damage (no proc effects for combo attacks)
+        if (totalComboDamage > 0) {
+            console.log(`Combo hit ${i + 1}/${totalComboHits}: ${totalComboDamage} damage`);
+            
+            // Add combat log entry for each combo hit
+            if (typeof addToCombatLog === 'function') {
+                addToCombatLog(`Combo hit ${i + 1}: ${totalComboDamage} damage`, '#ffcc66', false);
+            }
+            
+            applyDamage(defender, totalComboDamage, defenderName, comboDamageBreakdown);
+
+            const comboProcStrength = skillProfile?.comboProcStrength || 0;
+            if (comboProcStrength > 0 && attacker.effects && attacker.effects.length > 0) {
+                processComboHitProcs(attacker, defender, comboProcStrength);
+            }
+        }
+    }
+}
+
+function processComboHitProcs(attacker, defender, procStrength) {
+    if (!attacker?.effects?.length || procStrength <= 0) return;
+
+    const effectsCopy = [...attacker.effects];
+    for (const effect of effectsCopy) {
+        if (!effect || effect.trigger !== 'onHit') continue;
+
+        let baseChance = effect.chance || 0;
+        let efficiencyBonus = 0;
+        if (attacker.totalStats) {
+            efficiencyBonus = attacker.totalStats.weaponEfficiency || 0;
+        }
+        const modifiedChance = (baseChance + (baseChance * efficiencyBonus / 100)) * procStrength;
+        const finalChance = Math.min(modifiedChance, 1.0);
+
+        if (Math.random() < finalChance) {
+            try {
+                executeEffectAction(effect, attacker, defender, 0);
+            } catch (error) {
+                console.error('Error processing combo proc effect:', effect, error);
+            }
+        }
+    }
+}
+
+window.refreshPlayerAttackInterval = refreshPlayerAttackInterval;
+window.executeEquippedSkill = executeEquippedSkill;
+
+// ============================================================================
+// 5. DELVE SYSTEM
+// ============================================================================
+
+function startAdventure(location) {
+    if (window.activityManager && typeof window.activityManager.isActivityActive === 'function' && window.activityManager.isActivityActive()) {
+        window.activityManager.cancelActivity('delveStart', { silent: true });
+        if (typeof syncGatheringStateFromManager === 'function') {
+            syncGatheringStateFromManager();
+        }
+        logMessage('Non-combat activity paused for delve.');
+    } else if (isGathering) {
+        stopGatheringActivity();
+    }
+
+    if (isCombatActive || isDelveInProgress) {
+        logMessage("You are already on an adventure!");
+        return;
+    }
+
+    // Reset and prepare for adventure
+    clearLog();
+    logMessage(`You begin your delve into ${location.name}.`);
+    currentLocation = location;
+    // Remember for auto re-deploy preference
+    window.lastDelveLocation = location;
+
+    // Make sure health regen is properly initialized before entering delve mode
+    // This ensures it's ready to work when the delve ends
+    // stopHealthRegen(); // Clear any existing timers
+    startHealthRegen(); // Initialize the health regeneration system
+
+    // Now set up the delve
+    currentDelveLocation = location;
+    currentMonsterIndex = 0;
+    isDelveInProgress = true;
+    delveBag = { items: [], credits: 0 };
+    updateDelveBagUI(); // Update UI when adventure starts
+
+    // We rely on displayAdventureLocations() to hide the location buttons
+    // and show the "Flee" button instead.
+    displayAdventureLocations();
+
+    // Begin with the first monster
+    beginNextMonsterInSequence();
+}
 
 function displayAdventureLocations() {
     const delveControlsDiv = document.getElementById('delve-controls');
@@ -712,43 +1680,6 @@ function displayAdventureLocations() {
     }
 }
 
-function startAdventure(location) {
-    if (isGathering) {
-        stopGatheringActivity();
-    }
-
-    if (isCombatActive || isDelveInProgress) {
-        logMessage("You are already on an adventure!");
-        return;
-    }
-
-    // Reset and prepare for adventure
-    clearLog();
-    logMessage(`You begin your delve into ${location.name}.`);
-    currentLocation = location;
-    // Remember for auto re-deploy preference
-    window.lastDelveLocation = location;
-
-    // Make sure health regen is properly initialized before entering delve mode
-    // This ensures it's ready to work when the delve ends
-    // stopHealthRegen(); // Clear any existing timers
-    startHealthRegen(); // Initialize the health regeneration system
-
-    // Now set up the delve
-    currentDelveLocation = location;
-    currentMonsterIndex = 0;
-    isDelveInProgress = true;
-    delveBag = { items: [], credits: 0 };
-    updateDelveBagUI(); // Update UI when adventure starts
-
-    // We rely on displayAdventureLocations() to hide the location buttons
-    // and show the "Flee" button instead.
-    displayAdventureLocations();
-
-    // Begin with the first monster
-    beginNextMonsterInSequence();
-}
-
 function beginNextMonsterInSequence() {
     // If we've completed all fights for this location, the delve is complete
     if (currentMonsterIndex >= currentDelveLocation.numFights) {
@@ -817,23 +1748,42 @@ function beginNextMonsterInSequence() {
     spawnEnemyForSequence(selectedEnemy.name, isEmpowered);
 }
 
+function addItemToDelveBag(itemInstance) {
+    if (!itemInstance) return;
+
+    const qty = Math.max(1, Number(itemInstance.quantity) || 1);
+    itemInstance.quantity = qty;
+
+    const isStackable = itemInstance.stackable || itemInstance.type === 'Material';
+    if (isStackable) {
+        if (itemInstance.type === 'Material') itemInstance.stackable = true;
+        const existing = delveBag.items.find(
+            item => item.name === itemInstance.name && (item.stackable === true || item.type === 'Material')
+        );
+        if (existing) {
+            existing.quantity = (Number(existing.quantity) || 1) + qty;
+            logMessage(`Item added to delve bag: ${existing.name} x${existing.quantity}`);
+            return;
+        }
+    }
+
+    delveBag.items.push(itemInstance);
+    logMessage(`Item added to delve bag: ${itemInstance.name} x${qty}`);
+}
+
 function addMonsterLootToDelveBag(monster) {
-    // Skip if monster doesn't have loot config
-    if (!monster.lootConfig) return;
+    if (!monster) return;
 
-    // Generate loot items using the new loot system
-    const player = window.player || {}; // Get player for modifiers
-    const lootItems = generateLoot(monster, player);
+    const player = window.player || {};
 
-    // Add the items to the delve bag
-    lootItems.forEach(itemInstance => {
-        // Add the fully generated item to the delve bag
-        delveBag.items.push(itemInstance);
+    if (monster.lootConfig) {
+        const lootItems = generateLoot(monster, player);
 
-        logMessage(`Item added to delve bag: ${itemInstance.name} x${itemInstance.quantity || 1}`);
-    });
+        lootItems.forEach(itemInstance => {
+            addItemToDelveBag(itemInstance);
+        });
+    }
 
-    // Handle currency drops
     if (monster.currencyDrop) {
         if (Math.random() < monster.currencyDrop.dropRate) {
             const amt = getRandomInt(monster.currencyDrop.min, monster.currencyDrop.max);
@@ -891,355 +1841,132 @@ function stopDelveWithFailure() {
     updateDelveBagUI(); // Update UI when delve fails
 }
 
-function clearLog() {
-    const logElement = document.getElementById("log-messages");
-    logElement.innerHTML = "";
+// Add this new function to create and update the Delve Bag UI
+function updateDelveBagUI() {
+    // Find or create the delve bag container
+    let delveBagContainer = document.getElementById('delve-bag-container');
+
+    if (!delveBagContainer) {
+        // Create the container if it doesn't exist
+        delveBagContainer = document.createElement('div');
+        delveBagContainer.id = 'delve-bag-container';
+        delveBagContainer.className = 'delve-bag';
+
+        // Create header
+        const header = document.createElement('h3');
+        header.textContent = 'Delve Bag';
+        delveBagContainer.appendChild(header);
+
+        // Create credits display
+        const creditsDiv = document.createElement('div');
+        creditsDiv.id = 'delve-bag-credits';
+        creditsDiv.className = 'delve-bag-credits';
+        delveBagContainer.appendChild(creditsDiv);
+
+        // Create items list
+        const itemsList = document.createElement('ul');
+        itemsList.id = 'delve-bag-items';
+        delveBagContainer.appendChild(itemsList);
+
+        // Add to the DOM - place it after enemy stats
+        const enemyStats = document.getElementById('enemy-stats');
+        if (enemyStats && enemyStats.parentNode) {
+            enemyStats.parentNode.insertBefore(delveBagContainer, enemyStats.nextSibling);
+        }
+    }
+
+    // Update credits display
+    const creditsDiv = document.getElementById('delve-bag-credits');
+    if (creditsDiv) {
+        creditsDiv.textContent = `Credits: ${delveBag.credits}`;
+    }
+
+    // Update items list
+    const itemsList = document.getElementById('delve-bag-items');
+    if (itemsList) {
+        // Clear current items
+        itemsList.innerHTML = '';
+
+        // Add each item with a tooltip
+        delveBag.items.forEach(item => {
+            const listItem = document.createElement('li');
+            listItem.textContent = `${item.name} x${item.quantity || 1}`;
+
+            // Create an actual tooltip element (the old-fashioned way)
+            const tooltip = document.createElement('div');
+            tooltip.className = 'tooltip';
+            tooltip.style.display = 'none'; // Initially hidden
+            tooltip.innerHTML = getItemTooltipContent(item);
+            listItem.appendChild(tooltip);
+
+            // Also add data attributes for the global tooltip system as a backup
+            listItem.dataset.hasTooltip = 'true';
+
+            // Set unique ID to help debug
+            const uniqueId = `delve-item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+            listItem.id = uniqueId;
+
+            // Old hover handler (fallback method)
+            listItem.addEventListener('mouseenter', () => {
+                console.log(`Mouse entered delve bag item: ${item.name}`);
+                tooltip.style.display = 'block';
+            });
+
+            listItem.addEventListener('mouseleave', () => {
+                tooltip.style.display = 'none';
+            });
+
+            itemsList.appendChild(listItem);
+        });
+
+        // Show "empty" message if no items
+        if (delveBag.items.length === 0) {
+            const emptyMessage = document.createElement('li');
+            emptyMessage.textContent = 'Empty';
+            emptyMessage.className = 'empty-bag';
+            itemsList.appendChild(emptyMessage);
+        }
+    }
+
+    // Always show the delve bag (removed conditional display)
+    if (delveBagContainer) {
+        delveBagContainer.style.display = 'block';
+    }
 }
 
-// Add this function to ensure entities are properly initialized
-function ensureEntityInitialization(entity, isPlayer) {
-    if (!entity) {
-        console.error(`Attempted to initialize ${isPlayer ? 'player' : 'enemy'} but entity is null`);
-        return false;
-    }
-
-    // Ensure basic properties exist
-    if (!entity.effects) entity.effects = [];
-    if (!entity.statusEffects) entity.statusEffects = [];
-    if (!entity.activeBuffs) entity.activeBuffs = [];
-    if (!entity.activeDebuffs) entity.activeDebuffs = [];
-
-    // Ensure totalStats exists
-    if (!entity.totalStats) {
-        entity.totalStats = {};
-    }
-
-    // Ensure damage types and defense types exist in totalStats
-    if (!entity.totalStats.damageTypes) {
-        entity.totalStats.damageTypes = {};
-    }
-
-    if (!entity.totalStats.defenseTypes) {
-        entity.totalStats.defenseTypes = {};
-    }
-
-    // Ensure health values
-    if (entity.currentHealth === undefined || entity.currentHealth === null) {
-        console.warn(`Initializing ${isPlayer ? 'player' : 'enemy'} currentHealth`);
-        if (isPlayer) {
-            entity.currentHealth = entity.totalStats?.health || 100;
-        } else {
-            entity.currentHealth = entity.health || 100;
+// XP penalty helpers based on zone level vs player level
+function calculateZoneXPPenaltyPercent() {
+    try {
+        if (!currentLocation || typeof currentLocation.recommendedLevel !== 'number') return 0;
+        if (!player || typeof player.level !== 'number') return 0;
+        const delta = player.level - currentLocation.recommendedLevel;
+        if (delta >= 5) {
+            return Math.min(100, delta * 10);
         }
-    }
-
-    if (entity.currentShield === undefined || entity.currentShield === null) {
-        console.warn(`Initializing ${isPlayer ? 'player' : 'enemy'} currentShield`);
-        if (isPlayer) {
-            entity.currentShield = entity.totalStats?.energyShield || 0;
-        } else {
-            entity.currentShield = entity.energyShield || 0;
-        }
-    }
-
-    // Ensure attack speed is set
-    if (!entity.totalStats.attackSpeed) {
-        if (isPlayer) {
-            entity.totalStats.attackSpeed = 1; // Default value if not set
-        } else {
-            // For enemy, use base attackSpeed or default to 1
-            entity.totalStats.attackSpeed = entity.attackSpeed || 1;
-        }
-    }
-
-    // Ensure totalStats
-    if (isPlayer) {
-        // For player, use calculateStats method
-        if (typeof entity.calculateStats === 'function') {
-            entity.calculateStats();
-        } else {
-            console.error("Player's calculateStats method is missing!");
-            return false;
-        }
-    } else {
-        // For enemy, use the new centralized function
-        try {
-            // Ensure calculateEnemyStats is available (from stats.js)
-            if (typeof calculateEnemyStats === 'function') {
-                calculateEnemyStats(enemy);
-            } else {
-                 console.error("calculateEnemyStats function not found!");
-                 return false;
-            }
-        } catch (error) {
-            console.error("Error calculating enemy stats:", error);
-            return false;
-        }
-    }
-
-    return true;
+        return 0;
+    } catch (e) { return 0; }
 }
 
-// Define spawnEnemy function
-function spawnEnemy() {
-    if (!currentLocation || !currentLocation.enemies || currentLocation.enemies.length === 0) {
-        console.error("No enemies defined for current location.");
-        return null;
+function awardXPWithZonePenalty(baseXP, defeatedName) {
+    let xp = Math.floor(Number(baseXP) || 0);
+    const penalty = calculateZoneXPPenaltyPercent();
+    if (penalty > 0 && xp > 0) {
+        // Apply penalty and round down per spec
+        xp = Math.floor(xp * (1 - (penalty / 100)));
+        if (xp < 0) xp = 0;
     }
-
-    // Create a pool of enemies based on spawn rates
-    let enemyPool = [];
-    for (let locEnemy of currentLocation.enemies) {
-        // Use weight/spawnRate to determine how many copies go into the pool
-        const weight = locEnemy.spawnRate || 1;
-        for (let i = 0; i < weight; i++) {
-            enemyPool.push(locEnemy.name);
-        }
-    }
-
-    if (enemyPool.length === 0) {
-        console.error("Enemy pool is empty.");
-        return null;
-    }
-
-    // Select a random enemy from the pool
-    const randomIndex = Math.floor(Math.random() * enemyPool.length);
-    const selectedEnemyName = enemyPool[randomIndex];
-
-    // Now spawn this enemy
-    spawnEnemyForSequence(selectedEnemyName, false);
-}
-
-// Fix startCombat function to avoid recursive issues
-function startCombat() {
-    if (isCombatActive) {
-        console.log("Combat already active");
-        return;
-    }
-
-    if (!currentLocation) {
-        console.error("No current location set. Cannot start combat.");
-        return;
-    }
-
-    if (isGathering) {
-        stopGatheringActivity();
-    }
-
-    // Full player stats reset and initialization
-    console.log("Starting combat - full player stats initialization");
-    resetPlayerStats();
-
-    isCombatActive = true;
-
-    // Initialize enemy (but don't call spawnEnemy recursively from spawnEnemyForSequence)
-    if (!enemy) {
-        spawnEnemy();
-    }
-
-    // Don't need to clear buffs again since resetPlayerStats already did it
-
-    if (enemy) {
-        clearBuffs(enemy);
-        ensureEntityInitialization(enemy, false);
-    } else {
-        console.error("Failed to spawn enemy");
-        stopCombat('enemySpawnFailed');
-        return;
-    }
-
-    // Ensure both attack timers are reset
-    playerAttackTimer = 0;
-    enemyAttackTimer = 0;
-
-    // Initialize attack times based on attack speeds
-    playerNextAttackTime = 1 / (player.totalStats.attackSpeed || 1);
-    enemyNextAttackTime = 1 / (enemy.totalStats.attackSpeed || 1);
-
-    startHealthRegen();
-
-    // Start combat loop
-    lastCombatLoopTime = Date.now();
-    combatInterval = setInterval(combatLoop, 100);
-    console.log("Combat started.");
-
-    // Safely access the stop-combat button
-    const stopCombatButton = document.getElementById('stop-combat');
-    if (stopCombatButton) {
-        stopCombatButton.style.display = 'block';
-    } else {
-        console.warn("'stop-combat' button not found in the DOM");
-    }
-
-    // Debug output player stats
-    console.log("Player stats at combat start:", {
-        currentHealth: player.currentHealth,
-        totalHealth: player.totalStats.health,
-        currentShield: player.currentShield,
-        totalShield: player.totalStats.energyShield
-    });
-
-    // Force update displays immediately
-    updatePlayerStatsDisplay();
-    updateEnemyStatsDisplay();
-
-    // Update the adventure locations display (e.g., change to 'Flee' button)
-    displayAdventureLocations();
-}
-
-function spawnEnemyForSequence(monsterName, isEmpowered = false) {
-    // Reset attack timers
-    playerAttackTimer = 0;
-    enemyAttackTimer = 0;
-
-	// Look up the enemy template (prefer window.enemies if available)
-	const enemyPool = (Array.isArray(window.enemies) && window.enemies.length)
-		? window.enemies
-		: (typeof enemies !== 'undefined' ? enemies : []);
-	const enemyTemplate = enemyPool.find(e => e.name === monsterName);
-    if (!enemyTemplate) {
-        console.error(`Enemy template not found: ${monsterName}`);
-        stopCombat('enemyTemplateNotFound');
-        return;
-    }
-
-    // Clone from the template
-    enemy = JSON.parse(JSON.stringify(enemyTemplate));
-
-    // Initialize basic properties
-    enemy.statusEffects = [];
-    enemy.activeBuffs = [];
-    enemy.effects = enemy.effects || [];
-
-    // Initialize enemy's current health
-    enemy.currentHealth = enemy.health;
-    enemy.currentShield = enemy.energyShield || 0;
-
-    // Calculate initial totalStats using the centralized function
-    if (typeof calculateEnemyStats === 'function') {
-        calculateEnemyStats(enemy);
-    } else {
-        console.error("calculateEnemyStats function not found during enemy spawn!");
-    }
-
-    // Apply empowered bonuses if applicable
-    if (isEmpowered) {
-        // Boost stats
-        enemy.health = Math.round(enemy.health * 1.5);
-        enemy.currentHealth = enemy.health; // Reset current health to new max
-
-        if (enemy.energyShield) {
-            enemy.energyShield = Math.round(enemy.energyShield * 1.5);
-            enemy.currentShield = enemy.energyShield;
-        }
-
-        // Boost all damage types by 50%
-        if (enemy.damageTypes) {
-            for (let damageType in enemy.damageTypes) {
-                enemy.damageTypes[damageType] = Math.round(enemy.damageTypes[damageType] * 1.5);
-            }
-        }
-
-        // Add 'Empowered' to the name
-        enemy.name = "Empowered " + enemy.name;
-
-        // Update totalStats again after empowerment using the centralized function
-        if (typeof calculateEnemyStats === 'function') {
-            calculateEnemyStats(enemy);
-        } else {
-            console.error("calculateEnemyStats function not found after empowerment!");
-        }
-
-        // Add a visual indicator
-        logMessage(`An empowered ${monsterName} appears!`);
-    }
-
-    clearLog();
-    updateEnemyStatsDisplay();
-
-    // Initialize attack timers if combat is already active
-    if (isCombatActive) {
-        playerNextAttackTime = 1 / (player.totalStats.attackSpeed || 1);
-        enemyNextAttackTime = 1 / (enemy.totalStats.attackSpeed || 1);
-    }
-
-    if (!isCombatActive) {
-        startCombat();
-    }
-
-    // Make the Flee button clickable
-    const fleeButton = document.getElementById('stop-combat');
-    if (fleeButton) {
-        fleeButton.disabled = false;
-    }
-
-    logMessage(`A ${enemy.name} appears!`);
-
-    // Debug info
-    console.log("Enemy spawned:", enemy);
-}
-
-// Update the HP and ES bar display and formatting
-function updateHPESBars(entity, isPlayer) {
-    // First, make sure entity exists
-    if (!entity) {
-        console.warn(`updateHPESBars called with ${isPlayer ? 'player' : 'enemy'} entity that is null or undefined`);
-        return;
-    }
-
-    // Get entity display values with safe defaults
-    const currentHealth = Math.max(0, Math.round(entity.currentHealth || 0));
-    const totalHealth = Math.max(1, Math.round((entity.totalStats?.health) || 100));
-    const currentShield = Math.max(0, Math.round(entity.currentShield || 0));
-    const totalShield = Math.max(0, Math.round((entity.totalStats?.energyShield) || 0));
-
-    // Set prefix for DOM element IDs
-    const prefix = isPlayer ? 'player' : 'enemy';
-
-    // Update HP bar width and color
-    const hpBar = document.getElementById(`${prefix}-hp-bar`);
-    if (hpBar) {
-        // Calculate HP percentage (capped between 0-100%)
-        const hpPercent = Math.min(100, Math.max(0, (currentHealth / totalHealth) * 100)) || 0;
-
-        // Update bar width
-        hpBar.style.width = `${hpPercent}%`;
-
-        // Update bar color based on health percentage
-        if (hpPercent < 25) {
-            hpBar.style.background = 'linear-gradient(90deg, #ff5959, #ff8080)';
-        } else if (hpPercent < 50) {
-            hpBar.style.background = 'linear-gradient(90deg, #ffaa5e, #ffc179)';
-        } else {
-            hpBar.style.background = 'linear-gradient(90deg, #48bf91, #64dfdf)';
-        }
-    }
-
-    // Update HP text display
-    const hpText = document.getElementById(`${prefix}-hp-text`);
-    if (hpText) {
-        hpText.textContent = `${currentHealth} / ${totalHealth}`;
-    }
-
-    // Update ES bar width
-    const esBar = document.getElementById(`${prefix}-es-bar`);
-    if (esBar) {
-        // Calculate ES percentage (with safety checks)
-        const esPercent = totalShield > 0 ? Math.min(100, Math.max(0, (currentShield / totalShield) * 100)) : 0;
-
-        // Update bar width
-        esBar.style.width = `${esPercent}%`;
-
-        // Update bar color/effect
-        esBar.style.background = 'linear-gradient(90deg, #5465ff, #788bff)';
-    }
-
-    // Update ES text display
-    const esText = document.getElementById(`${prefix}-es-text`);
-    if (esText) {
-        esText.textContent = `${currentShield} / ${totalShield}`;
+    if (xp > 0 && typeof gainExperience === 'function') {
+        gainExperience(xp);
+        logMessage(`Gained ${xp} experience for defeating ${defeatedName || 'an enemy'}.`);
+    } else if (xp === 0) {
+        // Still notify zero gain for clarity
+        logMessage(`Gained 0 experience for defeating ${defeatedName || 'an enemy'}.`);
     }
 }
+
+// ============================================================================
+// 6. UI & DISPLAY
+// ============================================================================
 
 // Update the player stats display function to use the new HP/ES function
 function updatePlayerStatsDisplay() {
@@ -1414,11 +2141,11 @@ function updatePlayerStatsDisplay() {
 
     // Check if defenseTypes object exists
     if (player.totalStats.defenseTypes) {
-        // Add the three new defense types with proper descriptions
+        // Add the three resistance types with proper descriptions
         const defenseMapping = {
-            'sturdiness': 'Sturdiness (vs Physical)',
-            'structure': 'Structure (vs Elemental)',
-            'stability': 'Stability (vs Chemical)'
+            'physicalResistance': 'Physical Resistance',
+            'elementalResistance': 'Elemental Resistance',
+            'chemicalResistance': 'Chemical Resistance'
         };
 
         for (let type in defenseMapping) {
@@ -1436,38 +2163,59 @@ function updatePlayerStatsDisplay() {
         defenseTypesList.appendChild(li);
     }
 
-    // Stylish active effects list
-    const activeEffectsList = document.getElementById('player-active-effects');
-    activeEffectsList.innerHTML = '';
-
-    if (player.activeBuffs && player.activeBuffs.length > 0) {
-        player.activeBuffs.forEach(buff => {
-            const li = document.createElement('li');
-            li.style.padding = '4px 8px';
-            li.style.margin = '3px 0';
-            li.style.background = 'rgba(0, 15, 40, 0.5)';
-            li.style.borderRadius = '3px';
-            li.style.borderLeft = '2px solid #00ffcc';
-
-            li.innerHTML = `<span style="color: #00ffcc; font-weight: bold;">${buff.name}:</span> <span style="color: #ffffff;">${(buff.remainingDuration / 1000).toFixed(1)}s</span>`;
-            activeEffectsList.appendChild(li);
+    // Effects bar (icons with countdown overlays)
+    const playerEffectsBar = document.getElementById('player-effects-bar');
+    if (playerEffectsBar) {
+        const computeSecsLeft = (effect) => {
+            // Buffs: remainingDuration in ms
+            if (typeof effect.remainingDuration === 'number') {
+                const ms = effect.remainingDuration;
+                if (ms <= 0) return '';
+                return Math.ceil(ms / 1000);
+            }
+            // Debuffs: duration in seconds + appliedTime timestamp
+            if (typeof effect.duration === 'number' && effect.duration > 0 && typeof effect.appliedTime === 'number') {
+                // Skip non-time-based hit counters
+                if (typeof effect.hitsRemaining === 'number') return '';
+                const secs = Math.ceil(effect.duration - ((Date.now() - effect.appliedTime) / 1000));
+                return secs > 0 ? secs : '';
+            }
+            return '';
+        };
+        playerEffectsBar.innerHTML = '';
+        const buffsArr = Array.isArray(player.activeBuffs) ? player.activeBuffs : [];
+        const debuffsArr = Array.isArray(player.activeDebuffs) ? player.activeDebuffs : [];
+        const effects = [...buffsArr, ...debuffsArr];
+        effects.forEach(effect => {
+            const el = document.createElement('div');
+            el.className = 'effect-icon';
+            const img = document.createElement('img');
+            img.src = effect.icon || 'icons/default-icon.png';
+            img.alt = effect.name || 'Effect';
+            el.appendChild(img);
+            const t = document.createElement('div');
+            t.className = 'timer';
+            const secs = computeSecsLeft(effect);
+            t.textContent = secs;
+            el.title = `${effect.name || 'Effect'}${effect.description ? (': ' + effect.description) : ''}`;
+            el.appendChild(t);
+            // Stack badge for stackable effects (show at 1+)
+            if (typeof effect.stacks !== 'number') {
+                effect.stacks = 1;
+            }
+            if (typeof effect.stacks === 'number' && effect.stacks >= 1) {
+                const badge = document.createElement('div');
+                badge.className = 'stack-badge';
+                badge.textContent = effect.stacks;
+                el.appendChild(badge);
+            }
+            playerEffectsBar.appendChild(el);
         });
-    } else {
-        const li = document.createElement('li');
-        li.style.padding = '4px 8px';
-        li.style.color = '#888';
-        li.style.fontStyle = 'italic';
-        li.textContent = 'No active effects';
-        activeEffectsList.appendChild(li);
     }
 
-    // After updating all other elements, also update debuffs UI
-    if (typeof updatePlayerDebuffsUI === 'function') {
-        updatePlayerDebuffsUI();
-    }
+    // Debuffs UI moved to effect icons; no separate list update
 }
 
-// Update the enemy stats display function to use the new HP/ES function
 function updateEnemyStatsDisplay() {
     if (!enemy) {
         console.log("updateEnemyStatsDisplay called but no enemy is defined.");
@@ -1562,11 +2310,11 @@ function updateEnemyStatsDisplay() {
 
     // Check if enemy and its defense types exist
     if (enemy && enemy.totalStats && enemy.totalStats.defenseTypes) {
-        // Add the three new defense types with proper descriptions
+        // Add the three resistance types with proper descriptions
         const defenseMapping = {
-            'sturdiness': 'Sturdiness (vs Physical)',
-            'structure': 'Structure (vs Elemental)',
-            'stability': 'Stability (vs Chemical)'
+            'physicalResistance': 'Physical Resistance',
+            'elementalResistance': 'Elemental Resistance',
+            'chemicalResistance': 'Chemical Resistance'
         };
 
         for (let type in defenseMapping) {
@@ -1586,670 +2334,488 @@ function updateEnemyStatsDisplay() {
         defenseTypesList.appendChild(li);
     }
 
-    // Stylish active effects list
-    const activeEffectsList = document.getElementById('enemy-active-effects');
-    activeEffectsList.innerHTML = '';
-
-    if (enemy.activeBuffs && enemy.activeBuffs.length > 0) {
-        enemy.activeBuffs.forEach(buff => {
-            const li = document.createElement('li');
-            li.style.padding = '4px 8px';
-            li.style.margin = '3px 0';
-            li.style.background = 'rgba(0, 15, 40, 0.5)';
-            li.style.borderRadius = '3px';
-            li.style.borderLeft = '2px solid #00ffcc';
-
-            li.innerHTML = `<span style="color: #00ffcc; font-weight: bold;">${buff.name}:</span> <span style="color: #ffffff;">${(buff.remainingDuration / 1000).toFixed(1)}s</span>`;
-            activeEffectsList.appendChild(li);
+    // Effects bar (icons with countdown overlays)
+    const enemyEffectsBar = document.getElementById('enemy-effects-bar');
+    if (enemyEffectsBar) {
+        const computeSecsLeftE = (effect) => {
+            if (typeof effect.remainingDuration === 'number') {
+                const ms = effect.remainingDuration;
+                if (ms <= 0) return '';
+                return Math.ceil(ms / 1000);
+            }
+            if (typeof effect.duration === 'number' && effect.duration > 0 && typeof effect.appliedTime === 'number') {
+                if (typeof effect.hitsRemaining === 'number') return '';
+                const secs = Math.ceil(effect.duration - ((Date.now() - effect.appliedTime) / 1000));
+                return secs > 0 ? secs : '';
+            }
+            return '';
+        };
+        enemyEffectsBar.innerHTML = '';
+        const buffsArrE = Array.isArray(enemy.activeBuffs) ? enemy.activeBuffs : [];
+        const debuffsArrE = Array.isArray(enemy.activeDebuffs) ? enemy.activeDebuffs : [];
+        const effectsE = [...buffsArrE, ...debuffsArrE];
+        effectsE.forEach(effect => {
+            const el = document.createElement('div');
+            el.className = 'effect-icon';
+            const img = document.createElement('img');
+            img.src = effect.icon || 'icons/default-icon.png';
+            img.alt = effect.name || 'Effect';
+            el.appendChild(img);
+            const t = document.createElement('div');
+            t.className = 'timer';
+            const secs = computeSecsLeftE(effect);
+            t.textContent = secs;
+            el.title = `${effect.name || 'Effect'}${effect.description ? (': ' + effect.description) : ''}`;
+            el.appendChild(t);
+            // Normalize stacks to ensure proper counting on stacked re-applies
+            if (typeof effect.stacks !== 'number') {
+                effect.stacks = 1;
+            }
+            if (typeof effect.stacks === 'number' && effect.stacks >= 1) {
+                const badge = document.createElement('div');
+                badge.className = 'stack-badge';
+                badge.textContent = effect.stacks;
+                el.appendChild(badge);
+            }
+            enemyEffectsBar.appendChild(el);
         });
-    } else {
-        const li = document.createElement('li');
-        li.style.padding = '4px 8px';
-        li.style.color = '#888';
-        li.style.fontStyle = 'italic';
-        li.textContent = 'No active effects';
-        activeEffectsList.appendChild(li);
     }
 
-    // After updating all other elements, also update debuffs UI
-    if (typeof updateEnemyDebuffsUI === 'function') {
-        updateEnemyDebuffsUI();
-    }
+    // Debuffs UI moved to effect icons; no separate list update
 }
 
-function resetPlayerStats() {
-    // First initialize base stats
-    player.baseStats = JSON.parse(JSON.stringify(playerBaseStats));
-
-    // Calculate total stats
-    player.calculateStats();
-
-    // Set current health and shield to full
-    player.currentHealth = player.totalStats.health;
-    player.currentShield = player.totalStats.energyShield;
-
-    // Clear status effects
-    player.statusEffects = [];
-
-    // Update display
-    updatePlayerStatsDisplay();
-
-    // Clear any buffs
-    clearBuffs(player);
-
-    console.log("Player stats reset:", player);
-}
-
-// Function to flee combat
-function fleeCombat() {
-    if (isCombatActive) {
-        stopCombat('playerFled');
-        logMessage("You have fled from combat.");
-        currentLocation = null;
-    } else {
-        logMessage("You are not in combat.");
-        // If not in combat, but a countdown is active, cancel it
-        if (adventureStartCountdownInterval) {
-            clearInterval(adventureStartCountdownInterval);
-            adventureStartCountdownInterval = null;
-            const timerElement = document.getElementById('next-enemy-timer');
-            timerElement.style.display = 'none';
-            logMessage("You have canceled the adventure.");
-            currentLocation = null;
-            displayAdventureLocations();
-        }
-    }
-
-    // Update the adventure locations display
-    displayAdventureLocations();
-}
-
-function startHealthRegen() {
-    // Clear any existing interval to prevent multiple intervals
-    if (healthRegenInterval) {
-        clearInterval(healthRegenInterval);
-        healthRegenInterval = null;
-        console.log("Clearing existing health regeneration timer");
-    }
-
-    console.log("Starting health regeneration timer. isDelveInProgress: " + isDelveInProgress);
-    console.log("Player health regen rate: " + player.totalStats.healthRegen + " per second");
-
-    // Regenerate health every 200 milliseconds, but with special rules for delves
-    healthRegenInterval = setInterval(() => {
-
-        // Otherwise apply normal health regeneration
-        if (player.currentHealth < player.totalStats.health) {
-            const regenPerTick = player.totalStats.healthRegen / 5;
-            // (Assuming healthRegen is per second, 5 ticks/sec -> 200ms each)
-
-            player.currentHealth += regenPerTick;
-            if (player.currentHealth > player.totalStats.health) {
-                player.currentHealth = player.totalStats.health;
-            }
-            updatePlayerStatsDisplay();
-        }
-    }, 200);
-}
-
-
-function stopHealthRegen() {
-    if (healthRegenInterval) {
-        clearInterval(healthRegenInterval);
-        healthRegenInterval = null;
-        console.log("Health regeneration stopped");
-    }
-}
-
-// skewedRandom function moved to stats.js
-
-function combatLoop() {
-    if (!isCombatActive) return;
-
-    let now = Date.now();
-    let deltaTime = (now - lastCombatLoopTime) / 1000;
-    lastCombatLoopTime = now;
-
-    // Process attack timers
-    if (player) {
-        // Initialize player attack time if needed
-        if (playerNextAttackTime <= 0) {
-            playerNextAttackTime = 1 / (player.totalStats?.attackSpeed || 1);
-        }
-
-        // Player attack timer
-        playerAttackTimer += deltaTime;
-        if (playerAttackTimer >= playerNextAttackTime) {
-            playerAttackTimer = 0;
-            playerNextAttackTime = 1 / (player.totalStats?.attackSpeed || 1);
-
-            // Only call playerAttack if player and enemy both exist
-            if (player && enemy) {
-                playerAttack();
-            }
-        }
-
-        // Update player progress bar
-        let playerProgress = Math.min((playerAttackTimer / playerNextAttackTime) * 100, 100);
-        document.getElementById('player-attack-progress-bar').style.width = `${playerProgress}%`;
-    }
-
-    // Process enemy attack timer separately to avoid null issues
-    if (enemy && enemy.totalStats) {
-        // Initialize enemy attack time if needed
-        if (enemyNextAttackTime <= 0) {
-            enemyNextAttackTime = 1 / (enemy.totalStats.attackSpeed || 1);
-        }
-
-        // Enemy attack timer
-        enemyAttackTimer += deltaTime;
-        if (enemyAttackTimer >= enemyNextAttackTime) {
-            enemyAttackTimer = 0;
-            enemyNextAttackTime = 1 / (enemy.totalStats.attackSpeed || 1);
-
-            // Only call enemyAttack if player and enemy both exist
-            if (player && enemy) {
-                enemyAttack();
-            }
-        }
-
-        // Update enemy progress bar
-        let enemyProgress = Math.min((enemyAttackTimer / enemyNextAttackTime) * 100, 100);
-        document.getElementById('enemy-attack-progress-bar').style.width = `${enemyProgress}%`;
-    }
-
-    // Safely process entity buffs and status effects
-    try {
-        if (player) {
-            processBuffs(player, deltaTime);
-            if (player.currentHealth > 0) {
-                processStatusEffects(player, deltaTime);
-            }
-        }
-
-        if (enemy) {
-            if (enemy.activeBuffs) {
-                processBuffs(enemy, deltaTime);
-            }
-            if (enemy.currentHealth > 0) {
-                processStatusEffects(enemy, deltaTime);
-
-                // Process debuffs on the enemy
-                if (window.processDebuffs && typeof window.processDebuffs === 'function' && enemy.activeDebuffs) {
-                    window.processDebuffs(enemy, deltaTime);
-                }
-            }
-        }
-    } catch (error) {
-        console.error("Error processing effects:", error);
-    }
-
-    // Check end conditions
-    if (player && player.currentHealth <= 0) {
-        stopCombat('playerDefeated');
-        return;
-    }
-    else if (enemy && enemy.currentHealth <= 0) {
-        // We handle that in applyDamage
-    }
-
-    // Update displays at end of loop
-    updatePlayerStatsDisplay();
-    updateEnemyStatsDisplay();
-}
-
-function clearBuffs(entity, preserveMedtekInjectors = false) {
-    if (!entity) return;
-
-    // Clear buffs
-    if (entity.activeBuffs && entity.activeBuffs.length > 0) {
-        if (preserveMedtekInjectors) {
-            entity.activeBuffs = entity.activeBuffs.filter(buff =>
-                buff.name && buff.name.includes('Medtek Injector'));
-        } else {
-            entity.activeBuffs = [];
-        }
-    }
-
-    // Clear debuffs if they exist
-    if (entity.activeDebuffs && entity.activeDebuffs.length > 0) {
-        // Call onRemove for each debuff before clearing
-        for (const debuff of entity.activeDebuffs) {
-            if (debuff.onRemove) {
-                debuff.onRemove(entity);
-            }
-        }
-        entity.activeDebuffs = [];
-    }
-
-    // Recalculate stats for the entity
-    if (entity === player) {
-        entity.calculateStats();
-        updatePlayerStatsDisplay();
-    } else if (entity === enemy) {
-        // Use the centralized function to recalculate enemy stats
-        if (typeof calculateEnemyStats === 'function') {
-            calculateEnemyStats(enemy);
-        } else {
-            console.error("calculateEnemyStats function not found during clearBuffs!");
-        }
-        updateEnemyStatsDisplay();
-    }
-}
-
-// updateEnemyTotalStats function moved to stats.js
-
-// Function to stop combat
-function stopCombat(reason) {
-    // Allow delveCompleted to proceed even if combat is already inactive
-    if (!isCombatActive && !isDelveInProgress && reason !== 'delveCompleted') {
-        console.log("Combat already inactive. stopCombat() aborted.");
+// Update the HP and ES bar display and formatting
+function updateHPESBars(entity, isPlayer) {
+    // First, make sure entity exists
+    if (!entity) {
+        console.warn(`updateHPESBars called with ${isPlayer ? 'player' : 'enemy'} entity that is null or undefined`);
         return;
     }
 
-    if (isCombatActive) {
-        isCombatActive = false;
-        clearInterval(combatInterval);
-        combatInterval = null;
+    // Get entity display values with safe defaults
+    const currentHealth = Math.max(0, Math.round(entity.currentHealth || 0));
+    const totalHealth = Math.max(1, Math.round((entity.totalStats?.health) || 100));
+    const currentShield = Math.max(0, Math.round(entity.currentShield || 0));
+    const totalShield = Math.max(0, Math.round((entity.totalStats?.energyShield) || 0));
+
+    // Set prefix for DOM element IDs
+    const prefix = isPlayer ? 'player' : 'enemy';
+
+    // Update HP bar width and color
+    const hpBar = document.getElementById(`${prefix}-hp-bar`);
+    if (hpBar) {
+        // Calculate HP percentage (capped between 0-100%)
+        const hpPercent = Math.min(100, Math.max(0, (currentHealth / totalHealth) * 100)) || 0;
+
+        // Update bar width
+        hpBar.style.width = `${hpPercent}%`;
+
+        // Update bar color based on health percentage
+        if (hpPercent < 25) {
+            hpBar.style.background = 'linear-gradient(90deg, #ff5959, #ff8080)';
+        } else if (hpPercent < 50) {
+            hpBar.style.background = 'linear-gradient(90deg, #ffaa5e, #ffc179)';
+        } else {
+            hpBar.style.background = 'linear-gradient(90deg, #48bf91, #64dfdf)';
+        }
     }
 
-    // Clear any inter-fight timers
-    if (interFightPauseTimer) {
-        clearTimeout(interFightPauseTimer);
-        interFightPauseTimer = null;
+    // Update HP text display
+    const hpText = document.getElementById(`${prefix}-hp-text`);
+    if (hpText) {
+        hpText.textContent = `${currentHealth} / ${totalHealth}`;
     }
 
-    // Log the reason combat was stopped
-    if (reason) {
-        logMessage(`Combat stopped due to: ${reason}`);
+    // Update ES bar width
+    const esBar = document.getElementById(`${prefix}-es-bar`);
+    if (esBar) {
+        // Calculate ES percentage (with safety checks)
+        const esPercent = totalShield > 0 ? Math.min(100, Math.max(0, (currentShield / totalShield) * 100)) : 0;
+
+        // Update bar width
+        esBar.style.width = `${esPercent}%`;
+
+        // Update bar color/effect
+        esBar.style.background = 'linear-gradient(90deg, #5465ff, #788bff)';
     }
 
-    // Reset combat UI and timers
-    playerAttackTimer = 0;
-    enemyAttackTimer = 0;
-    playerNextAttackTime = 0;  // Reset playerNextAttackTime
-    enemyNextAttackTime = 0;   // Reset enemyNextAttackTime
-    document.getElementById('player-attack-progress-bar').style.width = '0%';
+    // Update ES text display
+    const esText = document.getElementById(`${prefix}-es-text`);
+    if (esText) {
+        esText.textContent = `${currentShield} / ${totalShield}`;
+    }
+}
+
+function addToCombatLog(message, color = null, isBold = false) {
+    let html = message || '';
+
+    // Only modify plain text, not inside existing HTML tags
+    const applyToTextOnly = (input, replacer) => input.split(/(<[^>]+>)/g).map(seg => seg.startsWith('<') ? seg : replacer(seg)).join('');
+    const escapeRegExp = (s) => s.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+
+    const playerName = (player && player.name) ? player.name : 'Player';
+    const enemyName = (enemy && enemy.name) ? enemy.name : 'Enemy';
+
+    // Keyword highlights
+    const keywordHighlights = [
+        { word: 'CRITICAL', style: 'font-weight: bold; color: #ffff00; text-shadow: 0 0 5px rgba(255, 255, 0, 0.7);' },
+        { word: 'critical', style: 'font-weight: bold; color: #ffff00; text-shadow: 0 0 3px rgba(255, 255, 0, 0.5);' },
+        { word: 'combo attack', style: 'font-weight: bold; color: #ff8800; text-shadow: 0 0 3px rgba(255, 136, 0, 0.7);' },
+        { word: 'Combo hit', style: 'font-weight: bold; color: #ffaa44;' },
+        { word: 'triggers', style: 'font-weight: bold; color: #66ffcc;' },
+        { word: 'heals', style: 'font-weight: bold; color: #66ff88;' },
+        { word: 'dies', style: 'font-weight: bold; color: #ff4444; text-shadow: 0 0 3px rgba(255, 68, 68, 0.7);' },
+        { word: 'defeated', style: 'font-weight: bold; color: #ff4444; text-shadow: 0 0 3px rgba(255, 68, 68, 0.7);' }
+    ];
+
+    html = applyToTextOnly(html, txt => {
+        keywordHighlights.forEach(h => {
+            const rx = new RegExp(`\\b${h.word}\\b`, 'gi');
+            txt = txt.replace(rx, (m) => `<span style="${h.style}">${m}</span>`);
+        });
+        return txt;
+    });
+
+    // Damage types
+    const dmgColors = { kinetic:'#b8c1c1', slashing:'#c8a2c8', pyro:'#ff6b6b', electric:'#74c0fc', cryo:'#7dd3fc', corrosive:'#2eb82e', radiation:'#66ff99', chemical:'#2eb82e', physical:'#aab3b3' };
+    html = applyToTextOnly(html, txt => {
+        Object.keys(dmgColors).forEach(dt => {
+            const rx = new RegExp(`\\b${dt}\\b`, 'gi');
+            txt = txt.replace(rx, (m)=>`<span style=\"color:${dmgColors[dt]}; font-weight:bold;\">${m}</span>`);
+        });
+        return txt;
+    });
+
+    // Numbers (near damage/HP/ES/shield context)
+    html = applyToTextOnly(html, txt => txt.replace(/(\\b\\d+\\b)(?=\\s*(damage|HP|ES|shield)\\b)?/gi, '<span style=\"color:#ffd166; font-weight:bold;\">$1</span>'));
+
+    // Names
+    html = applyToTextOnly(html, txt => txt.replace(new RegExp(escapeRegExp(playerName), 'g'), `<span style=\"color:#7df9ff; font-weight:bold; text-shadow:0 0 4px #7df9ff55;\">${playerName}</span>`));
+    html = applyToTextOnly(html, txt => txt.replace(new RegExp(escapeRegExp(enemyName), 'g'), `<span style=\"color:#ff7f7f; font-weight:bold; text-shadow:0 0 4px #ff7f7f55;\">${enemyName}</span>`));
+
+    if (color) html = `<span style=\"color: ${color};\">${html}</span>`;
+    if (isBold) html = `<strong>${html}</strong>`;
+
+    logMessage(html);
+}
+// Expose the function globally so it can be accessed from other scripts like debuffs.js
+window.addToCombatLog = addToCombatLog;
+
+function clearLog() {
+    const logElement = document.getElementById("log-messages");
+    logElement.innerHTML = "";
+}
+
+function initializeEnemyStatsDisplay() {
+    document.getElementById("enemy-name").textContent = "No Enemy";
+    document.getElementById("enemy-attack-speed").textContent = "N/A";
+    document.getElementById("enemy-crit-chance").textContent = "N/A";
+    document.getElementById("enemy-crit-multiplier").textContent = "N/A";
     document.getElementById('enemy-attack-progress-bar').style.width = '0%';
+    document.getElementById('enemy-hp-bar').style.width = '0%';
+    document.getElementById('enemy-hp-text').textContent = '0 / 0';
+    document.getElementById('enemy-es-bar').style.width = '0%';
+    document.getElementById('enemy-es-text').textContent = '0 / 0';
 
-    // Hide the flee button
-    const fleeButton = document.getElementById('stop-combat');
-    if (fleeButton) {
-        fleeButton.style.display = 'none';
-        fleeButton.disabled = false; // Make sure it's enabled for next time
+    // Clear damage and defense types (guard if elements exist)
+    const ed = document.getElementById('enemy-damage-types'); if (ed) ed.innerHTML = '';
+    const ef = document.getElementById('enemy-defense-types'); if (ef) ef.innerHTML = '';
+    const ea = document.getElementById('enemy-active-effects'); if (ea) ea.innerHTML = '';
+}
+
+// Function to update the player debuffs UI
+function updatePlayerDebuffsUI() {
+    const debuffsContainer = document.getElementById('player-debuffs');
+    if (!debuffsContainer) return;
+
+    // Clear existing debuffs
+    debuffsContainer.innerHTML = '';
+
+    // If player has no debuffs, exit
+    if (!player || !player.activeDebuffs || player.activeDebuffs.length === 0) {
+        debuffsContainer.style.display = 'none';
+        return;
     }
 
-    // Only restore player health when fleeing or completing a delve
-    // NOT between delve fights
-    if (reason === 'playerFled' || reason === 'delveCompleted' || reason === 'playerDefeated') {
-        player.currentHealth = player.totalStats.health;
-        player.currentShield = player.totalStats.energyShield;
-        updatePlayerStatsDisplay();
+    // Show the container
+    debuffsContainer.style.display = 'flex';
 
-        // Always restart health regeneration after combat ends with fleeing, defeat, or delve completion
-        startHealthRegen();
-    }
+    // Add each debuff icon
+    player.activeDebuffs.forEach(debuff => {
+        if (!debuff) return;
 
-    // Clear any active debuffs on the player and enemy
-    if (player && player.activeDebuffs && player.activeDebuffs.length > 0) {
-        for (const debuff of player.activeDebuffs) {
-            if (debuff.onRemove) {
-                debuff.onRemove(player);
-            }
+        const debuffElement = document.createElement('div');
+        debuffElement.className = 'debuff-icon';
+
+        // Set background color based on debuff type
+        let bgColor = '#ff6b6b'; // Default red for harmful debuffs
+        if (debuff.type === 'crowd_control') {
+            bgColor = '#9775fa'; // Purple for CC
+        } else if (debuff.type === 'damage_over_time') {
+            bgColor = '#ff9966'; // Orange for DoT
         }
-        player.activeDebuffs = [];
+
+        debuffElement.style.backgroundColor = bgColor;
+
+        // Add debuff name
+        const nameSpan = document.createElement('span');
+        // Use capitalize from stats.js if available
+        let capName = typeof capitalize === 'function' ? capitalize(debuff.name) : debuff.name;
+        nameSpan.textContent = capName.substring(0, 1); // Just the first letter for the icon
+        debuffElement.appendChild(nameSpan);
+
+        // Add tooltip with debuff info
+        debuffElement.title = `${capName}: ${debuff.description || ''}`;
+
+        // Add to container
+        debuffsContainer.appendChild(debuffElement);
+    });
+}
+
+// Function to update the enemy debuffs UI
+function updateEnemyDebuffsUI() {
+    const debuffsContainer = document.getElementById('enemy-debuffs');
+    if (!debuffsContainer) return;
+
+    // Clear existing debuffs
+    debuffsContainer.innerHTML = '';
+
+    // If enemy has no debuffs, exit
+    if (!enemy || !enemy.activeDebuffs || enemy.activeDebuffs.length === 0) {
+        debuffsContainer.style.display = 'none';
+        return;
     }
 
-    if (enemy && enemy.activeDebuffs && enemy.activeDebuffs.length > 0) {
-        for (const debuff of enemy.activeDebuffs) {
-            if (debuff.onRemove) {
-                debuff.onRemove(enemy);
-            }
+    // Show the container
+    debuffsContainer.style.display = 'flex';
+
+    // Add each debuff icon
+    enemy.activeDebuffs.forEach(debuff => {
+        if (!debuff) return;
+
+        const debuffElement = document.createElement('div');
+        debuffElement.className = 'debuff-icon';
+
+        // Set background color based on debuff type
+        let bgColor = '#ff6b6b'; // Default red for harmful debuffs
+        if (debuff.type === 'crowd_control') {
+            bgColor = '#9775fa'; // Purple for CC
+        } else if (debuff.type === 'damage_over_time') {
+            bgColor = '#ff9966'; // Orange for DoT
         }
-        enemy.activeDebuffs = [];
+
+        debuffElement.style.backgroundColor = bgColor;
+
+        // Add debuff name
+        const nameSpan = document.createElement('span');
+        // Use capitalize from stats.js if available
+        let capName = typeof capitalize === 'function' ? capitalize(debuff.name) : debuff.name;
+        nameSpan.textContent = capName.substring(0, 1); // Just the first letter for the icon
+        debuffElement.appendChild(nameSpan);
+
+        // Add tooltip with debuff info
+        debuffElement.title = `${capName}: ${debuff.description || ''}`;
+
+        // Add to container
+        debuffsContainer.appendChild(debuffElement);
+    });
+}
+
+// Make these functions available globally
+window.updatePlayerDebuffsUI = updatePlayerDebuffsUI;
+window.updateEnemyDebuffsUI = updateEnemyDebuffsUI;
+
+function displayLootPopup(message) {
+    // Remove any formatting codes like {flashing} and {end}
+    // This regex removes any text enclosed in braces { ... }
+    message = message.replace(/\{[^}]+\}/g, '');
+
+    const container = document.getElementById('loot-popups-container');
+    if (!container) {
+        console.error('Loot popups container not found in the DOM.');
+        return;
     }
 
-    // Handle delve state based on reason
-    if (isDelveInProgress) {
-        if (reason === 'playerFled' || reason === 'playerDefeated') {
-            stopDelveWithFailure();
+    const popup = document.createElement('div');
+    popup.classList.add('loot-popup');
+    popup.textContent = message;
 
-            // Return to adventure location selection
-            isDelveInProgress = false;
-            currentDelveLocation = null;
-            currentMonsterIndex = 0;
-            displayAdventureLocations();
+    // Add the popup to the container
+    container.appendChild(popup);
 
-            // Restart health regeneration as we're no longer in a delve
-            stopHealthRegen();
-            startHealthRegen();
-        }
-        else if (reason === 'enemyDefeated') {
-            // Don't end the delve, we'll handle the next monster
-            currentMonsterIndex++;
+    // Remove the popup after 3 seconds
+    setTimeout(() => {
+        popup.style.opacity = '0';
+        popup.style.transition = 'opacity 0.5s';
+        // Remove the popup from the DOM after the transition
+        setTimeout(() => {
+            container.removeChild(popup);
+        }, 500);
+    }, 3000);
+}
 
-            // Clear buffs between fights, but preserve any future medtek injectors
-            clearBuffs(player, true);
-            if (enemy) {
-                clearBuffs(enemy);
+function createShieldPulseAnimation() {
+    // Check if the animation already exists
+    if (!document.getElementById('shield-pulse-animation')) {
+        const styleElement = document.createElement('style');
+        styleElement.id = 'shield-pulse-animation';
+        styleElement.textContent = `
+            @keyframes shieldPulse {
+                0% { opacity: 0.8; }
+                50% { opacity: 1; }
+                100% { opacity: 0.8; }
             }
-
-            // Don't restore health between delve fights
-            // Wait 3 seconds before beginning the next fight
-            interFightPauseTimer = setTimeout(() => {
-                beginNextMonsterInSequence();
-            }, 3000);
-        }
-    }
-    
-    // Handle delve completion outside the isDelveInProgress condition
-    if (reason === 'delveCompleted') {
-        console.log("stopCombat - delveCompleted - before setting flags - isDelveInProgress:", isDelveInProgress);
-        // Mark success regardless of current isDelveInProgress flag value
-        isDelveInProgress = false;
-        currentDelveLocation = null;
-        currentMonsterIndex = 0;
-        console.log("stopCombat - delveCompleted - after setting flags - isDelveInProgress:", isDelveInProgress);
-        
-        // Call displayAdventureLocations to refresh the UI
-        displayAdventureLocations();
-        // Auto re-deploy if user has it enabled
-        try {
-            const auto = localStorage.getItem('autoRedeploy') === 'true';
-            if (auto && window.lastDelveLocation) {
-                setTimeout(() => startAdventure(window.lastDelveLocation), 500);
-            }
-        } catch (e) { /* ignore */ }
-        console.log("stopCombat - delveCompleted - after displayAdventureLocations");
-
-        // Restart health regeneration as we're no longer in a delve
-        stopHealthRegen();
-        startHealthRegen();
-    }
-
-    // Clean up combat state
-    if (enemy) clearBuffs(enemy);
-    enemy = null;
-    updateEnemyStatsDisplay();
-    initializeEnemyStatsDisplay();
-
-    // Stop health regeneration if we're completely stopping combat, but not for inter-fight pauses
-    if (!isDelveInProgress || reason === 'playerFled' || reason === 'playerDefeated' || reason === 'delveCompleted') {
-        stopHealthRegen();
+        `;
+        document.head.appendChild(styleElement);
     }
 }
 
+function animateHpBarChunk(target, damageAmount) {
+    let hpBar, hpContainer, totalHp, currentHp;
 
-// Function for player attack
-function playerAttack() {
-    // Exit early if combat is no longer active
-    if (!isCombatActive) {
-        console.log("playerAttack called but combat is not active");
+    if (target === player) {
+        hpBar = document.getElementById('player-hp-bar');
+        hpContainer = hpBar.parentElement;
+        totalHp = player.totalStats.health;
+        currentHp = player.currentHealth;
+    } else if (target === enemy) {
+        hpBar = document.getElementById('enemy-hp-bar');
+        hpContainer = hpBar.parentElement;
+        totalHp = enemy.totalStats.health;
+        currentHp = enemy.currentHealth;
+    } else {
+        console.error('Unknown target for HP bar animation.');
         return;
     }
 
-    // Additional safety checks
-    if (!player || !enemy) {
-        console.warn("playerAttack called but player or enemy is null");
-        return;
+    // Get container width in pixels
+    const containerWidth = hpContainer.offsetWidth;
+
+    // Get current HP width in pixels
+    const currentWidth = hpBar.offsetWidth;
+
+    // Calculate damage width in pixels
+    const damageWidth = (damageAmount / totalHp) * containerWidth;
+
+    // Calculate new HP width
+    let newWidth = currentWidth - damageWidth;
+    if (newWidth < 0) newWidth = 0;
+
+    // Position for the slice (start at the new HP width)
+    const slicePosition = newWidth;
+
+    // Create the HP slice
+    const slice = document.createElement('div');
+    slice.classList.add('hp-slice');
+    slice.style.width = `${damageWidth}px`;
+    slice.style.left = `${slicePosition}px`; // Position the slice at the new HP level
+    hpContainer.appendChild(slice);
+
+    // Update the HP bar width
+    hpBar.style.width = `${(currentHp / totalHp) * 100}%`;
+
+    // Create the damage number
+    const damageNumber = document.createElement('div');
+    damageNumber.classList.add('damage-number');
+    let dmgText1 = `-${Math.round(damageAmount)}`;
+    if (typeof lastDamageWasCrit === 'boolean' && lastDamageWasCrit) {
+        damageNumber.classList.add('dmg-crit');
+        dmgText1 += '!';
+    } else if (typeof lastDamageWasDebuff === 'boolean' && lastDamageWasDebuff) {
+        damageNumber.classList.add('dmg-debuff');
     }
+    damageNumber.textContent = dmgText1;
+    const jitterX1 = (Math.random() * 34 - 17) | 0; // ~40% more: -17..17px
+    damageNumber.style.left = `${slicePosition + damageWidth / 2 - 10 + jitterX1}px`; // Center with larger random offset
+    damageNumber.style.top = `-25px`; // Position above the HP bar
+    hpContainer.appendChild(damageNumber);
 
-    // Ensure entities are properly initialized
-    if (!ensureEntityInitialization(player, true) || !ensureEntityInitialization(enemy, false)) {
-        console.warn("Entity initialization failed in playerAttack");
-        return;
-    }
+    // Remove slice after animation completes
+    slice.addEventListener('animationend', () => {
+        hpContainer.removeChild(slice);
+    });
 
-    try {
-        // Process any debuffs that might prevent the attack
-        if (enemy.activeDebuffs && Array.isArray(enemy.activeDebuffs)) {
-            for (const debuff of enemy.activeDebuffs) {
-                if (debuff && debuff.onAttack) {
-                    const result = debuff.onAttack(enemy, player);
-                    if (result === false) {
-                        // Attack was prevented by a debuff
-                        return;
-                    }
-                }
-            }
-        }
-
-        // Get damage calculation with breakdown using the centralized function
-        let damageResult;
-        if (typeof calculateDamage === 'function') {
-            damageResult = calculateDamage(player, enemy);
-        } else {
-            console.error("calculateDamage function not found!");
-            damageResult = { total: 0, damageBreakdown: {}, isCritical: false }; // Default to no damage
-        }
-
-        // Log detailed damage calculation in dev console (now done within calculateDamage in stats.js)
-        // console.log(`Player attack damage calculation:`, damageResult); // Removed as logging is now in stats.js
-
-        // Add combat log entry for damage info
-        if (typeof addToCombatLog === 'function' && damageResult.total > 0) {
-            const critText = damageResult.isCritical ? ' <span style="color: yellow; font-weight: bold;">(CRITICAL!)</span>' : '';
-            addToCombatLog(`Player attacks for ${damageResult.total} damage${critText}`, '#ffffff', false);
-        }
-
-        // Check again if enemy is null before proceeding
-        if (!enemy) {
-            console.warn("Enemy became null during playerAttack");
-            return;
-        }
-
-        applyDamage(enemy, damageResult.total, enemy.name, damageResult.damageBreakdown);
-
-        // After damage, enemy may be cleared by stopCombat in applyDamage; guard only if truly needed
-        if (!player || !enemy) {
-            return;
-        }
-
-        // Ensure both player and enemy have their effects arrays properly initialized
-        player.effects = player.effects || [];
-        enemy.effects = enemy.effects || [];
-
-        // Process effects with explicit empty array check
-        if (player && player.effects && Array.isArray(player.effects) && player.effects.length > 0) {
-            processEffects(player, 'onHit', enemy);
-            // Also process critical hit effects if this was a critical strike
-            if (damageResult.isCritical) {
-                processEffects(player, 'onCritical', enemy, damageResult.total);
-            }
-        }
-
-        // Check if enemy is still valid before proceeding
-        if (!enemy) {
-            console.warn("Enemy became null during effect processing");
-            return;
-        }
-
-        if (enemy && enemy.effects && Array.isArray(enemy.effects) && enemy.effects.length > 0) {
-            processEffects(enemy, 'whenHit', player);
-        }
-
-        // Process debuffs that trigger when the enemy is hit
-        if (enemy && enemy.activeDebuffs && Array.isArray(enemy.activeDebuffs)) {
-            for (const debuff of enemy.activeDebuffs) {
-                if (debuff && debuff.onReceiveHit) {
-                    debuff.onReceiveHit(enemy, { total: damageResult.total, ...damageResult.damageBreakdown }, player);
-                }
-            }
-        }
-        
-        // Process combo attacks
-        processComboAttacks(player, enemy, damageResult);
-        
-    } catch (error) {
-        console.error("Error in playerAttack:", error);
-    }
+    // Remove damage number after animation completes
+    damageNumber.addEventListener('animationend', () => {
+        hpContainer.removeChild(damageNumber);
+    });
 }
 
-function enemyAttack() {
-    // Exit early if combat is no longer active
-    if (!isCombatActive) {
-        console.log("enemyAttack called but combat is not active");
+function animateShieldBarChunk(target, shieldDamageAmount) {
+    let esBar, esContainer, totalEs, currentEs;
+
+    if (target === player) {
+        esBar = document.getElementById('player-es-bar');
+        esContainer = esBar.parentElement;
+        totalEs = player.totalStats.energyShield;
+        currentEs = player.currentShield;
+    } else if (target === enemy) {
+        esBar = document.getElementById('enemy-es-bar');
+        esContainer = esBar.parentElement;
+        totalEs = enemy.totalStats.energyShield;
+        currentEs = enemy.currentShield;
+    } else {
+        console.error('Unknown target for energy shield bar animation.');
         return;
     }
 
-    // Additional safety checks
-    if (!player || !enemy) {
-        console.warn("enemyAttack called but player or enemy is null");
-        return;
+    // Get container width in pixels
+    const containerWidth = esContainer.offsetWidth;
+
+    // Get current ES width in pixels
+    const currentWidth = esBar.offsetWidth;
+
+    // Calculate damage width in pixels
+    const damageWidth = (shieldDamageAmount / totalEs) * containerWidth;
+
+    // Calculate new ES width
+    let newWidth = currentWidth - damageWidth;
+    if (newWidth < 0) newWidth = 0;
+
+    // Position for the slice (start at the new ES width)
+    const slicePosition = newWidth;
+
+    // Create the ES slice
+    const slice = document.createElement('div');
+    slice.classList.add('es-slice');
+    slice.style.width = `${damageWidth}px`;
+    slice.style.left = `${slicePosition}px`; // Position the slice at the new ES level
+    esContainer.appendChild(slice);
+
+    // Update the ES bar width
+    esBar.style.width = `${(currentEs / totalEs) * 100}%`;
+
+    // Create the damage number
+    const damageNumber = document.createElement('div');
+    damageNumber.classList.add('damage-number');
+    let dmgText2 = `-${Math.round(shieldDamageAmount)}`;
+    if (typeof lastDamageWasCrit === 'boolean' && lastDamageWasCrit) {
+        damageNumber.classList.add('dmg-crit');
+        dmgText2 += '!';
+    } else if (typeof lastDamageWasDebuff === 'boolean' && lastDamageWasDebuff) {
+        damageNumber.classList.add('dmg-debuff');
     }
+    damageNumber.textContent = dmgText2;
+    const jitterX2 = (Math.random() * 34 - 17) | 0; // ~40% more: -17..17px
+    damageNumber.style.left = `${slicePosition + damageWidth / 2 - 10 + jitterX2}px`; // Center with larger random offset
+    damageNumber.style.top = `-25px`; // Position above the shield bar
+    esContainer.appendChild(damageNumber);
 
-    // Ensure entities are properly initialized
-    if (!ensureEntityInitialization(player, true) || !ensureEntityInitialization(enemy, false)) {
-        console.warn("Entity initialization failed in enemyAttack");
-        return;
-    }
+    // Remove slice after animation completes
+    slice.addEventListener('animationend', () => {
+        esContainer.removeChild(slice);
+    });
 
-    try {
-        // Process any debuffs that might prevent the attack
-        if (enemy.activeDebuffs && Array.isArray(enemy.activeDebuffs)) {
-            for (const debuff of enemy.activeDebuffs) {
-                if (debuff && debuff.onAttack) {
-                    const result = debuff.onAttack(enemy, player);
-                    if (result === false) {
-                        // Attack was prevented by a debuff
-                        return;
-                    }
-                }
-            }
-        }
-
-        // Get damage calculation with breakdown using the centralized function
-        let damageResult;
-         if (typeof calculateDamage === 'function') {
-             damageResult = calculateDamage(enemy, player);
-         } else {
-             console.error("calculateDamage function not found!");
-             damageResult = { total: 0, damageBreakdown: {}, isCritical: false }; // Default to no damage
-         }
-
-        // Log detailed damage calculation in dev console (now done within calculateDamage in stats.js)
-        // console.log(`Enemy attack damage calculation:`, damageResult); // Removed as logging is now in stats.js
-
-        // Add combat log entry for damage info
-        if (typeof addToCombatLog === 'function' && damageResult.total > 0) {
-            const critText = damageResult.isCritical ? ' <span style="color: yellow; font-weight: bold;">(CRITICAL!)</span>' : '';
-            addToCombatLog(`${enemy.name} attacks for ${damageResult.total} damage${critText}`, '#ffffff', false);
-        }
-
-        // Check again if player is null before proceeding
-        if (!player) {
-            console.warn("Player became null during enemyAttack");
-            return;
-        }
-
-        applyDamage(player, damageResult.total, "Player", damageResult.damageBreakdown);
-
-        // Check again after damage application if entities still exist
-        if (!player || !enemy) {
-            console.warn("Entity became null after damage application in enemyAttack");
-            return;
-        }
-
-        // Ensure both player and enemy have their effects arrays properly initialized
-        player.effects = player.effects || [];
-        enemy.effects = enemy.effects || [];
-
-        // Process effects with explicit empty array check
-        if (enemy && enemy.effects && Array.isArray(enemy.effects) && enemy.effects.length > 0) {
-            processEffects(enemy, 'onHit', player);
-        }
-
-        // Check if player is still valid before proceeding
-        if (!player) {
-            console.warn("Player became null during effect processing");
-            return;
-        }
-
-        if (player && player.effects && Array.isArray(player.effects) && player.effects.length > 0) {
-            processEffects(player, 'whenHit', enemy);
-        }
-        
-        // Process combo attacks for enemy
-        processComboAttacks(enemy, player, damageResult);
-        
-    } catch (error) {
-        console.error("Error in enemyAttack:", error);
-    }
+    // Remove damage number after animation completes
+    damageNumber.addEventListener('animationend', () => {
+        esContainer.removeChild(damageNumber);
+    });
 }
 
-function processComboAttacks(attacker, defender, originalDamageResult) {
-    // Safety checks
-    if (!attacker || !defender || !attacker.totalStats) {
-        return;
-    }
-    
-    // Check if attacker has combo attack chance
-    const comboChance = attacker.totalStats.comboAttack || 0;
-    if (comboChance <= 0) {
-        return; // No combo attack chance
-    }
-    
-    // Check if combo attack triggers
-    if (Math.random() * 100 > comboChance) {
-        return; // Combo attack didn't trigger
-    }
-    
-    // Calculate number of combo hits
-    const baseComboHits = 1; // Base 1 additional hit
-    const additionalHits = Number(attacker.totalStats.additionalComboAttacks || 0);
-    const totalComboHits = baseComboHits + additionalHits;
-    
-    // Calculate combo damage (base 20% of original damage)
-    const baseComboDamagePercent = 20;
-    const comboEffectiveness = attacker.totalStats.comboEffectiveness || 0;
-    const finalComboDamagePercent = baseComboDamagePercent + comboEffectiveness;
-    
-    const attackerName = attacker.name || 'Unknown';
-    const defenderName = defender.name || 'Unknown';
-    
-    console.log(`${attackerName} triggers combo attack! ${totalComboHits} additional hit(s) for ${finalComboDamagePercent}% damage each.`);
-    
-    // Add combat log entry
-    if (typeof addToCombatLog === 'function') {
-        addToCombatLog(`${attackerName} triggers combo attack! (${totalComboHits} hit${totalComboHits > 1 ? 's' : ''})`, '#ffaa00', false);
-    }
-    
-    // Execute combo hits
-    for (let i = 0; i < totalComboHits; i++) {
-        // Check if combat is still active and entities exist
-        if (!isCombatActive || !attacker || !defender) {
-            break;
-        }
-        
-        // Calculate combo damage for each hit type
-        let totalComboDamage = 0;
-        const comboDamageBreakdown = {};
-        
-        for (const damageType in originalDamageResult.damageBreakdown) {
-            const originalDamage = originalDamageResult.damageBreakdown[damageType];
-            const comboDamage = Math.round(originalDamage * finalComboDamagePercent / 100);
-            
-            if (comboDamage > 0) {
-                comboDamageBreakdown[damageType] = comboDamage;
-                totalComboDamage += comboDamage;
-            }
-        }
-        
-        // Apply combo damage (no proc effects for combo attacks)
-        if (totalComboDamage > 0) {
-            console.log(`Combo hit ${i + 1}/${totalComboHits}: ${totalComboDamage} damage`);
-            
-            // Add combat log entry for each combo hit
-            if (typeof addToCombatLog === 'function') {
-                addToCombatLog(`Combo hit ${i + 1}: ${totalComboDamage} damage`, '#ffcc66', false);
-            }
-            
-            applyDamage(defender, totalComboDamage, defenderName, comboDamageBreakdown);
-        }
-        
-        // Note: Combo attacks explicitly cannot trigger proc effects as per requirements
-    }
-}
+
+// ============================================================================
+// 7. EFFECTS & DAMAGE
+// ============================================================================
 
 function processEffects(entity, trigger, target, sourceDamage = 0) {
     // Comprehensive safety check
@@ -2400,6 +2966,116 @@ function executeEffectAction(effect, source, target, sourceDamage = 0) {
     }
 }
 
+// Function to apply damage to target
+function applyDamage(target, damage, targetName, damageTypes = null) {
+    if (!target) return 0;
+
+    // Handle the case where damage is not a number (might be an object or null)
+    if (typeof damage !== 'number' || isNaN(damage)) {
+        console.error("Invalid damage value in applyDamage:", damage);
+        damage = 0;
+    }
+
+    // Apply damage to shield first if available
+    let remainingDamage = damage;
+    let shieldDamage = 0;
+
+    if (target.currentShield > 0) {
+        shieldDamage = Math.min(target.currentShield, remainingDamage);
+        target.currentShield -= shieldDamage;
+        remainingDamage -= shieldDamage;
+
+        // Animate shield damage
+        // Determine crit/debuff styling from global flags set by damage origin
+        animateShieldBarChunk(target, shieldDamage, !!window.__lastIsCrit, !!window.__lastIsDebuff);
+    }
+
+    // Then apply remaining damage to health
+    if (remainingDamage > 0) {
+        target.currentHealth = Math.max(0, target.currentHealth - remainingDamage);
+
+        // Animate health damage
+        animateHpBarChunk(target, remainingDamage, !!window.__lastIsCrit, !!window.__lastIsDebuff);
+    }
+
+    // Format damage types for display
+    let damageMessage = '';
+    const totalDamage = shieldDamage + (remainingDamage > 0 ? remainingDamage : 0);
+
+    if (damageTypes && typeof damageTypes === 'object') {
+        // Create a damage breakdown message
+        let parts = [];
+        for (const type in damageTypes) {
+            if (type !== 'total' && damageTypes[type] > 0) {
+                // Use getDamageTypeColor and capitalize from stats.js if available
+                const typeColor = typeof getDamageTypeColor === 'function' ? getDamageTypeColor(type) : '#FFFFFF';
+                const capType = typeof capitalize === 'function' ? capitalize(type) : type;
+                parts.push(`<span style="color: ${typeColor};">${Math.round(damageTypes[type])} ${capType}</span>`);
+            }
+        }
+
+        if (parts.length > 0) {
+            damageMessage = parts.join(' + ');
+        } else {
+            damageMessage = `${Math.round(totalDamage)}`;
+        }
+    } else {
+        damageMessage = `${Math.round(totalDamage)}`;
+    }
+
+    // Display damage in combat log
+    if (typeof addToCombatLog === 'function') {
+        addToCombatLog(`${targetName} takes ${damageMessage} damage!`, null, false);
+    } else {
+        logMessage(`${targetName} takes ${damageMessage} damage!`);
+    }
+
+    // Display popup; pass source flag (attacker) and dominant damage type for tinting
+    const isFromPlayer = !target.isPlayer; // if target is player, source is enemy; else player
+    let dominantType = 'neutral';
+    if (damageTypes && typeof damageTypes === 'object') {
+        let maxVal = -1;
+        for (const t in damageTypes) {
+            if (t === 'total') continue;
+            const v = Number(damageTypes[t]) || 0;
+            if (v > maxVal) { maxVal = v; dominantType = t.toLowerCase(); }
+        }
+    }
+    // Removed floating toaster popups per request
+
+    // Update HP/Shield UI
+    updateHPESBars(target, target.isPlayer);
+
+    // Try to apply a debuff based on the damage type that was dealt
+    if (window.tryApplyDebuffFromDamage && damageTypes) {
+        // Get the attacker (source) based on which entity is taking damage
+        const source = target.isPlayer ? enemy : player;
+
+        // Add total damage to the damageTypes object
+        if (typeof damageTypes === 'object') {
+            const damageInfo = { ...damageTypes, total: totalDamage };
+
+            // Call the debuff application function with proper damage info
+            window.tryApplyDebuffFromDamage(source, target, damageInfo);
+        }
+    }
+
+    // Check if entity died
+    if (target.currentHealth <= 0) {
+        if (target.isPlayer) {
+            stopCombat("playerDefeated");
+        } else {
+            // Award XP from the defeated enemy before combat state is cleared
+            try {
+                const xpVal = (typeof target.experienceValue === 'number') ? target.experienceValue : 0;
+                awardXPWithZonePenalty(xpVal, target.name);
+            } catch (e) { /* ignore */ }
+            stopCombat("enemyDefeated");
+        }
+    }
+
+    return totalDamage;
+}
 
 function applyEffectDamage(target, amount, damageType, ignoreDefense = false, sourceInfo = null) {
     if (!target) return;
@@ -2417,7 +3093,8 @@ function applyEffectDamage(target, amount, damageType, ignoreDefense = false, so
         const defenseType = typeof matchDamageToDefense === 'function' ? matchDamageToDefense(damageType) : '';
         if (defenseType && target.totalStats.defenseTypes[defenseType]) {
             const defense = target.totalStats.defenseTypes[defenseType];
-            amount = Math.max(0, amount * (1 - (defense / 100)));
+            const effectiveDefense = Math.min(defense, 80); // Hard cap effective resistance at 80%
+            amount = Math.max(0, amount * (1 - (effectiveDefense / 100)));
         }
     }
 
@@ -2472,18 +3149,13 @@ function applyEffectDamage(target, amount, damageType, ignoreDefense = false, so
             // Award per-enemy experience on death BEFORE clearing enemy in stopCombat
             try {
                 const defeatedEnemy = enemy; // snapshot
-                const xp = (defeatedEnemy && typeof defeatedEnemy.experienceValue === 'number') ? defeatedEnemy.experienceValue : 0;
-                if (xp > 0 && typeof gainExperience === 'function') {
-                    gainExperience(xp);
-                    logMessage(`Gained ${xp} experience for defeating ${defeatedEnemy?.name || 'an enemy'}.`);
-                }
+                const baseXp = (defeatedEnemy && typeof defeatedEnemy.experienceValue === 'number') ? defeatedEnemy.experienceValue : 0;
+                awardXPWithZonePenalty(baseXp, defeatedEnemy?.name);
             } catch (e) { /* ignore */ }
             stopCombat("enemyDefeated");
         }
     }
 }
-
-// getDamageTypeColor function moved to stats.js
 
 function healEntity(entity, amount) {
     if (!entity || !entity.totalStats) return; // Safety check
@@ -2497,456 +3169,39 @@ function healEntity(entity, amount) {
     }
 }
 
-// Function to process status effects and buffs
-function processStatusEffects(entity, deltaTime) {
-    // Process status effects (e.g., debuffs)
-    for (let i = entity.statusEffects.length - 1; i >= 0; i--) {
-        const effect = entity.statusEffects[i];
-        if (effect.duration > 0) {
-            effect.remainingDuration -= deltaTime;
-            if (effect.onTick) effect.onTick(effect);
+function startHealthRegen() {
+    // Clear any existing interval to prevent multiple intervals
+    if (healthRegenInterval) {
+        clearInterval(healthRegenInterval);
+        healthRegenInterval = null;
+        console.log("Clearing existing health regeneration timer");
+    }
 
-            if (effect.remainingDuration <= 0) {
-                if (effect.onExpire) effect.onExpire(effect);
-                entity.statusEffects.splice(i, 1); // Remove expired effect
+    console.log("Starting health regeneration timer. isDelveInProgress: " + isDelveInProgress);
+    console.log("Player health regen rate: " + player.totalStats.healthRegen + " per second");
+
+    // Regenerate health every 200 milliseconds, but with special rules for delves
+    healthRegenInterval = setInterval(() => {
+
+        // Otherwise apply normal health regeneration
+        if (player.currentHealth < player.totalStats.health) {
+            const regenPerTick = player.totalStats.healthRegen / 5;
+            // (Assuming healthRegen is per second, 5 ticks/sec -> 200ms each)
+
+            player.currentHealth += regenPerTick;
+            if (player.currentHealth > player.totalStats.health) {
+                player.currentHealth = player.totalStats.health;
             }
+            updatePlayerStatsDisplay();
         }
-    }
+    }, 200);
 }
 
-// calculateDamage function moved to stats.js
-
-// Function to apply damage to target
-function applyDamage(target, damage, targetName, damageTypes = null) {
-    if (!target) return 0;
-
-    // Handle the case where damage is not a number (might be an object or null)
-    if (typeof damage !== 'number' || isNaN(damage)) {
-        console.error("Invalid damage value in applyDamage:", damage);
-        damage = 0;
-    }
-
-    // Apply damage to shield first if available
-    let remainingDamage = damage;
-    let shieldDamage = 0;
-
-    if (target.currentShield > 0) {
-        shieldDamage = Math.min(target.currentShield, remainingDamage);
-        target.currentShield -= shieldDamage;
-        remainingDamage -= shieldDamage;
-
-        // Animate shield damage
-        animateShieldBarChunk(target, shieldDamage);
-    }
-
-    // Then apply remaining damage to health
-    if (remainingDamage > 0) {
-        target.currentHealth = Math.max(0, target.currentHealth - remainingDamage);
-
-        // Animate health damage
-        animateHpBarChunk(target, remainingDamage);
-    }
-
-    // Format damage types for display
-    let damageMessage = '';
-    const totalDamage = shieldDamage + (remainingDamage > 0 ? remainingDamage : 0);
-
-    if (damageTypes && typeof damageTypes === 'object') {
-        // Create a damage breakdown message
-        let parts = [];
-        for (const type in damageTypes) {
-            if (type !== 'total' && damageTypes[type] > 0) {
-                // Use getDamageTypeColor and capitalize from stats.js if available
-                const typeColor = typeof getDamageTypeColor === 'function' ? getDamageTypeColor(type) : '#FFFFFF';
-                const capType = typeof capitalize === 'function' ? capitalize(type) : type;
-                parts.push(`<span style="color: ${typeColor};">${Math.round(damageTypes[type])} ${capType}</span>`);
-            }
-        }
-
-        if (parts.length > 0) {
-            damageMessage = parts.join(' + ');
-        } else {
-            damageMessage = `${Math.round(totalDamage)}`;
-        }
-    } else {
-        damageMessage = `${Math.round(totalDamage)}`;
-    }
-
-    // Display damage in combat log
-    if (typeof addToCombatLog === 'function') {
-        addToCombatLog(`${targetName} takes ${damageMessage} damage!`, null, false);
-    } else {
-        logMessage(`${targetName} takes ${damageMessage} damage!`);
-    }
-
-    // Display popup; pass source flag (attacker) and dominant damage type for tinting
-    const isFromPlayer = !target.isPlayer; // if target is player, source is enemy; else player
-    let dominantType = 'neutral';
-    if (damageTypes && typeof damageTypes === 'object') {
-        let maxVal = -1;
-        for (const t in damageTypes) {
-            if (t === 'total') continue;
-            const v = Number(damageTypes[t]) || 0;
-            if (v > maxVal) { maxVal = v; dominantType = t.toLowerCase(); }
-        }
-    }
-    displayDamagePopup(`${Math.round(totalDamage)}`, isFromPlayer, dominantType);
-
-    // Update HP/Shield UI
-    updateHPESBars(target, target.isPlayer);
-
-    // Try to apply a debuff based on the damage type that was dealt
-    if (window.tryApplyDebuffFromDamage && damageTypes) {
-        // Get the attacker (source) based on which entity is taking damage
-        const source = target.isPlayer ? enemy : player;
-
-        // Add total damage to the damageTypes object
-        if (typeof damageTypes === 'object') {
-            const damageInfo = { ...damageTypes, total: totalDamage };
-
-            // Call the debuff application function with proper damage info
-            window.tryApplyDebuffFromDamage(source, target, damageInfo);
-        }
-    }
-
-    // Check if entity died
-    if (target.currentHealth <= 0) {
-        if (target.isPlayer) {
-            stopCombat("playerDefeated");
-        } else {
-            // Award XP from the defeated enemy before combat state is cleared
-            try {
-                const xpVal = (typeof target.experienceValue === 'number') ? target.experienceValue : 0;
-                if (xpVal > 0 && typeof gainExperience === 'function') {
-                    gainExperience(xpVal);
-                    logMessage(`Gained ${xpVal} experience for defeating ${target.name || 'an enemy'}.`);
-                }
-            } catch (e) { /* ignore */ }
-            stopCombat("enemyDefeated");
-        }
-    }
-
-    return totalDamage;
-}
-
-
-
-
-function animateHpBarChunk(target, damageAmount) {
-    let hpBar, hpContainer, totalHp, currentHp;
-
-    if (target === player) {
-        hpBar = document.getElementById('player-hp-bar');
-        hpContainer = hpBar.parentElement;
-        totalHp = player.totalStats.health;
-        currentHp = player.currentHealth;
-    } else if (target === enemy) {
-        hpBar = document.getElementById('enemy-hp-bar');
-        hpContainer = hpBar.parentElement;
-        totalHp = enemy.totalStats.health;
-        currentHp = enemy.currentHealth;
-    } else {
-        console.error('Unknown target for HP bar animation.');
-        return;
-    }
-
-    // Get container width in pixels
-    const containerWidth = hpContainer.offsetWidth;
-
-    // Get current HP width in pixels
-    const currentWidth = hpBar.offsetWidth;
-
-    // Calculate damage width in pixels
-    const damageWidth = (damageAmount / totalHp) * containerWidth;
-
-    // Calculate new HP width
-    let newWidth = currentWidth - damageWidth;
-    if (newWidth < 0) newWidth = 0;
-
-    // Position for the slice (start at the new HP width)
-    const slicePosition = newWidth;
-
-    // Create the HP slice
-    const slice = document.createElement('div');
-    slice.classList.add('hp-slice');
-    slice.style.width = `${damageWidth}px`;
-    slice.style.left = `${slicePosition}px`; // Position the slice at the new HP level
-    hpContainer.appendChild(slice);
-
-    // Update the HP bar width
-    hpBar.style.width = `${(currentHp / totalHp) * 100}%`;
-
-    // Create the damage number
-    const damageNumber = document.createElement('div');
-    damageNumber.classList.add('damage-number');
-    damageNumber.textContent = `-${Math.round(damageAmount)}`;
-    damageNumber.style.left = `${slicePosition + damageWidth / 2 - 10}px`; // Center above the slice
-    damageNumber.style.top = `-25px`; // Position above the HP bar
-    hpContainer.appendChild(damageNumber);
-
-    // Remove slice after animation completes
-    slice.addEventListener('animationend', () => {
-        hpContainer.removeChild(slice);
-    });
-
-    // Remove damage number after animation completes
-    damageNumber.addEventListener('animationend', () => {
-        hpContainer.removeChild(damageNumber);
-    });
-}
-
-function animateShieldBarChunk(target, shieldDamageAmount) {
-    let esBar, esContainer, totalEs, currentEs;
-
-    if (target === player) {
-        esBar = document.getElementById('player-es-bar');
-        esContainer = esBar.parentElement;
-        totalEs = player.totalStats.energyShield;
-        currentEs = player.currentShield;
-    } else if (target === enemy) {
-        esBar = document.getElementById('enemy-es-bar');
-        esContainer = esBar.parentElement;
-        totalEs = enemy.totalStats.energyShield;
-        currentEs = enemy.currentShield;
-    } else {
-        console.error('Unknown target for energy shield bar animation.');
-        return;
-    }
-
-    // Get container width in pixels
-    const containerWidth = esContainer.offsetWidth;
-
-    // Get current ES width in pixels
-    const currentWidth = esBar.offsetWidth;
-
-    // Calculate damage width in pixels
-    const damageWidth = (shieldDamageAmount / totalEs) * containerWidth;
-
-    // Calculate new ES width
-    let newWidth = currentWidth - damageWidth;
-    if (newWidth < 0) newWidth = 0;
-
-    // Position for the slice (start at the new ES width)
-    const slicePosition = newWidth;
-
-    // Create the ES slice
-    const slice = document.createElement('div');
-    slice.classList.add('es-slice');
-    slice.style.width = `${damageWidth}px`;
-    slice.style.left = `${slicePosition}px`; // Position the slice at the new ES level
-    esContainer.appendChild(slice);
-
-    // Update the ES bar width
-    esBar.style.width = `${(currentEs / totalEs) * 100}%`;
-
-    // Create the damage number
-    const damageNumber = document.createElement('div');
-    damageNumber.classList.add('damage-number');
-    damageNumber.textContent = `-${Math.round(shieldDamageAmount)}`;
-    damageNumber.style.left = `${slicePosition + damageWidth / 2 - 10}px`; // Center above the slice
-    damageNumber.style.top = `-25px`; // Position above the shield bar
-    esContainer.appendChild(damageNumber);
-
-    // Remove slice after animation completes
-    slice.addEventListener('animationend', () => {
-        esContainer.removeChild(slice);
-    });
-
-    // Remove damage number after animation completes
-    damageNumber.addEventListener('animationend', () => {
-        esContainer.removeChild(damageNumber);
-    });
-}
-
-
-// Function to handle loot drops
-function dropLoot(enemy) {
-    // Use the new loot handler
-    handleLootDrop(enemy);
-}
-
-
-function getRandomInt(min, max) {
-    // Ensure min and max are integers
-    min = Math.ceil(min);
-    max = Math.floor(max);
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function displayLootPopup(message) {
-    // Remove any formatting codes like {flashing} and {end}
-    // This regex removes any text enclosed in braces { ... }
-    message = message.replace(/\{[^}]+\}/g, '');
-
-    const container = document.getElementById('loot-popups-container');
-    if (!container) {
-        console.error('Loot popups container not found in the DOM.');
-        return;
-    }
-
-    const popup = document.createElement('div');
-    popup.classList.add('loot-popup');
-    popup.textContent = message;
-
-    // Add the popup to the container
-    container.appendChild(popup);
-
-    // Remove the popup after 3 seconds
-    setTimeout(() => {
-        popup.style.opacity = '0';
-        popup.style.transition = 'opacity 0.5s';
-        // Remove the popup from the DOM after the transition
-        setTimeout(() => {
-            container.removeChild(popup);
-        }, 500);
-    }, 3000);
-}
-
-
-// matchDamageToDefense function moved to stats.js
-
-// Function to display damage popup
-function displayDamagePopup(message, isFromPlayer, damageTypeOverride = null) {
-	// Removed per notes: no damage toast popups
-	return;
-}
-
-function initializeEnemyStatsDisplay() {
-    document.getElementById("enemy-name").textContent = "No Enemy";
-    document.getElementById("enemy-attack-speed").textContent = "N/A";
-    document.getElementById("enemy-crit-chance").textContent = "N/A";
-    document.getElementById("enemy-crit-multiplier").textContent = "N/A";
-    document.getElementById('enemy-attack-progress-bar').style.width = '0%';
-    document.getElementById('enemy-hp-bar').style.width = '0%';
-    document.getElementById('enemy-hp-text').textContent = '0 / 0';
-    document.getElementById('enemy-es-bar').style.width = '0%';
-    document.getElementById('enemy-es-text').textContent = '0 / 0';
-
-    // Clear damage and defense types
-    document.getElementById('enemy-damage-types').innerHTML = '';
-    document.getElementById('enemy-defense-types').innerHTML = '';
-    document.getElementById('enemy-active-effects').innerHTML = '';
-}
-
-// capitalize function moved to stats.js
-
-function createShieldPulseAnimation() {
-    // Check if the animation already exists
-    if (!document.getElementById('shield-pulse-animation')) {
-        const styleElement = document.createElement('style');
-        styleElement.id = 'shield-pulse-animation';
-        styleElement.textContent = `
-            @keyframes shieldPulse {
-                0% { opacity: 0.8; }
-                50% { opacity: 1; }
-                100% { opacity: 0.8; }
-            }
-        `;
-        document.head.appendChild(styleElement);
-    }
-}
-
-// Add this new function to create and update the Delve Bag UI
-function updateDelveBagUI() {
-    // Find or create the delve bag container
-    let delveBagContainer = document.getElementById('delve-bag-container');
-
-    if (!delveBagContainer) {
-        // Create the container if it doesn't exist
-        delveBagContainer = document.createElement('div');
-        delveBagContainer.id = 'delve-bag-container';
-        delveBagContainer.className = 'delve-bag';
-
-        // Create header
-        const header = document.createElement('h3');
-        header.textContent = 'Delve Bag';
-        delveBagContainer.appendChild(header);
-
-        // Create credits display
-        const creditsDiv = document.createElement('div');
-        creditsDiv.id = 'delve-bag-credits';
-        creditsDiv.className = 'delve-bag-credits';
-        delveBagContainer.appendChild(creditsDiv);
-
-        // Create items list
-        const itemsList = document.createElement('ul');
-        itemsList.id = 'delve-bag-items';
-        delveBagContainer.appendChild(itemsList);
-
-        // Add to the DOM - place it after enemy stats
-        const enemyStats = document.getElementById('enemy-stats');
-        if (enemyStats && enemyStats.parentNode) {
-            enemyStats.parentNode.insertBefore(delveBagContainer, enemyStats.nextSibling);
-        }
-    }
-
-    // Update credits display
-    const creditsDiv = document.getElementById('delve-bag-credits');
-    if (creditsDiv) {
-        creditsDiv.textContent = `Credits: ${delveBag.credits}`;
-    }
-
-    // Update items list
-    const itemsList = document.getElementById('delve-bag-items');
-    if (itemsList) {
-        // Clear current items
-        itemsList.innerHTML = '';
-
-        // Add each item with a tooltip
-        delveBag.items.forEach(item => {
-            const listItem = document.createElement('li');
-            listItem.textContent = `${item.name} x${item.quantity}`;
-
-            // Create an actual tooltip element (the old-fashioned way)
-            const tooltip = document.createElement('div');
-            tooltip.className = 'tooltip';
-            tooltip.style.display = 'none'; // Initially hidden
-            tooltip.innerHTML = getItemTooltipContent(item);
-            listItem.appendChild(tooltip);
-
-            // Also add data attributes for the global tooltip system as a backup
-            listItem.dataset.hasTooltip = 'true';
-
-            // Set unique ID to help debug
-            const uniqueId = `delve-item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-            listItem.id = uniqueId;
-
-            // Old hover handler (fallback method)
-            listItem.addEventListener('mouseenter', () => {
-                console.log(`Mouse entered delve bag item: ${item.name}`);
-                tooltip.style.display = 'block';
-            });
-
-            listItem.addEventListener('mouseleave', () => {
-                tooltip.style.display = 'none';
-            });
-
-            itemsList.appendChild(listItem);
-        });
-
-        // Show "empty" message if no items
-        if (delveBag.items.length === 0) {
-            const emptyMessage = document.createElement('li');
-            emptyMessage.textContent = 'Empty';
-            emptyMessage.className = 'empty-bag';
-            itemsList.appendChild(emptyMessage);
-        }
-    }
-
-    // Always show the delve bag (removed conditional display)
-    if (delveBagContainer) {
-        delveBagContainer.style.display = 'block';
-    }
-}
-
-function applyStatusEffect(target, effectName) {
-    // Create the status effect instance using the factory function
-    let effectFactory = statusEffects[effectName];
-    if (effectFactory) {
-        let effect = effectFactory(target);
-        target.statusEffects.push(effect);
-    } else {
-        console.error(`Status effect '${effectName}' not found.`);
+function stopHealthRegen() {
+    if (healthRegenInterval) {
+        clearInterval(healthRegenInterval);
+        healthRegenInterval = null;
+        console.log("Health regeneration stopped");
     }
 }
 
@@ -2975,161 +3230,87 @@ function processBuffs(entity, deltaTime) {
     }
 }
 
-// Function to format and add messages to the combat log
-function addToCombatLog(message, color = null, isBold = false) {
-    let html = message || '';
+// Function to process status effects and buffs
+function processStatusEffects(entity, deltaTime) {
+    // Process status effects (e.g., debuffs)
+    for (let i = entity.statusEffects.length - 1; i >= 0; i--) {
+        const effect = entity.statusEffects[i];
+        if (effect.duration > 0) {
+            effect.remainingDuration -= deltaTime;
+            if (effect.onTick) effect.onTick(effect);
 
-    // Only modify plain text, not inside existing HTML tags
-    const applyToTextOnly = (input, replacer) => input.split(/(<[^>]+>)/g).map(seg => seg.startsWith('<') ? seg : replacer(seg)).join('');
-    const escapeRegExp = (s) => s.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-
-    const playerName = (player && player.name) ? player.name : 'Player';
-    const enemyName = (enemy && enemy.name) ? enemy.name : 'Enemy';
-
-    // Keyword highlights
-    const keywordHighlights = [
-        { word: 'CRITICAL', style: 'font-weight: bold; color: #ffff00; text-shadow: 0 0 5px rgba(255, 255, 0, 0.7);' },
-        { word: 'critical', style: 'font-weight: bold; color: #ffff00; text-shadow: 0 0 3px rgba(255, 255, 0, 0.5);' },
-        { word: 'combo attack', style: 'font-weight: bold; color: #ff8800; text-shadow: 0 0 3px rgba(255, 136, 0, 0.7);' },
-        { word: 'Combo hit', style: 'font-weight: bold; color: #ffaa44;' },
-        { word: 'triggers', style: 'font-weight: bold; color: #66ffcc;' },
-        { word: 'heals', style: 'font-weight: bold; color: #66ff88;' },
-        { word: 'dies', style: 'font-weight: bold; color: #ff4444; text-shadow: 0 0 3px rgba(255, 68, 68, 0.7);' },
-        { word: 'defeated', style: 'font-weight: bold; color: #ff4444; text-shadow: 0 0 3px rgba(255, 68, 68, 0.7);' }
-    ];
-
-    html = applyToTextOnly(html, txt => {
-        keywordHighlights.forEach(h => {
-            const rx = new RegExp(`\\b${h.word}\\b`, 'gi');
-            txt = txt.replace(rx, (m) => `<span style="${h.style}">${m}</span>`);
-        });
-        return txt;
-    });
-
-    // Damage types
-    const dmgColors = { kinetic:'#b8c1c1', slashing:'#c8a2c8', pyro:'#ff6b6b', electric:'#74c0fc', cryo:'#7dd3fc', corrosive:'#2eb82e', radiation:'#66ff99', chemical:'#2eb82e', physical:'#aab3b3' };
-    html = applyToTextOnly(html, txt => {
-        Object.keys(dmgColors).forEach(dt => {
-            const rx = new RegExp(`\\b${dt}\\b`, 'gi');
-            txt = txt.replace(rx, (m)=>`<span style=\"color:${dmgColors[dt]}; font-weight:bold;\">${m}</span>`);
-        });
-        return txt;
-    });
-
-    // Numbers (near damage/HP/ES/shield context)
-    html = applyToTextOnly(html, txt => txt.replace(/(\\b\\d+\\b)(?=\\s*(damage|HP|ES|shield)\\b)?/gi, '<span style=\"color:#ffd166; font-weight:bold;\">$1</span>'));
-
-    // Names
-    html = applyToTextOnly(html, txt => txt.replace(new RegExp(escapeRegExp(playerName), 'g'), `<span style=\"color:#7df9ff; font-weight:bold; text-shadow:0 0 4px #7df9ff55;\">${playerName}</span>`));
-    html = applyToTextOnly(html, txt => txt.replace(new RegExp(escapeRegExp(enemyName), 'g'), `<span style=\"color:#ff7f7f; font-weight:bold; text-shadow:0 0 4px #ff7f7f55;\">${enemyName}</span>`));
-
-    if (color) html = `<span style=\"color: ${color};\">${html}</span>`;
-    if (isBold) html = `<strong>${html}</strong>`;
-
-    logMessage(html);
+            if (effect.remainingDuration <= 0) {
+                if (effect.onExpire) effect.onExpire(effect);
+                entity.statusEffects.splice(i, 1); // Remove expired effect
+            }
+        }
+    }
 }
 
-// Expose the function globally so it can be accessed from other scripts like debuffs.js
-window.addToCombatLog = addToCombatLog;
+function clearBuffs(entity, preserveMedtekInjectors = false) {
+    if (!entity) return;
 
-// Function to update the player debuffs UI
-function updatePlayerDebuffsUI() {
-    const debuffsContainer = document.getElementById('player-debuffs');
-    if (!debuffsContainer) return;
-
-    // Clear existing debuffs
-    debuffsContainer.innerHTML = '';
-
-    // If player has no debuffs, exit
-    if (!player || !player.activeDebuffs || player.activeDebuffs.length === 0) {
-        debuffsContainer.style.display = 'none';
-        return;
+    // Clear buffs
+    if (entity.activeBuffs && entity.activeBuffs.length > 0) {
+        if (preserveMedtekInjectors) {
+            entity.activeBuffs = entity.activeBuffs.filter(buff =>
+                buff.name && buff.name.includes('Medtek Injector'));
+        } else {
+            entity.activeBuffs = [];
+        }
     }
 
-    // Show the container
-    debuffsContainer.style.display = 'flex';
-
-    // Add each debuff icon
-    player.activeDebuffs.forEach(debuff => {
-        if (!debuff) return;
-
-        const debuffElement = document.createElement('div');
-        debuffElement.className = 'debuff-icon';
-
-        // Set background color based on debuff type
-        let bgColor = '#ff6b6b'; // Default red for harmful debuffs
-        if (debuff.type === 'crowd_control') {
-            bgColor = '#9775fa'; // Purple for CC
-        } else if (debuff.type === 'damage_over_time') {
-            bgColor = '#ff9966'; // Orange for DoT
+    // Clear debuffs if they exist
+    if (entity.activeDebuffs && entity.activeDebuffs.length > 0) {
+        // Call onRemove for each debuff before clearing
+        for (const debuff of entity.activeDebuffs) {
+            if (debuff.onRemove) {
+                debuff.onRemove(entity);
+            }
         }
-
-        debuffElement.style.backgroundColor = bgColor;
-
-        // Add debuff name
-        const nameSpan = document.createElement('span');
-        // Use capitalize from stats.js if available
-        let capName = typeof capitalize === 'function' ? capitalize(debuff.name) : debuff.name;
-        nameSpan.textContent = capName.substring(0, 1); // Just the first letter for the icon
-        debuffElement.appendChild(nameSpan);
-
-        // Add tooltip with debuff info
-        debuffElement.title = `${capName}: ${debuff.description || ''}`;
-
-        // Add to container
-        debuffsContainer.appendChild(debuffElement);
-    });
-}
-
-// Function to update the enemy debuffs UI
-function updateEnemyDebuffsUI() {
-    const debuffsContainer = document.getElementById('enemy-debuffs');
-    if (!debuffsContainer) return;
-
-    // Clear existing debuffs
-    debuffsContainer.innerHTML = '';
-
-    // If enemy has no debuffs, exit
-    if (!enemy || !enemy.activeDebuffs || enemy.activeDebuffs.length === 0) {
-        debuffsContainer.style.display = 'none';
-        return;
+        entity.activeDebuffs = [];
     }
 
-    // Show the container
-    debuffsContainer.style.display = 'flex';
-
-    // Add each debuff icon
-    enemy.activeDebuffs.forEach(debuff => {
-        if (!debuff) return;
-
-        const debuffElement = document.createElement('div');
-        debuffElement.className = 'debuff-icon';
-
-        // Set background color based on debuff type
-        let bgColor = '#ff6b6b'; // Default red for harmful debuffs
-        if (debuff.type === 'crowd_control') {
-            bgColor = '#9775fa'; // Purple for CC
-        } else if (debuff.type === 'damage_over_time') {
-            bgColor = '#ff9966'; // Orange for DoT
+    // Recalculate stats for the entity
+    if (entity === player) {
+        entity.calculateStats();
+        updatePlayerStatsDisplay();
+    } else if (entity === enemy) {
+        // Use the centralized function to recalculate enemy stats
+        if (typeof calculateEnemyStats === 'function') {
+            calculateEnemyStats(enemy);
+        } else {
+            console.error("calculateEnemyStats function not found during clearBuffs!");
         }
-
-        debuffElement.style.backgroundColor = bgColor;
-
-        // Add debuff name
-        const nameSpan = document.createElement('span');
-        // Use capitalize from stats.js if available
-        let capName = typeof capitalize === 'function' ? capitalize(debuff.name) : debuff.name;
-        nameSpan.textContent = capName.substring(0, 1); // Just the first letter for the icon
-        debuffElement.appendChild(nameSpan);
-
-        // Add tooltip with debuff info
-        debuffElement.title = `${capName}: ${debuff.description || ''}`;
-
-        // Add to container
-        debuffsContainer.appendChild(debuffElement);
-    });
+        updateEnemyStatsDisplay();
+    }
 }
 
-// Make these functions available globally
-window.updatePlayerDebuffsUI = updatePlayerDebuffsUI;
-window.updateEnemyDebuffsUI = updateEnemyDebuffsUI;
+function applyStatusEffect(target, effectName) {
+    // Create the status effect instance using the factory function
+    let effectFactory = statusEffects[effectName];
+    if (effectFactory) {
+        let effect = effectFactory(target);
+        target.statusEffects.push(effect);
+    } else {
+        console.error(`Status effect '${effectName}' not found.`);
+    }
+}
+
+// Function to handle loot drops
+function dropLoot(enemy) {
+    // Use the new loot handler
+    handleLootDrop(enemy);
+}
+
+// ============================================================================
+// 8. HELPERS
+// ============================================================================
+
+function getRandomInt(min, max) {
+    // Ensure min and max are integers
+    min = Math.ceil(min);
+    max = Math.floor(max);
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+

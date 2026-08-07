@@ -1,41 +1,44 @@
-// global.js or settings.js
+// Settings modal open/close (main wiring lives in global.js)
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Settings Menu Elements
     const settingsButton = document.getElementById('settings-button');
     const settingsMenu = document.getElementById('settings-menu');
     const closeSettings = document.getElementById('close-settings');
     const darkModeToggle = document.getElementById('dark-mode-toggle');
 
-    // Event Listeners
-    settingsButton.addEventListener('click', () => {
-        settingsMenu.style.display = 'block';
-    });
+    if (settingsButton && settingsMenu && typeof openSettingsMenu === 'function') {
+        settingsButton.addEventListener('click', () => {
+            openSettingsMenu();
+        });
+    }
 
-    closeSettings.addEventListener('click', () => {
-        settingsMenu.style.display = 'none';
-    });
+    if (closeSettings && typeof closeSettingsMenu === 'function') {
+        closeSettings.addEventListener('click', () => {
+            closeSettingsMenu();
+        });
+    }
 
-    // Close the modal if the user clicks outside of it
-    window.addEventListener('click', (event) => {
-        if (event.target === settingsMenu) {
-            settingsMenu.style.display = 'none';
-        }
-    });
+    if (settingsMenu) {
+        window.addEventListener('click', (event) => {
+            if (event.target === settingsMenu && typeof closeSettingsMenu === 'function') {
+                closeSettingsMenu();
+            }
+        });
+    }
 
-    // Dark Mode Toggle
-    darkModeToggle.addEventListener('change', (event) => {
-        if (event.target.checked) {
+    if (darkModeToggle) {
+        darkModeToggle.addEventListener('change', (event) => {
+            if (event.target.checked) {
+                enableDarkMode();
+            } else {
+                disableDarkMode();
+            }
+        });
+
+        const darkModeEnabled = localStorage.getItem('darkMode') === 'true';
+        darkModeToggle.checked = darkModeEnabled;
+        if (darkModeEnabled) {
             enableDarkMode();
-        } else {
-            disableDarkMode();
         }
-    });
-
-    // Load dark mode preference from localStorage
-    const darkModeEnabled = localStorage.getItem('darkMode') === 'true';
-    darkModeToggle.checked = darkModeEnabled;
-    if (darkModeEnabled) {
-        enableDarkMode();
     }
 });

@@ -210,58 +210,50 @@ function generateLoot(enemy, player) {
  * @param {Object} enemy - The enemy that was defeated
  */
 function handleLootDrop(enemy) {
+    if (!enemy || enemy.name.includes('Training Dummy')) return;
+
+    const inDelve = typeof isDelveInProgress !== 'undefined' && isDelveInProgress;
+
+    if (inDelve) {
+        addMonsterLootToDelveBag(enemy);
+        return;
+    }
+
     logMessage(`${enemy.name} is dropping loot...`);
     let lootFound = false;
-    
-    // Get the player object (assuming it's accessible globally)
-    const player = window.player || {}; // Fallback to empty object if player is not defined
-    
-    // Generate loot using the new system
+
+    const player = window.player || {};
+
     const lootItems = generateLoot(enemy, player);
-    
-    // Add the items to inventory
+
     lootItems.forEach(item => {
         addItemToInventory(item);
-        
+
         const lootMessage = `You received: {flashing}${item.name} x${item.quantity || 1}{end}`;
         logMessage(lootMessage);
         displayLootPopup(lootMessage);
         lootFound = true;
     });
-    
-    // Handle existing currency drop logic
+
     if (enemy.currencyDrop) {
         if (Math.random() < enemy.currencyDrop.dropRate) {
             const currencyAmount = getRandomInt(enemy.currencyDrop.min, enemy.currencyDrop.max);
-            
-            // Apply player currency modifiers if they exist
+
             let finalAmount = currencyAmount;
             if (player && player.stats && player.stats.currencyFind) {
                 finalAmount = Math.floor(currencyAmount * (1 + player.stats.currencyFind / 100));
             }
-            
+
             updateCurrency(finalAmount);
             logMessage(`You found {flashing}${finalAmount} currency{end}`);
             lootFound = true;
         }
     }
-    
-    // If adventure mode, add to delve bag
-    if (inAdventure && enemy.name !== 'Training Dummy') {
-        addMonsterLootToDelveBag(enemy);
-    }
-    
-    // Update the inventory display
+
     updateInventoryDisplay();
-    
-    // If no loot was found, log a message
+
     if (!lootFound) {
         logMessage(`No loot found.`);
-    }
-    
-    // If we're in an adventure and this is a sequence enemy, proceed to the next one
-    if (inAdventure && inEnemySequence) {
-        beginNextMonsterInSequence();
     }
 }
 

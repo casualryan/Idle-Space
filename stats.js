@@ -2,40 +2,223 @@
 
 // --- Moved from global.js ---
 
+const DAMAGE_TYPE_TO_GROUP = {
+    kinetic: 'physical',
+    slashing: 'physical',
+    pyro: 'elemental',
+    cryo: 'elemental',
+    electric: 'elemental',
+    corrosive: 'chemical',
+    radiation: 'chemical'
+};
+
+const DAMAGE_GROUP_TO_TYPES = {
+    physical: ['kinetic', 'slashing'],
+    elemental: ['pyro', 'cryo', 'electric'],
+    chemical: ['corrosive', 'radiation']
+};
+
+const LEGACY_DAMAGE_TYPE_MAP = {
+    mental: 'slashing',
+    magnetic: 'electric',
+    chemical: 'corrosive'
+};
+
+function normalizeDamageTypeKey(type) {
+    return LEGACY_DAMAGE_TYPE_MAP[type] || type;
+}
+
+function getWeaponBaseDamageMap(item) {
+    if (!item || typeof item !== 'object') return {};
+    const source = item.weaponBaseDamage || item.baseDamageTypes || item.damageTypes || {};
+    const normalized = {};
+    Object.keys(source).forEach((rawType) => {
+        const type = normalizeDamageTypeKey(rawType);
+        if (!DAMAGE_TYPE_TO_GROUP[type]) return;
+        const value = source[rawType];
+        if (typeof value === 'number') {
+            normalized[type] = { min: value, max: value };
+            return;
+        }
+        if (value && typeof value === 'object') {
+            const min = Number(value.min);
+            const max = Number(value.max);
+            if (Number.isFinite(min) || Number.isFinite(max)) {
+                const safeMin = Number.isFinite(min) ? min : (Number.isFinite(max) ? max : 0);
+                const safeMax = Number.isFinite(max) ? max : safeMin;
+                normalized[type] = {
+                    min: Math.min(safeMin, safeMax),
+                    max: Math.max(safeMin, safeMax)
+                };
+            }
+        }
+    });
+    return normalized;
+}
+
+function getWeaponBaseGroups(baseDamageMap) {
+    const groups = new Set();
+    Object.keys(baseDamageMap).forEach((type) => {
+        const group = DAMAGE_TYPE_TO_GROUP[type];
+        if (group) groups.add(group);
+    });
+    return groups;
+}
+
+function isDamageTypeInAllowedWeaponPool(type, baseGroups) {
+    const group = DAMAGE_TYPE_TO_GROUP[type];
+    return Boolean(group && baseGroups.has(group));
+}
+
+function addRangeDamageEntry(target, type, range) {
+    if (!target[type]) target[type] = { min: 0, max: 0 };
+    target[type].min += Number(range.min || 0);
+    target[type].max += Number(range.max || 0);
+}
+
+function computeWeaponLocalProfile(item) {
+    const profile = {
+        baseDamage: getWeaponBaseDamageMap(item),
+        finalDamage: {},
+        finalFlatDamage: {},
+        conversion: null,
+        localAttackSpeedMultiplier: 1,
+        localAttackSpeedPercent: 0
+    };
+
+    const hasLegacyDamageTypes = Boolean(item?.damageTypes && Object.keys(item.damageTypes).length > 0);
+    if (item?.weaponBaseDamage && hasLegacyDamageTypes) {
+        console.warn(`Weapon ${item?.name || 'Unknown'} has both weaponBaseDamage and legacy damageTypes; legacy damageTypes will not be treated as base.`);
+    }
+    const baseGroups = getWeaponBaseGroups(profile.baseDamage);
+    if (Object.keys(profile.baseDamage).length === 0) {
+        console.warn(`Weapon ${item?.name || 'Unknown'} has no usable weapon base damage.`);
+    }
+    const working = {};
+    Object.keys(profile.baseDamage).forEach((type) => {
+        addRangeDamageEntry(working, type, profile.baseDamage[type]);
+    });
+
+    const flatLocal = item?.weaponLocalFlatDamage || {};
+    Object.keys(flatLocal).forEach((rawType) => {
+        const type = normalizeDamageTypeKey(rawType);
+        if (!DAMAGE_TYPE_TO_GROUP[type]) return;
+        const flat = Number(flatLocal[rawType]);
+        if (!Number.isFinite(flat) || flat === 0) return;
+        if (!isDamageTypeInAllowedWeaponPool(type, baseGroups)) {
+            console.warn(`Illegal local flat damage pool on ${item?.name || 'weapon'}: ${type}`);
+            return;
+        }
+        addRangeDamageEntry(working, type, { min: flat, max: flat });
+    });
+
+    const conversion = item?.weaponDamageConversion;
+    if (conversion && typeof conversion === 'object') {
+        const source = normalizeDamageTypeKey(conversion.source);
+        const target = normalizeDamageTypeKey(conversion.target);
+        if (source && target && source !== target && DAMAGE_TYPE_TO_GROUP[source] && DAMAGE_TYPE_TO_GROUP[target] && working[source]) {
+            const ratio = Number.isFinite(Number(conversion.percent))
+                ? Math.max(0, Math.min(1, Number(conversion.percent) / 100))
+                : 1;
+            const moved = {
+                min: working[source].min * ratio,
+                max: working[source].max * ratio
+            };
+            working[source].min -= moved.min;
+            working[source].max -= moved.max;
+            addRangeDamageEntry(working, target, moved);
+            profile.conversion = { source, target, percent: ratio * 100 };
+        } else {
+            console.warn(`Invalid weapon conversion on ${item?.name || 'weapon'}:`, conversion);
+        }
+    }
+
+    const typeIncreases = item?.weaponLocalTypeIncrease || {};
+    const groupIncreases = item?.weaponLocalGroupIncrease || {};
+    Object.keys(working).forEach((type) => {
+        const group = DAMAGE_TYPE_TO_GROUP[type];
+        const typeIncPct = Number(typeIncreases[type] || 0);
+        const groupIncPct = Number(groupIncreases[group] || 0);
+        const totalInc = (Number.isFinite(typeIncPct) ? typeIncPct : 0) + (Number.isFinite(groupIncPct) ? groupIncPct : 0);
+        const multiplier = 1 + (totalInc / 100);
+        if (!Number.isFinite(multiplier) || multiplier < 0) {
+            console.warn(`Invalid local damage multiplier on ${item?.name || 'weapon'} for ${type}`);
+            return;
+        }
+        working[type].min *= multiplier;
+        working[type].max *= multiplier;
+    });
+
+    Object.keys(working).forEach((type) => {
+        const range = working[type];
+        if (!Number.isFinite(range.min) || !Number.isFinite(range.max)) {
+            console.warn(`NaN local weapon damage on ${item?.name || 'weapon'} for ${type}`);
+            return;
+        }
+        const safeMin = Math.max(0, range.min);
+        const safeMax = Math.max(0, range.max);
+        if (safeMin <= 0 && safeMax <= 0) return;
+        profile.finalDamage[type] = {
+            min: Number(safeMin.toFixed(2)),
+            max: Number(safeMax.toFixed(2))
+        };
+        profile.finalFlatDamage[type] = Math.max(0, Math.round((safeMin + safeMax) / 2));
+    });
+
+    const localAttackSpeedPct = Number(item?.weaponLocalAttackSpeedPercent || 0);
+    profile.localAttackSpeedPercent = Number.isFinite(localAttackSpeedPct) ? localAttackSpeedPct : 0;
+    profile.localAttackSpeedMultiplier = 1 + (profile.localAttackSpeedPercent / 100);
+    if (!Number.isFinite(profile.localAttackSpeedMultiplier) || profile.localAttackSpeedMultiplier <= 0) {
+        console.warn(`Invalid local weapon attack speed modifier on ${item?.name || 'weapon'}`);
+        profile.localAttackSpeedMultiplier = 1;
+        profile.localAttackSpeedPercent = 0;
+    }
+
+    return profile;
+}
+
+window.computeWeaponLocalProfile = computeWeaponLocalProfile;
+
 // Function to apply item modifiers to stats object
-function applyItemModifiers(stats, item) {
+function applyItemModifiers(stats, item, options = {}) {
     // Apply flat damage types
     if (!stats || !item) return;
+    const includeDamageTypes = options.includeDamageTypes !== false;
+    const includeDamageModifiers = options.includeDamageModifiers !== false;
 
     // Flat Damage Types
-    if (item.damageTypes) {
+    if (includeDamageTypes && item.damageTypes) {
         if (!stats.damageTypes) stats.damageTypes = {};
         for (let damageType in item.damageTypes) {
-            if (stats.damageTypes[damageType] === undefined) {
-                stats.damageTypes[damageType] = 0;
+            const normalizedType = normalizeDamageTypeKey(damageType);
+            if (!DAMAGE_TYPE_TO_GROUP[normalizedType]) continue;
+            if (stats.damageTypes[normalizedType] === undefined) {
+                stats.damageTypes[normalizedType] = 0;
             }
             let val = item.damageTypes[damageType];
             if (typeof val !== "number") { val = 0; }
-            stats.damageTypes[damageType] += val;
+            stats.damageTypes[normalizedType] += val;
         }
     }
 
     // Percentage Damage Modifiers - specific types
-    if (item.statModifiers && item.statModifiers.damageTypes) {
+    if (includeDamageModifiers && item.statModifiers && item.statModifiers.damageTypes) {
         if (!stats.damageTypeModifiers) stats.damageTypeModifiers = {};
         for (let damageType in item.statModifiers.damageTypes) {
-            if (stats.damageTypeModifiers[damageType] === undefined) {
-                stats.damageTypeModifiers[damageType] = 1; // Start at 100%
+            const normalizedType = normalizeDamageTypeKey(damageType);
+            if (!DAMAGE_TYPE_TO_GROUP[normalizedType]) continue;
+            if (stats.damageTypeModifiers[normalizedType] === undefined) {
+                stats.damageTypeModifiers[normalizedType] = 1; // Start at 100%
             }
             let modVal = item.statModifiers.damageTypes[damageType];
             if (typeof modVal !== "number") { modVal = 0; }
             // Apply additively (e.g., 1.0 + 0.15 for +15%)
-            stats.damageTypeModifiers[damageType] += modVal / 100;
+            stats.damageTypeModifiers[normalizedType] += modVal / 100;
         }
     }
 
     // Percentage Damage Modifiers - group types
-    if (item.statModifiers && item.statModifiers.damageGroups) {
+    if (includeDamageModifiers && item.statModifiers && item.statModifiers.damageGroups) {
         if (!stats.damageGroupModifiers) stats.damageGroupModifiers = {};
 
         // Initialize group modifiers if they don't exist
@@ -195,7 +378,7 @@ function calculatePlayerStats(playerObject) {
     }
     // Ensure defense types are initialized
     if (!stats.defenseTypes) stats.defenseTypes = {};
-    const defenseTypes = ['sturdiness', 'structure', 'stability'];
+    const defenseTypes = ['physicalResistance', 'elementalResistance', 'chemicalResistance'];
     for (const type of defenseTypes) {
         if (stats.defenseTypes[type] === undefined) stats.defenseTypes[type] = 0;
     }
@@ -251,18 +434,35 @@ function calculatePlayerStats(playerObject) {
         }
     }
 
+    // --- Mining permanent bonuses (derived from gathering skill level) ---
+    if (typeof getMiningPermanentBonuses === 'function') {
+        const miningLevel = playerObject.gatheringSkills?.Mining?.level || 0;
+        if (miningLevel > 0) {
+            const miningBonus = getMiningPermanentBonuses(miningLevel);
+            stats.healthBonus += miningBonus.flatHealth;
+            stats.healthBonusPercent += miningBonus.healthPercentFraction;
+        }
+    }
+
     // --- Apply Equipment ---
     let equipmentASBonus = 0; // Accumulator for attack speed % bonus from gear/bionics
+    let mainHandLocalProfile = null;
     
     // First apply non-bionic equipment to get base Bionic Sync value
     Object.keys(playerObject.equipment).forEach(slot => {
         if (slot !== 'bionicSlots' && playerObject.equipment[slot]) {
             const item = playerObject.equipment[slot];
+            const isMainHand = slot === 'mainHand';
             if (item.attackSpeedModifier !== undefined) {
                 equipmentASBonus += item.attackSpeedModifier;
             }
-            // Base item stats
-            applyItemModifiers(stats, item);
+            // Weapon base damage is local-only; do not merge main-hand damage directly into global pool.
+            if (isMainHand && ((item.type || '').toLowerCase() === 'weapon' || item.slot === 'mainHand')) {
+                mainHandLocalProfile = computeWeaponLocalProfile(item);
+                applyItemModifiers(stats, item, { includeDamageTypes: false, includeDamageModifiers: true });
+            } else {
+                applyItemModifiers(stats, item);
+            }
             // Apply slotted chip stats (if any)
             if (Array.isArray(item.rolledWires)) {
                 item.rolledWires.forEach(wire => {
@@ -369,6 +569,17 @@ function calculatePlayerStats(playerObject) {
                 for (let stat in buff.statChanges) {
                     if (stat === 'attackSpeed') { // Handle attack speed buff specifically
                         buffASBonus += buff.statChanges[stat];
+                    } else if (stat === 'defenseTypes' && buff.statChanges.defenseTypes && stats.defenseTypes) {
+                        for (const defenseType in buff.statChanges.defenseTypes) {
+                            if (stats.defenseTypes[defenseType] === undefined) stats.defenseTypes[defenseType] = 0;
+                            stats.defenseTypes[defenseType] += buff.statChanges.defenseTypes[defenseType];
+                        }
+                    } else if (
+                        (stat === 'physicalResistance' || stat === 'elementalResistance' || stat === 'chemicalResistance') &&
+                        stats.defenseTypes
+                    ) {
+                        if (stats.defenseTypes[stat] === undefined) stats.defenseTypes[stat] = 0;
+                        stats.defenseTypes[stat] += buff.statChanges[stat];
                     } else if (stats.hasOwnProperty(stat)) { // Apply other flat stat changes
                         stats[stat] += buff.statChanges[stat];
                     }
@@ -385,11 +596,36 @@ function calculatePlayerStats(playerObject) {
     if (playerObject.equipment.mainHand && playerObject.equipment.mainHand.bAttackSpeed !== undefined) {
         baseAttackSpeed = playerObject.equipment.mainHand.bAttackSpeed;
     }
+    const localWeaponASMultiplier = mainHandLocalProfile ? mainHandLocalProfile.localAttackSpeedMultiplier : 1;
+    const localAttackSpeed = baseAttackSpeed * localWeaponASMultiplier;
 
-    // Calculate final attack speed: Base * (1 + Sum of % Bonuses)
+    // Calculate final attack speed: (Weapon Base * local weapon AS) * (1 + global AS bonuses)
     let totalASBonusPercent = equipmentASBonus + buffASBonus + (playerObject.passiveAttackSpeedBonus || 0);
-    stats.attackSpeed = baseAttackSpeed * (1 + totalASBonusPercent);
+    stats.attackSpeed = localAttackSpeed * (1 + totalASBonusPercent);
     stats.attackSpeed = Math.min(Math.max(stats.attackSpeed, 0.1), 10); // Clamp attack speed
+
+    if (mainHandLocalProfile) {
+        stats.weaponBaseAttackSpeed = Number(baseAttackSpeed.toFixed(3));
+        stats.weaponLocalAttackSpeed = Number(localAttackSpeed.toFixed(3));
+        stats.weaponLocalAttackSpeedPercent = mainHandLocalProfile.localAttackSpeedPercent;
+        stats.weaponLocalDamage = JSON.parse(JSON.stringify(mainHandLocalProfile.finalDamage));
+        stats.weaponBaseDamage = JSON.parse(JSON.stringify(mainHandLocalProfile.baseDamage));
+        stats.weaponDamageConversion = mainHandLocalProfile.conversion ? { ...mainHandLocalProfile.conversion } : null;
+
+        // Export final weapon-local damage into global flat pool exactly once.
+        Object.keys(mainHandLocalProfile.finalFlatDamage).forEach((type) => {
+            if (!DAMAGE_TYPE_TO_GROUP[type]) return;
+            if (!stats.damageTypes[type]) stats.damageTypes[type] = 0;
+            stats.damageTypes[type] += Number(mainHandLocalProfile.finalFlatDamage[type] || 0);
+        });
+    } else {
+        stats.weaponBaseAttackSpeed = Number(baseAttackSpeed.toFixed(3));
+        stats.weaponLocalAttackSpeed = Number(baseAttackSpeed.toFixed(3));
+        stats.weaponLocalAttackSpeedPercent = 0;
+        stats.weaponLocalDamage = {};
+        stats.weaponBaseDamage = {};
+        stats.weaponDamageConversion = null;
+    }
 
     // Calculate final health and energy shield
     stats.health = stats.maxHealth + stats.healthBonus;
@@ -430,7 +666,15 @@ function calculatePlayerStats(playerObject) {
 // --- Moved from combat.js ---
 
 // Calculate damage dealt by attacker to defender
-function calculateDamage(attacker, defender) {
+function calculateDamage(attacker, defender, attackContext = null) {
+    const ctx = attackContext || {};
+    if (
+        attacker === player &&
+        attacker?.equipment?.mainHand?.weaponBaseDamage &&
+        attacker?.equipment?.mainHand?.damageTypes
+    ) {
+        console.warn('Main-hand weapon still has legacy damageTypes alongside weaponBaseDamage; ensure duplicate base damage is not reintroduced.');
+    }
     // Object to store base damage values per type (before modifiers)
     let baseDamages = {};
     if (attacker.totalStats && attacker.totalStats.damageTypes) {
@@ -506,11 +750,27 @@ function calculateDamage(attacker, defender) {
     rolledDamage = Math.min(rolledDamage, totalPotentialDamage);
 
     // 3. Critical Hit Check & Application
-    let isCriticalHit = Math.random() < (attacker.totalStats.criticalChance || 0);
+    let critChance = attacker.totalStats.criticalChance || 0;
+    if (ctx.critChanceBonus) {
+        critChance += ctx.critChanceBonus;
+    }
+    if (ctx.critChanceMultiplier && ctx.critChanceMultiplier !== 1) {
+        critChance *= ctx.critChanceMultiplier;
+    }
+    critChance = Math.min(Math.max(critChance, 0), 1);
+
+    let isCriticalHit = false;
+    if (ctx.skipCrit) {
+        isCriticalHit = false;
+    } else if (ctx.forceCrit) {
+        isCriticalHit = true;
+    } else {
+        isCriticalHit = Math.random() < critChance;
+    }
     let critMultiplier = 1.0;
 
     // Check for effects that guarantee or modify crits (e.g., Zapped debuff)
-    if (defender.activeDebuffs && defender.activeDebuffs.some(effect => effect.name === "Zapped")) {
+    if (!ctx.skipCrit && defender.activeDebuffs && defender.activeDebuffs.some(effect => effect.name === "Zapped")) {
         isCriticalHit = true;
         // Find and potentially remove the Zapped debuff (assuming removeDebuff exists globally or is passed in)
         if (typeof removeDebuff === 'function') removeDebuff(defender, "Zapped");
@@ -537,8 +797,8 @@ function calculateDamage(attacker, defender) {
         let resistanceStat = matchDamageToDefense(damageType); // Assumes matchDamageToDefense exists
         let resistanceValue = (defender.totalStats && defender.totalStats.defenseTypes) ? (defender.totalStats.defenseTypes[resistanceStat] || 0) : 0;
 
-        // Apply resistance formula (e.g., percentage reduction, capped at 90%)
-        resistanceValue = Math.min(resistanceValue, 90); // Cap resistance
+        // Apply resistance formula (e.g., percentage reduction, capped at 80%)
+        resistanceValue = Math.min(resistanceValue, 80); // Cap resistance
         let damageReductionMultiplier = Math.max(0, 1 - (resistanceValue / 100)); // Ensure multiplier is not negative
 
         let finalDamageForType = damageAmountForType * damageReductionMultiplier;
@@ -599,7 +859,7 @@ function calculateEnemyStats(enemyObject) {
          enemyObject.totalStats.defenseTypes = { ...enemyObject.defenseTypes };
     } else {
         // Ensure default defense types exist if none are defined
-        enemyObject.totalStats.defenseTypes = { sturdiness: 0, structure: 0, stability: 0 };
+        enemyObject.totalStats.defenseTypes = { physicalResistance: 0, elementalResistance: 0, chemicalResistance: 0 };
     }
 
     // Initialize modifier stores
@@ -669,14 +929,14 @@ function skewedRandom(min, max, skew) {
 // Match damage type to defense type (used in calculateDamage)
 function matchDamageToDefense(damageType) {
     const mapping = {
-        'kinetic': 'sturdiness', 'slashing': 'sturdiness', // Physical
-        'pyro': 'structure', 'cryo': 'structure', 'electric': 'structure', // Elemental
-        'corrosive': 'stability', 'radiation': 'stability' // Chemical
+        'kinetic': 'physicalResistance', 'slashing': 'physicalResistance', // Physical
+        'pyro': 'elementalResistance', 'cryo': 'elementalResistance', 'electric': 'elementalResistance', // Elemental
+        'corrosive': 'chemicalResistance', 'radiation': 'chemicalResistance' // Chemical
     };
     // Legacy support
-    if (damageType === 'mental') return 'sturdiness';
-    if (damageType === 'chemical') return 'stability';
-    if (damageType === 'magnetic') return 'structure';
+    if (damageType === 'mental') return 'physicalResistance';
+    if (damageType === 'chemical') return 'chemicalResistance';
+    if (damageType === 'magnetic') return 'elementalResistance';
 
     return mapping[damageType] || ''; // Return specific defense or empty string
 }

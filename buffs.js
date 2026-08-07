@@ -22,9 +22,11 @@ const buffs = [
         description: "Lose resistances.",
         type: "buff",
         statChanges: {
-            structure: -30,
-            stability: -30,
-            sturdiness: -30,
+            defenseTypes: {
+                elementalResistance: -30,
+                chemicalResistance: -30,
+                physicalResistance: -30
+            }
         },
         duration: 999999 
     }

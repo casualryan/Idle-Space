@@ -1,11 +1,16 @@
 export default {
     name: 'Scrap Metal Gloves',
-    type: 'Gloves',
-    icon: 'icons/iron_gloves.png',
-    healthBonus: { min: 10, max: 10 },
-    healthBonusPercentRange: { min: 8, max: 8 },
+    type: 'Armor',
+    icon: 'icons/scrap_metal_gloves.png',
     slot: 'gloves',
-    isDisassembleable: false,
-    disassembleResults: [],
-    description: "Metal gloves fashioned from discarded scrap."
-}; 
+    levelRequirement: { min: 1, max: 1 },
+    healthBonus: { min: 11, max: 18 },
+    defenseTypes: {
+        physicalResistance: { min: 1, max: 3 },
+    },
+    isDisassembleable: true,
+    disassembleResults: [
+        { name: 'Scrap Metal', quantity: 2 }
+    ],
+    description: 'Scrap Metal Gloves — salvaged hand protection tuned for combat grip and control.'
+};

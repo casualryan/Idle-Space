@@ -7,18 +7,10 @@ let playerCurrency = 1000000;
 
 // Add this near the top of the file with other constants
 const MAX_PLAYER_LEVEL = 51;
-
-//Console.log the XP requirements for the first 50 levels
-// document.addEventListener('DOMContentLoaded', () => {
-//     debugFirstFiftyLevelsXP();
-// });
-// function debugFirstFiftyLevelsXP() {
-//     console.log("XP Requirements for first 50 levels:");
-//     for (let i = 1; i <= 50; i++) {
-//         let req = getXPForNextLevel(i);
-//         console.log(`Level ${i}: ${req} XP`);
-//     }
-// }
+const SAVE_SLOT_COUNT = 5;
+/** Slot that receives periodic autosave (last explicit Save or Load only). */
+const AUTOSAVE_TARGET_SLOT_KEY = 'idleCombatGameSave_activeSlot';
+const SAVE_SLOT_KEY_PREFIX = 'idleCombatGameSave_slot_';
 
 // Helper function to cleanly remove and reapply all passive bonuses from gear
 function resetGearPassiveBonuses() {
@@ -100,11 +92,11 @@ const playerBaseStats = {
     damageTypes: {
         
     },
-    // New defense types
+    // Resistance types (percentage reduction)
     defenseTypes: {
-        sturdiness: 0,  // Counters Physical damage (kinetic, slashing)
-        structure: 0,   // Counters Elemental damage (pyro, cryo, electric)
-        stability: 0    // Counters Chemical damage (corrosive, radiation)
+        physicalResistance: 0,   // Counters Physical damage (kinetic, slashing)
+        elementalResistance: 0,  // Counters Elemental damage (pyro, cryo, electric)
+        chemicalResistance: 0    // Counters Chemical damage (corrosive, radiation)
     }
 };
 
@@ -142,6 +134,13 @@ let player = {
     activeBuffs: [],
     // This property holds the cumulative passive bonus (e.g., 0.30 for +30%)
     passiveAttackSpeedBonus: 0,
+    // Combat style tree system
+    equippedSkillId: window.DEFAULT_COMBAT_STYLE_ID || 'balancedStyle',
+    unlockedSkillIds: (window.combatStyles || []).map(style => style.id),
+    combatStyleAllocations: {},
+    // Legacy skill fields kept inert for backward compatibility with old saves.
+    skillPoints: 0,
+    skillModAllocations: {},
     // Inventory management
     maxInventorySlots: 30,
 
@@ -314,42 +313,230 @@ function getXPForNextLevel(level) {
     return Math.round((prevReq + 15) * 1.15);
 }
 
-// Save game function
-function saveGame(isAutoSave = false) {
+function sanitizeSaveSlotIndex(slotIndex) {
+    const parsed = Number(slotIndex);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > SAVE_SLOT_COUNT) {
+        return 1;
+    }
+    return parsed;
+}
+
+function getSaveKeyForSlot(slotIndex) {
+    return `${SAVE_SLOT_KEY_PREFIX}${sanitizeSaveSlotIndex(slotIndex)}`;
+}
+
+/** UI-only: which slot row is highlighted for Save/Load/Reset (does not affect autosave). */
+let uiSelectedSaveSlot = null;
+
+function getAutosaveTargetSlot() {
+    return sanitizeSaveSlotIndex(localStorage.getItem(AUTOSAVE_TARGET_SLOT_KEY));
+}
+
+function setAutosaveTargetSlot(slotIndex) {
+    const safeSlot = sanitizeSaveSlotIndex(slotIndex);
+    localStorage.setItem(AUTOSAVE_TARGET_SLOT_KEY, String(safeSlot));
+    return safeSlot;
+}
+
+function getUiSelectedSaveSlot() {
+    const selectedInput = document.querySelector('input[name="save-slot-select"]:checked');
+    if (selectedInput) {
+        uiSelectedSaveSlot = sanitizeSaveSlotIndex(selectedInput.value);
+        return uiSelectedSaveSlot;
+    }
+    if (uiSelectedSaveSlot != null) {
+        return uiSelectedSaveSlot;
+    }
+    return getAutosaveTargetSlot();
+}
+
+function formatCreditsValue(value) {
     try {
-        // Create a game state object
-        const gameState = {
-            player: {
-                baseStats: player.baseStats,
-                currentHealth: player.currentHealth,
-                currentShield: player.currentShield,
-                statusEffects: player.statusEffects,
-                experience: player.experience,
-                level: player.level,
-                gatheringSkills: player.gatheringSkills,
-                activeBuffs: player.activeBuffs,
-                equipment: player.equipment,
-                currency: playerCurrency,
-                maxInventorySlots: player.maxInventorySlots,
-                passives: {
-                    allocations: player.passiveAllocations,
-                    points: player.passivePoints,
-                    gearBonuses: player.gearPassiveBonuses
-                }
-            },
-            inventory: window.inventory,
-            shopRefresh: {
-                nextShopRefreshTime: nextShopRefreshTime
-            },
-            isDelveInProgress: isDelveInProgress,
-            currentDelveLocation: currentDelveLocation,
-            currentMonsterIndex: currentMonsterIndex,
-            delveBag: delveBag
+        return Number(value || 0).toLocaleString();
+    } catch (_) {
+        return '0';
+    }
+}
+
+function getSaveSlotPreview(slotIndex) {
+    const key = getSaveKeyForSlot(slotIndex);
+    const raw = localStorage.getItem(key);
+    if (!raw) {
+        return { slot: slotIndex, state: 'empty' };
+    }
+
+    try {
+        const parsed = JSON.parse(raw);
+        const level = Number(parsed?.player?.level || 1);
+        const credits = Number(parsed?.player?.currency || 0);
+        const updatedAt = Number(parsed?.meta?.savedAt || 0);
+        return {
+            slot: slotIndex,
+            state: 'ok',
+            level: Number.isFinite(level) ? level : 1,
+            credits: Number.isFinite(credits) ? credits : 0,
+            updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : null,
         };
-        
-        // Convert to JSON and save to localStorage
-        localStorage.setItem('idleCombatGameSave', JSON.stringify(gameState));
-        console.log('Game saved successfully.');
+    } catch (_) {
+        return { slot: slotIndex, state: 'corrupt' };
+    }
+}
+
+const SETTINGS_PANEL_LABELS = {
+    main: 'Settings',
+    save: 'Save & Load',
+    gameplay: 'Gameplay',
+    keybinds: 'Keybinds',
+    dev: 'Dev Tools',
+};
+
+let settingsNavWired = false;
+
+function openSettingsMenu() {
+    const menu = document.getElementById('settings-menu');
+    if (!menu) return;
+    menu.classList.add('is-open');
+    showSettingsPanel('main');
+}
+
+function closeSettingsMenu() {
+    const menu = document.getElementById('settings-menu');
+    if (!menu) return;
+    menu.classList.remove('is-open');
+}
+
+function showSettingsPanel(panelId) {
+    const safeId = panelId === 'main' ? 'main' : panelId;
+    document.querySelectorAll('.settings-panel').forEach((panel) => {
+        const isTarget = panel.id === `settings-panel-${safeId}`;
+        panel.hidden = !isTarget;
+    });
+    const backBtn = document.getElementById('settings-back');
+    const title = document.getElementById('settings-title');
+    if (backBtn) backBtn.hidden = safeId === 'main';
+    if (title) title.textContent = SETTINGS_PANEL_LABELS[safeId] || 'Settings';
+    if (safeId === 'save') renderSaveSlots();
+}
+
+function wireSettingsNavigation() {
+    if (settingsNavWired) return;
+    settingsNavWired = true;
+    document.querySelectorAll('[data-settings-panel]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            showSettingsPanel(btn.getAttribute('data-settings-panel'));
+        });
+    });
+    const backBtn = document.getElementById('settings-back');
+    if (backBtn) {
+        backBtn.addEventListener('click', () => showSettingsPanel('main'));
+    }
+}
+
+function renderSaveSlots() {
+    const listEl = document.getElementById('save-slots-list');
+    const activeLabel = document.getElementById('active-save-slot-label');
+    if (!listEl) return;
+
+    const autosaveSlot = getAutosaveTargetSlot();
+    const selectedSlot = getUiSelectedSaveSlot();
+
+    const rows = [];
+    for (let slot = 1; slot <= SAVE_SLOT_COUNT; slot++) {
+        const preview = getSaveSlotPreview(slot);
+        const isSelected = slot === selectedSlot;
+        const isAutosaveTarget = slot === autosaveSlot;
+        let meta = '';
+
+        if (preview.state === 'ok') {
+            const dateLabel = preview.updatedAt ? new Date(preview.updatedAt).toLocaleString() : 'Unknown time';
+            meta = `
+                <div class="save-slot-main">Level ${preview.level} · Credits ${formatCreditsValue(preview.credits)}</div>
+                <div class="save-slot-sub">Updated ${dateLabel}</div>
+            `;
+        } else if (preview.state === 'corrupt') {
+            meta = `<div class="save-slot-main save-slot-warning">Corrupt data</div><div class="save-slot-sub">Save may be unreadable.</div>`;
+        } else {
+            meta = `<div class="save-slot-main save-slot-empty">Empty slot</div><div class="save-slot-sub">No save data.</div>`;
+        }
+
+        rows.push(`
+            <label class="save-slot-row ${isSelected ? 'selected' : ''} ${isAutosaveTarget ? 'autosave-target' : ''}" data-save-slot="${slot}">
+                <input type="radio" name="save-slot-select" value="${slot}" ${isSelected ? 'checked' : ''}>
+                <div class="save-slot-info">
+                    <div class="save-slot-title">Slot ${slot}${isAutosaveTarget ? ' <span class="save-slot-badge">AUTOSAVE</span>' : ''}</div>
+                    ${meta}
+                </div>
+            </label>
+        `);
+    }
+
+    listEl.innerHTML = rows.join('');
+    if (activeLabel) {
+        activeLabel.textContent = `Autosave writes to slot ${autosaveSlot} (last Save or Load)`;
+    }
+
+    listEl.querySelectorAll('input[name="save-slot-select"]').forEach((input) => {
+        input.addEventListener('change', () => {
+            if (!input.checked) return;
+            uiSelectedSaveSlot = sanitizeSaveSlotIndex(input.value);
+            renderSaveSlots();
+        });
+    });
+}
+
+function buildGameStateSnapshot() {
+    const managerState = (window.activityManager && typeof window.activityManager.getState === 'function')
+        ? window.activityManager.getState()
+        : { active: false, currentActivity: null };
+    return {
+        player: {
+            baseStats: player.baseStats,
+            currentHealth: player.currentHealth,
+            currentShield: player.currentShield,
+            statusEffects: player.statusEffects,
+            experience: player.experience,
+            level: player.level,
+            gatheringSkills: player.gatheringSkills,
+            activeBuffs: player.activeBuffs,
+            equipment: player.equipment,
+            currency: playerCurrency,
+            maxInventorySlots: player.maxInventorySlots,
+            passives: {
+                allocations: player.passiveAllocations,
+                points: player.passivePoints,
+                gearBonuses: player.gearPassiveBonuses
+            },
+            combatStyles: {
+                equipped: player.equippedSkillId,
+                unlocked: player.unlockedSkillIds,
+                allocations: player.combatStyleAllocations || {}
+            }
+        },
+        inventory: window.inventory,
+        isDelveInProgress: (typeof isDelveInProgress !== 'undefined') ? isDelveInProgress : false,
+        currentDelveLocation: (typeof currentDelveLocation !== 'undefined') ? currentDelveLocation : null,
+        currentMonsterIndex: (typeof currentMonsterIndex !== 'undefined') ? currentMonsterIndex : 0,
+        delveBag: (typeof delveBag !== 'undefined') ? delveBag : { items: [], credits: 0 },
+        activityState: {
+            active: Boolean(managerState.active),
+            currentActivity: managerState.currentActivity || null
+        },
+        meta: {
+            savedAt: Date.now(),
+            version: 3
+        }
+    };
+}
+
+// Save game function
+function saveGame(isAutoSave = false, slotIndex = null) {
+    try {
+        const targetSlot = slotIndex == null ? getAutosaveTargetSlot() : sanitizeSaveSlotIndex(slotIndex);
+        const gameState = buildGameStateSnapshot();
+
+        // Convert to JSON and save to selected slot
+        localStorage.setItem(getSaveKeyForSlot(targetSlot), JSON.stringify(gameState));
+        console.log(`Game saved successfully in slot ${targetSlot}.`);
         
         // Play save sound unless it's an auto-save
         if (window.playSound && !isAutoSave) {
@@ -357,183 +544,248 @@ function saveGame(isAutoSave = false) {
         }
         
         // Only show the message if it's a manual save
-        if (!isAutoSave) {
+        /* if (!isAutoSave) {
             logMessage('Game saved successfully.');
-        }
+        } */
     } catch (e) {
         console.error('Error saving game:', e);
         logMessage('Error saving game!');
     }
 }
 
-// Function to migrate from old defense types to new ones
-function migrateDefenseTypes(entity) {
-    // Skip if entity doesn't exist or already has new defense types
-    if (!entity || !entity.totalStats || !entity.totalStats.defenseTypes) return;
+// Helper: migrate a single defenseTypes object to new keys
+function migrateDefenseTypesObject(defenseTypes) {
+    if (!defenseTypes) return false;
+    const hasLegacy = defenseTypes.toughness !== undefined ||
+                      defenseTypes.fortitude !== undefined ||
+                      defenseTypes.heatResistance !== undefined ||
+                      defenseTypes.immunity !== undefined ||
+                      defenseTypes.antimagnet !== undefined;
+    if (!hasLegacy) return false;
 
-    const defenseTypes = entity.totalStats.defenseTypes;
-    
-    // Check if we need to migrate (if any old defense type exists)
-    const needsMigration = defenseTypes.toughness !== undefined || 
-                         defenseTypes.fortitude !== undefined || 
-                         defenseTypes.heatResistance !== undefined || 
-                         defenseTypes.immunity !== undefined || 
-                         defenseTypes.antimagnet !== undefined;
-    
-    if (!needsMigration) return;
-    
-    // Initialize new defense types if they don't exist
-    if (defenseTypes.sturdiness === undefined) defenseTypes.sturdiness = 0;
-    if (defenseTypes.structure === undefined) defenseTypes.structure = 0;
-    if (defenseTypes.stability === undefined) defenseTypes.stability = 0;
-    
-    // Migrate old values to new ones
-    // Physical Group
+    if (defenseTypes.physicalResistance === undefined) defenseTypes.physicalResistance = 0;
+    if (defenseTypes.elementalResistance === undefined) defenseTypes.elementalResistance = 0;
+    if (defenseTypes.chemicalResistance === undefined) defenseTypes.chemicalResistance = 0;
+
     if (defenseTypes.toughness !== undefined) {
-        defenseTypes.sturdiness += defenseTypes.toughness;
+        defenseTypes.physicalResistance += defenseTypes.toughness;
+        delete defenseTypes.toughness;
     }
     if (defenseTypes.fortitude !== undefined) {
-        defenseTypes.sturdiness += defenseTypes.fortitude / 2; // Split mental defense
+        defenseTypes.physicalResistance += defenseTypes.fortitude / 2;
+        delete defenseTypes.fortitude;
     }
-    
-    // Elemental Group
     if (defenseTypes.heatResistance !== undefined) {
-        defenseTypes.structure += defenseTypes.heatResistance;
+        defenseTypes.elementalResistance += defenseTypes.heatResistance;
+        delete defenseTypes.heatResistance;
     }
     if (defenseTypes.antimagnet !== undefined) {
-        defenseTypes.structure += defenseTypes.antimagnet;
+        defenseTypes.elementalResistance += defenseTypes.antimagnet;
+        delete defenseTypes.antimagnet;
     }
-    
-    // Chemical Group
     if (defenseTypes.immunity !== undefined) {
-        defenseTypes.stability += defenseTypes.immunity;
+        defenseTypes.chemicalResistance += defenseTypes.immunity;
+        delete defenseTypes.immunity;
     }
-    
-    // Remove old defense types
-    delete defenseTypes.toughness;
-    delete defenseTypes.fortitude;
-    delete defenseTypes.heatResistance;
-    delete defenseTypes.immunity;
-    delete defenseTypes.antimagnet;
-    
-    console.log("Defense types migrated to new system");
+    return true;
 }
 
-function loadGame() {
-    const savedState = localStorage.getItem('idleCombatGameSave');
-    if (savedState) {
-        try {
-            // Stop any active systems before loading
-            if (isCombatActive) stopCombat('gameLoad');
-            if (isGathering) stopGatheringActivity();
-            
-            const gameState = JSON.parse(savedState);
-            player.baseStats = gameState.player.baseStats || JSON.parse(JSON.stringify(playerBaseStats));
-            
-            // Migrate new stats if they're missing from old saves
-            if (player.baseStats.armorEfficiency === undefined) player.baseStats.armorEfficiency = 0;
-            if (player.baseStats.weaponEfficiency === undefined) player.baseStats.weaponEfficiency = 0;
-            if (player.baseStats.bionicEfficiency === undefined) player.baseStats.bionicEfficiency = 0;
-            if (player.baseStats.bionicSync === undefined) player.baseStats.bionicSync = 0;
-            if (player.baseStats.comboAttack === undefined) player.baseStats.comboAttack = 0;
-            if (player.baseStats.comboEffectiveness === undefined) player.baseStats.comboEffectiveness = 0;
-            if (player.baseStats.additionalComboAttacks === undefined) player.baseStats.additionalComboAttacks = 0;
-            player.currentHealth = gameState.player.currentHealth;
-            player.currentShield = gameState.player.currentShield;
-            player.statusEffects = gameState.player.statusEffects || [];
-            player.experience = gameState.player.experience;
-            player.level = gameState.player.level;
-            player.gatheringSkills = gameState.player.gatheringSkills || player.gatheringSkills;
-            player.activeBuffs = gameState.player.activeBuffs || [];
-            player.equipment = restoreEquipment(gameState.player.equipment);
-            playerCurrency = (typeof gameState.player.currency === 'number') ? gameState.player.currency : playerCurrency;
-            player.maxInventorySlots = gameState.player.maxInventorySlots || 30; // Default to 30 if not saved
-            
-            // Restore passives data and immediately reapply them.
-            if (gameState.player.passives) {
-                player.passiveAllocations = gameState.player.passives.allocations || {};
-                player.passivePoints = gameState.player.passives.points || 0;
-                player.gearPassiveBonuses = gameState.player.passives.gearBonuses || {};
-            } else {
-                player.passiveAllocations = {};
-                player.passivePoints = 1; // New player starts with 1 point
-                player.gearPassiveBonuses = {};
-            }
-            applyAllPassivesToPlayer();
-            
-            window.inventory = gameState.inventory.map(savedItem => restoreItem(savedItem));
-            if (gameState.shopRefresh && typeof gameState.shopRefresh.nextShopRefreshTime === 'number') {
-                nextShopRefreshTime = gameState.shopRefresh.nextShopRefreshTime;
-            } else {
-                nextShopRefreshTime = Date.now() + SHOP_REFRESH_INTERVAL;
-            }
-            
-            // Apply migration for the new defense system
-            migrateDefenseTypes(player);
-            
-            player.calculateStats();
-            updatePlayerStatsDisplay();
-            updateInventoryDisplay();
-            updateEquipmentDisplay();
-            console.log('Game loaded successfully.');
-            logMessage('Game loaded successfully.');
-        } catch (error) {
-            console.error('Error loading saved game:', error);
-            logMessage('Failed to load saved game. Starting a new game.');
-            resetGame();
-        }
-    } else {
-        console.log('No saved game found.');
-        logMessage('No saved game found.');
+// Function to migrate from old defense types to new ones
+function migrateDefenseTypes(entity) {
+    if (!entity) return;
+    let migrated = false;
+    if (entity.baseStats && entity.baseStats.defenseTypes) {
+        migrated = migrateDefenseTypesObject(entity.baseStats.defenseTypes) || migrated;
     }
-    const event = new Event('gameLoaded');
-    window.dispatchEvent(event);
+    if (entity.totalStats && entity.totalStats.defenseTypes) {
+        migrated = migrateDefenseTypesObject(entity.totalStats.defenseTypes) || migrated;
+    }
+    if (migrated) console.log("Defense types migrated to new system");
+}
+
+function loadGame(slotIndex = null) {
+    const targetSlot = slotIndex == null ? getAutosaveTargetSlot() : sanitizeSaveSlotIndex(slotIndex);
+    const saveKey = getSaveKeyForSlot(targetSlot);
+    const savedState = localStorage.getItem(saveKey);
+
+    if (!savedState) {
+        console.log(`No saved game found in slot ${targetSlot}.`);
+        logMessage(`No saved game found in slot ${targetSlot}.`);
+        const event = new CustomEvent('gameLoaded', { detail: { slot: targetSlot, loaded: false } });
+        window.dispatchEvent(event);
+        return { ok: false, reason: 'empty_slot' };
+    }
+
+    try {
+        // Stop any active systems before loading
+        if (isCombatActive) stopCombat('gameLoad');
+        if (window.activityManager && typeof window.activityManager.clearActivityOnLoad === 'function') {
+            window.activityManager.clearActivityOnLoad();
+        } else if (isGathering && typeof stopGatheringActivity === 'function') {
+            stopGatheringActivity();
+        }
+
+        const gameState = JSON.parse(savedState);
+        if (!gameState || typeof gameState !== 'object' || !gameState.player || typeof gameState.player !== 'object') {
+            throw new Error('Invalid save payload');
+        }
+
+        const savedPlayer = gameState.player;
+        const restoredBaseStats = savedPlayer.baseStats || JSON.parse(JSON.stringify(playerBaseStats));
+        const restoredEquipment = restoreEquipment(savedPlayer.equipment);
+        const restoredInventory = Array.isArray(gameState.inventory)
+            ? gameState.inventory.map(savedItem => restoreItem(savedItem))
+            : [];
+
+        const defaultUnlockedStyles = (window.combatStyles || []).map(style => style.id);
+        const defaultStyleId = window.DEFAULT_COMBAT_STYLE_ID || defaultUnlockedStyles[0] || 'balancedStyle';
+        const legacySkillIds = new Set(window.LEGACY_SKILL_IDS || []);
+
+        let restoredEquippedStyle = defaultStyleId;
+        let restoredUnlockedStyles = defaultUnlockedStyles;
+        let restoredAllocations = {};
+
+        if (savedPlayer.combatStyles && typeof savedPlayer.combatStyles === 'object') {
+            restoredEquippedStyle = savedPlayer.combatStyles.equipped || defaultStyleId;
+            restoredUnlockedStyles = Array.isArray(savedPlayer.combatStyles.unlocked)
+                ? savedPlayer.combatStyles.unlocked
+                : defaultUnlockedStyles;
+            restoredAllocations = savedPlayer.combatStyles.allocations || {};
+        } else if (savedPlayer.skills && typeof savedPlayer.skills === 'object') {
+            // Legacy saves are tolerated; deprecated IDs are remapped to default style.
+            const legacyEquipped = savedPlayer.skills.equipped;
+            restoredEquippedStyle = legacySkillIds.has(legacyEquipped) ? defaultStyleId : (legacyEquipped || defaultStyleId);
+            restoredUnlockedStyles = defaultUnlockedStyles;
+            restoredAllocations = {};
+        }
+
+        // Apply restored data only after successful parsing of all pieces.
+        player.baseStats = restoredBaseStats;
+
+        // Migrate new stats if they're missing from old saves
+        if (player.baseStats.armorEfficiency === undefined) player.baseStats.armorEfficiency = 0;
+        if (player.baseStats.weaponEfficiency === undefined) player.baseStats.weaponEfficiency = 0;
+        if (player.baseStats.bionicEfficiency === undefined) player.baseStats.bionicEfficiency = 0;
+        if (player.baseStats.bionicSync === undefined) player.baseStats.bionicSync = 0;
+        if (player.baseStats.comboAttack === undefined) player.baseStats.comboAttack = 0;
+        if (player.baseStats.comboEffectiveness === undefined) player.baseStats.comboEffectiveness = 0;
+        if (player.baseStats.additionalComboAttacks === undefined) player.baseStats.additionalComboAttacks = 0;
+
+        player.currentHealth = savedPlayer.currentHealth;
+        player.currentShield = savedPlayer.currentShield;
+        player.statusEffects = savedPlayer.statusEffects || [];
+        player.experience = Number(savedPlayer.experience || 0);
+        player.level = Number(savedPlayer.level || 1);
+        player.gatheringSkills = savedPlayer.gatheringSkills || player.gatheringSkills;
+        if (typeof normalizeGatheringSkills === 'function') {
+            normalizeGatheringSkills(player);
+        }
+        player.activeBuffs = savedPlayer.activeBuffs || [];
+        player.equipment = restoredEquipment;
+        playerCurrency = (typeof savedPlayer.currency === 'number') ? savedPlayer.currency : playerCurrency;
+        player.maxInventorySlots = savedPlayer.maxInventorySlots || 30;
+
+        if (savedPlayer.passives) {
+            player.passiveAllocations = savedPlayer.passives.allocations || {};
+            player.passivePoints = savedPlayer.passives.points || 0;
+            player.gearPassiveBonuses = savedPlayer.passives.gearBonuses || {};
+        } else {
+            player.passiveAllocations = {};
+            player.passivePoints = 1;
+            player.gearPassiveBonuses = {};
+        }
+        applyAllPassivesToPlayer();
+
+        player.equippedSkillId = restoredEquippedStyle;
+        player.unlockedSkillIds = restoredUnlockedStyles;
+        player.combatStyleAllocations = restoredAllocations;
+        player.skillPoints = 0;
+        player.skillModAllocations = {};
+        if (typeof normalizeCombatStylesState === 'function') {
+            normalizeCombatStylesState(player);
+        }
+
+        window.inventory = restoredInventory;
+
+        if (typeof isDelveInProgress !== 'undefined') {
+            isDelveInProgress = Boolean(gameState.isDelveInProgress);
+        }
+        if (typeof currentDelveLocation !== 'undefined') {
+            currentDelveLocation = gameState.currentDelveLocation || null;
+        }
+        if (typeof currentMonsterIndex !== 'undefined') {
+            currentMonsterIndex = Number(gameState.currentMonsterIndex || 0);
+        }
+        if (typeof delveBag !== 'undefined') {
+            delveBag = gameState.delveBag || { items: [], credits: 0 };
+        }
+
+        // Apply migration for the new defense system
+        migrateDefenseTypes(player);
+
+        player.calculateStats();
+        updatePlayerStatsDisplay();
+        updateInventoryDisplay();
+        updateEquipmentDisplay();
+        renderGlobalStatusBanner();
+
+        setAutosaveTargetSlot(targetSlot);
+        uiSelectedSaveSlot = targetSlot;
+        renderSaveSlots();
+
+        console.log(`Game loaded successfully from slot ${targetSlot}.`);
+        logMessage(`Game loaded from slot ${targetSlot}.`);
+        const event = new CustomEvent('gameLoaded', { detail: { slot: targetSlot, loaded: true } });
+        window.dispatchEvent(event);
+        return { ok: true };
+    } catch (error) {
+        console.error(`Error loading save slot ${targetSlot}:`, error);
+        logMessage(`Failed to load save slot ${targetSlot}.`);
+        const event = new CustomEvent('gameLoaded', { detail: { slot: targetSlot, loaded: false, error: true } });
+        window.dispatchEvent(event);
+        return { ok: false, reason: 'load_error' };
+    }
 }
 
 // Function to migrate item defense types
 function migrateItemDefenseTypes(item) {
     if (!item || !item.defenseTypes) return item;
-    
-    // Check if we need to migrate
-    const needsMigration = item.defenseTypes.toughness !== undefined || 
-                         item.defenseTypes.fortitude !== undefined || 
-                         item.defenseTypes.heatResistance !== undefined || 
-                         item.defenseTypes.immunity !== undefined || 
-                         item.defenseTypes.antimagnet !== undefined;
-    
-    if (!needsMigration) return item;
-    
-    // Initialize new defense types
-    if (item.defenseTypes.sturdiness === undefined) item.defenseTypes.sturdiness = 0;
-    if (item.defenseTypes.structure === undefined) item.defenseTypes.structure = 0;
-    if (item.defenseTypes.stability === undefined) item.defenseTypes.stability = 0;
-    
-    // Migrate values
+
+    const hasLegacy = item.defenseTypes.toughness !== undefined ||
+                     item.defenseTypes.fortitude !== undefined ||
+                     item.defenseTypes.heatResistance !== undefined ||
+                     item.defenseTypes.immunity !== undefined ||
+                     item.defenseTypes.antimagnet !== undefined;
+
+    if (!hasLegacy) return item;
+
+    // Initialize new resistance keys
+    if (item.defenseTypes.physicalResistance === undefined) item.defenseTypes.physicalResistance = 0;
+    if (item.defenseTypes.elementalResistance === undefined) item.defenseTypes.elementalResistance = 0;
+    if (item.defenseTypes.chemicalResistance === undefined) item.defenseTypes.chemicalResistance = 0;
+
+    // Migrate legacy stats to new keys
     if (item.defenseTypes.toughness !== undefined) {
-        item.defenseTypes.sturdiness += item.defenseTypes.toughness;
+        item.defenseTypes.physicalResistance += item.defenseTypes.toughness;
         delete item.defenseTypes.toughness;
     }
-    
     if (item.defenseTypes.fortitude !== undefined) {
-        item.defenseTypes.sturdiness += Math.ceil(item.defenseTypes.fortitude / 2);
+        item.defenseTypes.physicalResistance += Math.ceil(item.defenseTypes.fortitude / 2);
         delete item.defenseTypes.fortitude;
     }
-    
     if (item.defenseTypes.heatResistance !== undefined) {
-        item.defenseTypes.structure += item.defenseTypes.heatResistance;
+        item.defenseTypes.elementalResistance += item.defenseTypes.heatResistance;
         delete item.defenseTypes.heatResistance;
     }
-    
     if (item.defenseTypes.antimagnet !== undefined) {
-        item.defenseTypes.structure += item.defenseTypes.antimagnet;
+        item.defenseTypes.elementalResistance += item.defenseTypes.antimagnet;
         delete item.defenseTypes.antimagnet;
     }
-    
     if (item.defenseTypes.immunity !== undefined) {
-        item.defenseTypes.stability += item.defenseTypes.immunity;
+        item.defenseTypes.chemicalResistance += item.defenseTypes.immunity;
         delete item.defenseTypes.immunity;
     }
-    
+
     return item;
 }
 
@@ -545,7 +797,7 @@ function restoreItem(savedItem) {
     // Migrate defense types if needed
     savedItem = migrateItemDefenseTypes(savedItem);
     
-    // Migrate damageTypes as well (if it has old damage types)
+    // Migrate damage type keys on legacy fields
     if (savedItem.damageTypes) {
         // Check for and convert old damage types to new ones
         if (savedItem.damageTypes.mental !== undefined) {
@@ -563,18 +815,49 @@ function restoreItem(savedItem) {
             delete savedItem.damageTypes.chemical;
         }
     }
+
+    // Weapon local base migration: one-way fallback from legacy damageTypes.
+    const isWeaponLike = ((savedItem.type || '').toLowerCase() === 'weapon') || savedItem.slot === 'mainHand' || savedItem.weaponType;
+    if (isWeaponLike) {
+        if (!savedItem.weaponBaseDamage && savedItem.damageTypes && typeof savedItem.damageTypes === 'object') {
+            savedItem.weaponBaseDamage = JSON.parse(JSON.stringify(savedItem.damageTypes));
+            delete savedItem.damageTypes;
+        } else if (savedItem.weaponBaseDamage && savedItem.damageTypes) {
+            console.warn(`Weapon ${savedItem.name} has both weaponBaseDamage and legacy damageTypes. Ignoring legacy damageTypes to avoid duplication.`);
+            delete savedItem.damageTypes;
+        }
+        if (savedItem.weaponBaseDamage) {
+            if (savedItem.weaponBaseDamage.mental !== undefined) {
+                savedItem.weaponBaseDamage.slashing = savedItem.weaponBaseDamage.mental;
+                delete savedItem.weaponBaseDamage.mental;
+            }
+            if (savedItem.weaponBaseDamage.magnetic !== undefined) {
+                savedItem.weaponBaseDamage.electric = savedItem.weaponBaseDamage.magnetic;
+                delete savedItem.weaponBaseDamage.magnetic;
+            }
+            if (savedItem.weaponBaseDamage.chemical !== undefined) {
+                savedItem.weaponBaseDamage.corrosive = savedItem.weaponBaseDamage.chemical;
+                delete savedItem.weaponBaseDamage.chemical;
+            }
+        }
+    }
     
     // Find the template for this item
     const itemTemplate = window.items.find(item => item.name === savedItem.name);
     
     if (itemTemplate) {
         console.log(`Template found for ${savedItem.name}, type: ${itemTemplate.type}`);
-        
-        // Create a new item instance from the template
-        const itemInstance = generateItemInstance(itemTemplate);
 
-        // Copy over properties from the saved item
-        Object.assign(itemInstance, savedItem);
+        // Preserve saved generated values exactly (avoid reroll drift on load)
+        const itemInstance = JSON.parse(JSON.stringify(savedItem));
+
+        // Keep selected template metadata current without altering rolled stats
+        if (itemTemplate.icon) {
+            itemInstance.icon = itemTemplate.icon;
+        }
+        if (itemTemplate.effects && !itemInstance.effects) {
+            itemInstance.effects = JSON.parse(JSON.stringify(itemTemplate.effects));
+        }
 
         return itemInstance;
     } else {
@@ -653,10 +936,18 @@ function stopDelveWithFailure() {
 }
 
 // Reset game function
-function resetGame() {
-    if (confirm('Are you sure you want to reset your save? This action cannot be undone.')) {
-        // Clear localStorage
-        localStorage.removeItem('idleCombatGameSave');
+function resetGame(slotIndex = null) {
+    const targetSlot = slotIndex == null ? getUiSelectedSaveSlot() : sanitizeSaveSlotIndex(slotIndex);
+    if (confirm(`Are you sure you want to reset save slot ${targetSlot}? This action cannot be undone.`)) {
+        if (typeof isCombatActive !== 'undefined' && isCombatActive) {
+            stopCombat('resetGame');
+        }
+        if (window.activityManager && typeof window.activityManager.clearActivityOnLoad === 'function') {
+            window.activityManager.clearActivityOnLoad();
+        }
+
+        // Clear localStorage for selected slot only
+        localStorage.removeItem(getSaveKeyForSlot(targetSlot));
 
         // Reset player, inventory, and equipped items to initial state
         player.baseStats = JSON.parse(JSON.stringify(playerBaseStats));
@@ -676,6 +967,15 @@ function resetGame() {
         player.passiveAllocations = {}; // Clear all allocations
         player.gearPassiveBonuses = {}; // Clear all gear bonuses
         player.passiveAttackSpeedBonus = 0; // Reset cumulative passive bonus
+
+        player.equippedSkillId = window.DEFAULT_COMBAT_STYLE_ID || 'balancedStyle';
+        player.unlockedSkillIds = (window.combatStyles || []).map(style => style.id);
+        player.combatStyleAllocations = {};
+        player.skillPoints = 0;
+        player.skillModAllocations = {};
+        if (typeof normalizeCombatStylesState === 'function') {
+            normalizeCombatStylesState(player);
+        }
         
         player.gatheringSkills = {
             Mining: { level: 1, experience: 0 },
@@ -723,7 +1023,8 @@ function resetGame() {
         // Show the updated UI
         showScreen('inventory-screen');
         
-        logMessage('Game has been reset!');
+        renderSaveSlots();
+        logMessage(`Save slot ${targetSlot} has been reset.`);
     } else {
         console.log('Reset cancelled.');
         logMessage('Reset cancelled.');
@@ -732,7 +1033,7 @@ function resetGame() {
 
 
 // Auto-save interval (saves every 5 seconds)
-setInterval(() => saveGame(true), 5000); // Adjust the interval as needed
+setInterval(() => saveGame(true, getAutosaveTargetSlot()), 5000);
 
 // Function to display adventure locations
 function displayAdventureLocations() {
@@ -871,56 +1172,44 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, 2000);
     
-    document.getElementById('save-game').addEventListener('click', () => saveGame(false));
-    document.getElementById('load-game').addEventListener('click', loadGame);
-    document.getElementById('reset-game').addEventListener('click', resetGame);
-    document.addEventListener('DOMContentLoaded', () => {
-
-        document.querySelectorAll('.sidebar-menu li').forEach(menuItem => {
-            menuItem.addEventListener('click', () => {
-                const screenId = menuItem.getAttribute('data-screen');
-                const skillName = menuItem.getAttribute('data-skill');
-
-                // Stop any ongoing activities
-                if (isGathering) {
-                    stopGatheringActivity();
-                }
-                if (isCombatActive) {
-                    stopCombat();
-                }
-
-                if (screenId) {
-                    showScreen(screenId);
-                } else if (skillName) {
-                    const skillScreenId = getSkillScreenId(skillName);
-                    showScreen(skillScreenId);
-
-                    if (skillName === 'Fabrication') {
-                        displayFabricationRecipes(); // Function from fabrication.js
-                    } else {
-                        // Display activities for gathering skills
-                        displaySkillActivities(skillName);
-                    }
-                }
-            });
-        });
+    document.getElementById('save-game').addEventListener('click', () => {
+        const slot = getUiSelectedSaveSlot();
+        saveGame(false, slot);
+        setAutosaveTargetSlot(slot);
+        renderSaveSlots();
+        logMessage(`Saved to slot ${slot}. Autosave will use this slot.`);
     });
-    function getSkillScreenId(skillName) {
-        if (skillName === 'Fabrication') {
-            return 'fabrication-screen';
-        } else {
-            return `${skillName.toLowerCase()}-screen`;
-        }
-    }
+    document.getElementById('load-game').addEventListener('click', () => {
+        const slot = getUiSelectedSaveSlot();
+        loadGame(slot);
+    });
+    document.getElementById('reset-game').addEventListener('click', () => {
+        const slot = getUiSelectedSaveSlot();
+        resetGame(slot);
+    });
+    wireSidebarNavigation();
+
+    wireSettingsNavigation();
 
     // Event listener for settings button
     document.getElementById('settings-button').addEventListener('click', () => {
-        // Open settings modal
         const menu = document.getElementById('settings-menu');
-        menu.style.display = 'block';
+        openSettingsMenu();
         // Close settings on overlay click or ESC
-        const overlayClose = (e) => { if (e.target === menu) { menu.style.display = 'none'; window.removeEventListener('click', overlayClose); document.removeEventListener('keydown', escClose); } };
-        const escClose = (e) => { if (e.key === 'Escape') { menu.style.display = 'none'; window.removeEventListener('click', overlayClose); document.removeEventListener('keydown', escClose); } };
+        const overlayClose = (e) => {
+            if (e.target === menu) {
+                closeSettingsMenu();
+                window.removeEventListener('click', overlayClose);
+                document.removeEventListener('keydown', escClose);
+            }
+        };
+        const escClose = (e) => {
+            if (e.key === 'Escape') {
+                closeSettingsMenu();
+                window.removeEventListener('click', overlayClose);
+                document.removeEventListener('keydown', escClose);
+            }
+        };
         window.addEventListener('click', overlayClose);
         document.addEventListener('keydown', escClose);
 
@@ -970,6 +1259,29 @@ document.addEventListener('DOMContentLoaded', () => {
             setVal('kb-settings', defaultBinds.settings);
             logMessage('Keybinds reset to defaults.');
         };
+
+        // Dev tools: add +1 level and +1,000,000 credits
+        const addLvlBtn = document.getElementById('dev-add-level');
+        if (addLvlBtn) {
+            addLvlBtn.onclick = () => {
+                if (player.level >= MAX_PLAYER_LEVEL) {
+                    logMessage(`You are already at the maximum level (${MAX_PLAYER_LEVEL}).`);
+                    return;
+                }
+                // Grant exactly enough XP to level once using current level requirement
+                const req = getXPForNextLevel(player.level);
+                gainExperience(req);
+                updatePlayerStatsDisplay();
+            };
+        }
+        const addCredBtn = document.getElementById('dev-add-credits');
+        if (addCredBtn) {
+            addCredBtn.onclick = () => {
+                playerCurrency = (playerCurrency || 0) + 1000000;
+                logMessage('Added 1,000,000 credits.');
+                updateInventoryDisplay();
+            };
+        }
     });
 
     // Wire bulk actions (Sell All / Disassemble All) in inventory toolbar
@@ -980,11 +1292,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Event listener for closing settings modal
     document.getElementById('close-settings').addEventListener('click', () => {
-        document.getElementById('settings-menu').style.display = 'none';
+        closeSettingsMenu();
     });
 
-    // Automatically load the game when the page is loaded
-    loadGame();
+    // Automatically load the game when the page is loaded from active slot.
+    const startupSlot = getAutosaveTargetSlot();
+    uiSelectedSaveSlot = startupSlot;
+    loadGame(startupSlot);
+    startGlobalStatusBannerUpdates();
 
     // Initial display updates
     updatePlayerStatsDisplay();
@@ -1017,9 +1332,21 @@ document.addEventListener('keydown', (e) => {
     const key = (e.key||'').toUpperCase();
     if (key === binds.inventory) { showScreen('inventory-screen'); e.preventDefault(); }
     else if (key === binds.equipment) { showScreen('equipment-screen'); e.preventDefault(); }
-    else if (key === binds.passives) { showScreen('passives-screen'); e.preventDefault(); }
+    else if (key === binds.passives) {
+        if (typeof window.openPassivesScreen === 'function') {
+            window.openPassivesScreen();
+        } else {
+            showScreen('passives-screen');
+        }
+        e.preventDefault();
+    }
     else if (key === binds.adventure) { showScreen('adventure-screen'); e.preventDefault(); }
-    else if (key === binds.settings) { const menu = document.getElementById('settings-menu'); if (menu) { menu.style.display='block'; e.preventDefault(); } }
+    else if (key === binds.settings) {
+        if (document.getElementById('settings-menu')) {
+            openSettingsMenu();
+            e.preventDefault();
+        }
+    }
 });
 
 // Lightweight global warning popup
@@ -1082,36 +1409,28 @@ function showScreen(screenId) {
         
         // Update sidebar menu to show active item
         updateSidebarActiveItem(screenId);
+        if (screenId === 'passives-screen' && typeof window.refreshPassivesScreen === 'function') {
+            window.refreshPassivesScreen();
+        }
+        if (screenId === 'skills-screen' && typeof window.refreshCombatStylesScreen === 'function') {
+            window.refreshCombatStylesScreen();
+        }
     } else {
         console.error(`Screen with ID ${screenId} not found.`);
         return;
     }
     
-    if (screenId !== 'adventure-screen') {
-        // Clear any pending combat restart
-        if (combatRestartTimeout) {
-            clearTimeout(combatRestartTimeout);
-            combatRestartTimeout = null;
-            console.log("Pending combat restart canceled due to screen change.");
-        }
-    }
-
     // Dispatch screenChanged event
     const event = new CustomEvent('screenChanged', { detail: { screenId } });
     window.dispatchEvent(event);
-
-    // Stop any ongoing activities when switching screens
-    if (isGathering) {
-        stopGatheringActivity();
-    }
-    if (isCombatActive && screenId !== 'adventure-screen') {
-        stopCombat();
-    }
     if (screenId === 'adventure-screen') {
-        stopCombat();
+        if (typeof displayAdventureLocations === 'function') {
+            displayAdventureLocations();
+        }
         updatePlayerStatsDisplay();
         updateEnemyStatsDisplay();
     }
+    renderGlobalStatusBanner();
 }
 
 // Function to update the active sidebar menu item
@@ -1135,35 +1454,135 @@ function updateSidebarActiveItem(screenId) {
     }
 }
 
-// Event listeners for sidebar menu items
-document.querySelectorAll('.sidebar-menu li').forEach(menuItem => {
-    menuItem.addEventListener('click', () => {
-        const screenId = menuItem.getAttribute('data-screen');
-        const skillName = menuItem.getAttribute('data-skill');
+let globalStatusBannerInterval = null;
 
-        if (screenId) {
-            showScreen(screenId);
-            // Stop gathering or combat if needed
-            if (screenId === 'adventure-screen') {
-                // Handle adventure screen setup
-                if (isGathering) {
-                    stopGatheringActivity();
-                }
-                displayAdventureLocations(); // Ensure locations are displayed
-            } else {
-                // For other screens, stop combat
-                if (isCombatActive) {
-                    stopCombat();
-                }
-                if (isGathering) {
-                    stopGatheringActivity();
-                }
-            }
-        } else if (skillName) {
-            // Show the skill screen
-            showScreen(`${skillName.toLowerCase()}-screen`);
-            // Start gathering activity if applicable
-            startSkillActivity(skillName);
+function getSkillScreenId(skillName) {
+    if (skillName === 'Fabrication') {
+        return 'fabrication-screen';
+    }
+    return `${skillName.toLowerCase()}-screen`;
+}
+
+function formatBannerTimeRemaining(ms) {
+    const totalSeconds = Math.max(0, Math.ceil((Number(ms) || 0) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function renderGlobalStatusBanner() {
+    const banner = document.getElementById('global-status-banner');
+    if (!banner) return;
+
+    const level = Number(player?.level || 1);
+    const xp = Math.max(0, Math.floor(Number(player?.experience || 0)));
+    const xpNext = Math.max(1, Math.floor(getXPForNextLevel(level) || 1));
+    const credits = Math.max(0, Math.floor(Number(playerCurrency || 0))).toLocaleString();
+    const leftText = `Level ${level} · XP ${xp}/${xpNext} · Credits ${credits}`;
+
+    let activityText = 'Activity: Idle';
+    let activityPercent = 0;
+    let activityAlert = null;
+    const activityState = (window.activityManager && typeof window.activityManager.getState === 'function')
+        ? window.activityManager.getState()
+        : null;
+    const activeActivity = activityState?.currentActivity;
+    if (activityState?.active && activeActivity) {
+        const typeLabel = activeActivity.type ? `${activeActivity.type.charAt(0).toUpperCase()}${activeActivity.type.slice(1)}` : 'Activity';
+        activityPercent = Math.max(0, Math.min(100, Number(activeActivity.progressPercent || 0)));
+        activityText = `${typeLabel}: ${activeActivity.displayName} · ${Math.round(activityPercent)}% · ${formatBannerTimeRemaining(activeActivity.timeRemainingMs)}`;
+    } else if (typeof isCombatActive !== 'undefined' && isCombatActive) {
+        const enemyName = (typeof enemy !== 'undefined' && enemy?.name) ? enemy.name : 'Enemy';
+        activityText = `Activity: Combat · ${enemyName}`;
+    } else if (typeof isDelveInProgress !== 'undefined' && isDelveInProgress) {
+        const locationName = (typeof currentDelveLocation !== 'undefined' && currentDelveLocation?.name)
+            ? currentDelveLocation.name
+            : 'Delve';
+        const fightNumber = (typeof currentMonsterIndex !== 'undefined' ? currentMonsterIndex + 1 : 1);
+        activityText = `Activity: Delve · ${locationName} · Fight ${fightNumber}`;
+    }
+    if (activityState?.alert?.message) {
+        activityAlert = activityState.alert;
+    }
+
+    let combatText = 'Combat: Inactive';
+    let combatClass = '';
+    if (typeof isCombatActive !== 'undefined' && isCombatActive && typeof enemy !== 'undefined' && enemy) {
+        const playerMax = Math.max(1, Number(player?.totalStats?.health || player?.baseStats?.maxHealth || 1));
+        const playerHp = Math.max(0, Math.floor(Number(player?.currentHealth || 0)));
+        const enemyMax = Math.max(1, Math.floor(Number(enemy?.totalStats?.health || enemy?.currentHealth || 1)));
+        const enemyHp = Math.max(0, Math.floor(Number(enemy?.currentHealth || 0)));
+        const playerPct = (playerHp / playerMax) * 100;
+        if (playerPct < 15) {
+            combatClass = 'danger-strong';
+        } else if (playerPct < 30) {
+            combatClass = 'danger';
         }
+        const enemyName = enemy?.name || 'Enemy';
+        combatText = `Combat: ${enemyName} · You ${playerHp}/${Math.floor(playerMax)} HP · Enemy ${enemyHp}/${enemyMax} HP`;
+    } else if (typeof isDelveInProgress !== 'undefined' && isDelveInProgress) {
+        const locationName = (typeof currentDelveLocation !== 'undefined' && currentDelveLocation?.name)
+            ? currentDelveLocation.name
+            : 'Delve';
+        const fightNumber = (typeof currentMonsterIndex !== 'undefined' ? currentMonsterIndex + 1 : 1);
+        combatText = `${locationName} · Fight ${fightNumber}`;
+    }
+
+    const rightText = activityAlert
+        ? activityAlert.message
+        : (combatClass ? 'LOW HP' : 'Status OK');
+    const rightClass = activityAlert
+        ? `alert-${activityAlert.severity || 'info'}`
+        : combatClass;
+
+    banner.innerHTML = `
+        <div class="global-status-left">${leftText}</div>
+        <div class="global-status-center">
+            <div class="global-status-activity-line">${activityText}</div>
+            <div class="global-status-progress-track"><div class="global-status-progress-fill" style="width:${activityPercent.toFixed(1)}%"></div></div>
+        </div>
+        <div class="global-status-right ${rightClass}">${combatText}<span class="global-status-tag">${rightText}</span></div>
+    `;
+}
+
+function startGlobalStatusBannerUpdates() {
+    if (globalStatusBannerInterval) {
+        clearInterval(globalStatusBannerInterval);
+    }
+    renderGlobalStatusBanner();
+    globalStatusBannerInterval = setInterval(renderGlobalStatusBanner, 200);
+}
+
+function handleSidebarNavigation(menuItem) {
+    const screenId = menuItem.getAttribute('data-screen');
+    const skillName = menuItem.getAttribute('data-skill');
+    if (screenId) {
+        if (screenId === 'passives-screen' && typeof window.openPassivesScreen === 'function') {
+            window.openPassivesScreen();
+        } else {
+            showScreen(screenId);
+        }
+        return;
+    }
+
+    if (!skillName) return;
+    const skillScreenId = getSkillScreenId(skillName);
+    showScreen(skillScreenId);
+
+    if (skillName === 'Fabrication') {
+        if (typeof displayFabricationRecipes === 'function') {
+            displayFabricationRecipes();
+        }
+        return;
+    }
+
+    if (typeof displaySkillActivities === 'function') {
+        displaySkillActivities(skillName);
+    }
+}
+
+function wireSidebarNavigation() {
+    document.querySelectorAll('.sidebar-menu li').forEach((menuItem) => {
+        menuItem.addEventListener('click', () => handleSidebarNavigation(menuItem));
     });
-});
+}

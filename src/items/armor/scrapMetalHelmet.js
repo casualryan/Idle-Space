@@ -1,11 +1,13 @@
 export default {
     name: 'Scrap Metal Helmet',
-    type: 'Helmet',
-    icon: 'icons/iron_helmet.png',
-    healthBonus: { min: 20, max: 20 },
-    healthBonusPercentRange: { min: 15, max: 15 },
+    type: 'Armor',
+    icon: 'icons/scrap_metal_helmet.png',
     slot: 'head',
-    isDisassembleable: false,
-    disassembleResults: [],
-    description: "Metal helmet fashioned from discarded scrap."
-}; 
+    levelRequirement: { min: 1, max: 1 },
+    healthBonus: { min: 14, max: 28 },
+    isDisassembleable: true,
+    disassembleResults: [
+        { name: 'Scrap Metal', quantity: 2 }
+    ],
+    description: 'Starter head protection built from salvaged scrap.'
+};

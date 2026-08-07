@@ -5,9 +5,9 @@ export default {
     damageTypes: {},
     attackSpeed: 0.1,  // +10% attack speed
     defenseTypes: {
-        sturdiness: { min: 5, max: 10 },
-        structure: { min: 10, max: 15 },
-        stability: { min: 5, max: 10 }
+        physicalResistance: { min: 5, max: 10 },
+        elementalResistance: { min: 10, max: 15 },
+        chemicalResistance: { min: 5, max: 10 }
     },
     healthBonus: { min: 50, max: 100 },
     healthBonusPercentRange: { min: 15, max: 20 },

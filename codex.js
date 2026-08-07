@@ -88,7 +88,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     subtitle: 'Health and Energy Shield',
                     content: `Your character has two defensive layers: Health and Energy Shield. Energy Shield is depleted first, and then damage is applied to Health. Energy Shield regenerates over time, but Health requires healing items or regeneration effects.
                     
-                    When your Health reaches zero, combat ends and you must start again. Improve your defenses through better equipment and passive skills to survive longer in combat.`
+                    When your Health reaches zero, combat ends and you must start again. Improve your resistances through better equipment and passive skills to survive longer in combat.`
                 }
             ]
         },
@@ -97,19 +97,19 @@ document.addEventListener('DOMContentLoaded', function() {
             sections: [
                 {
                     subtitle: 'Physical Damage',
-                    content: `Physical damage represents raw kinetic force. It's common in melee weapons and projectiles. Physical defense reduces the amount of physical damage taken.`
+                    content: `Physical damage represents raw kinetic force. It's common in melee weapons and projectiles. Physical resistance reduces the amount of physical damage taken.`
                 },
                 {
                     subtitle: 'Energy Damage',
-                    content: `Energy damage represents various forms of energy-based attacks, including laser, plasma, and electrical damage. Energy defense reduces the amount of energy damage taken.`
+                    content: `Energy damage represents various forms of energy-based attacks, including laser, plasma, and electrical damage. Elemental resistance reduces the amount of energy damage taken.`
                 },
                 {
                     subtitle: 'Chemical Damage',
-                    content: `Chemical damage comes from toxic substances, acids, and biological attacks. Chemical defense provides protection against these hazardous substances.`
+                    content: `Chemical damage comes from toxic substances, acids, and biological attacks. Chemical resistance provides protection against these hazardous substances.`
                 },
                 {
                     subtitle: 'Psionic Damage',
-                    content: `Psionic damage attacks the mind directly, bypassing physical defenses. This rare damage type is particularly effective against heavily armored targets but can be countered with psionic defense.`
+                    content: `Psionic damage attacks the mind directly, bypassing physical resistances. This rare damage type is particularly effective against heavily armored targets but can be countered with psionic resistance.`
                 }
             ]
         },
@@ -207,7 +207,7 @@ document.addEventListener('DOMContentLoaded', function() {
             sections: [
                 {
                     subtitle: 'Enemy Database',
-                    content: `Below you'll find information about all the enemies you may encounter while delving. This includes their stats, damage types, defenses, and what loot they might drop.
+                    content: `Below you'll find information about all the enemies you may encounter while delving. This includes their stats, damage types, resistances, and what loot they might drop.
                     
                     Use this information to prepare for encounters and develop strategies for dealing with different enemy types.`
                 }
@@ -379,17 +379,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     leftColumn.appendChild(damageSection);
                 }
                 
-                // Right column - Defense Types and other stats
+                // Right column - Resistance Types and other stats
                 const rightColumn = document.createElement('div');
                 rightColumn.classList.add('codex-column');
                 
-                // Add defense types to right column
+                // Add resistance types to right column
                 if (enemyData.defenseTypes && Object.keys(enemyData.defenseTypes).length > 0) {
                     const defenseSection = document.createElement('div');
                     defenseSection.classList.add('codex-stats-section');
                     
                     const defenseTitle = document.createElement('h5');
-                    defenseTitle.textContent = 'Defense Types';
+                    defenseTitle.textContent = 'Resistance Types';
                     defenseSection.appendChild(defenseTitle);
                     
                     const defenseList = document.createElement('ul');
@@ -397,7 +397,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     Object.entries(enemyData.defenseTypes).forEach(([type, value]) => {
                         const defenseItem = document.createElement('li');
-                        const formattedType = type.charAt(0).toUpperCase() + type.slice(1);
+                        const formattedType = ({
+                            physicalResistance: 'Physical Resistance',
+                            elementalResistance: 'Elemental Resistance',
+                            chemicalResistance: 'Chemical Resistance'
+                        })[type] || (type.charAt(0).toUpperCase() + type.slice(1));
                         defenseItem.innerHTML = `<span class="stat-name">${formattedType}:</span> <span class="stat-value">${value}</span>`;
                         defenseList.appendChild(defenseItem);
                     });

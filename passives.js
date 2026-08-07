@@ -32,7 +32,7 @@ const passives = [
         passiveTier: 1
     },
     {
-        name: "Pyromancer",
+        name: "Pyro Mastery",
         description: "Increases your pyro damage.",
         icon: "icons/pyromancer.png",
         statChanges: {
@@ -132,7 +132,7 @@ const passives = [
         icon: "icons/toughened_hide.png",
         statChanges: {
             defenseTypes: {
-                sturdiness: [0, 5, 10, 15, 20, 25, 30]  // Flat increases
+                physicalResistance: [0, 5, 10, 15, 20, 25, 30]  // Flat increases
             }
         },
         passiveTier: 2
@@ -143,7 +143,7 @@ const passives = [
         icon: "icons/mental_fortitude.png",
         statChanges: {
             defenseTypes: {
-                structure: [0, 5, 10, 15, 20, 25, 30]  // Flat increases
+                elementalResistance: [0, 5, 10, 15, 20, 25, 30]  // Flat increases
             }
         },
         passiveTier: 2
@@ -154,7 +154,7 @@ const passives = [
         icon: "icons/heat_shield.png",
         statChanges: {
             defenseTypes: {
-                stability: [0, 5, 10, 15, 20, 25, 30]  // Flat increases
+                chemicalResistance: [0, 5, 10, 15, 20, 25, 30]  // Flat increases
             }
         },
         passiveTier: 2
@@ -165,9 +165,9 @@ const passives = [
         icon: "icons/immunology.png",
         statChanges: {
             defenseTypes: {
-                sturdiness: [0, 3, 6, 9, 12, 15, 18],  // Flat increases
-                structure: [0, 3, 6, 9, 12, 15, 18],   // Flat increases
-                stability: [0, 3, 6, 9, 12, 15, 18]    // Flat increases
+                physicalResistance: [0, 3, 6, 9, 12, 15, 18],  // Flat increases
+                elementalResistance: [0, 3, 6, 9, 12, 15, 18],   // Flat increases
+                chemicalResistance: [0, 3, 6, 9, 12, 15, 18]    // Flat increases
             }
         },
         passiveTier: 2
@@ -178,7 +178,7 @@ const passives = [
         icon: "icons/anti_magnetic_field.png",
         statChanges: {
             defenseTypes: {
-                structure: [0, 10, 20, 30, 40, 50, 60]  // Flat increases
+                elementalResistance: [0, 10, 20, 30, 40, 50, 60]  // Flat increases
             }
         },
         passiveTier: 2
@@ -196,11 +196,11 @@ const passives = [
     },
     {
         name: "Toughness",
-        description: "Increases your toughness defense.",
+        description: "Increases your physical resistance.",
         icon: "icons/toughness.png",
         statChanges: {
             defenseTypes: {
-                toughness: [0, 5, 10, 15, 20, 25, 30]  // Flat increases
+                physicalResistance: [0, 5, 10, 15, 20, 25, 30]  // Flat increases
             }
         },
         passiveTier: 3
@@ -211,7 +211,7 @@ const passives = [
         icon: "icons/thermal_regulation.png",
         statChanges: {
             defenseTypes: {
-                structure: [0, 5, 10, 15, 20, 25, 30]  // Flat increases
+                elementalResistance: [0, 5, 10, 15, 20, 25, 30]  // Flat increases
             }
         },
         passiveTier: 3
@@ -222,7 +222,7 @@ const passives = [
         icon: "icons/faraday_protection.png",
         statChanges: {
             defenseTypes: {
-                structure: [0, 5, 10, 15, 20, 25, 30]  // Flat increases
+                elementalResistance: [0, 5, 10, 15, 20, 25, 30]  // Flat increases
             }
         },
         passiveTier: 3

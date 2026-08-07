@@ -42,17 +42,24 @@ function verifyItemsLoaded() {
 
 // Wait for everything else to load
 window.addEventListener('load', () => {
-  // Give a little extra time for modules to stabilize
-  setTimeout(() => {
-    console.log('Running final items verification...');
-    const verified = verifyItemsLoaded();
-    
-    if (!verified) {
-      console.error('Final verification failed. This may affect item generation and loading.');
-    } else {
-      console.log('All item systems verified and working correctly.');
+  // Poll for up to 6 seconds to allow module loaders to finish
+  const start = Date.now();
+  const tryVerify = () => {
+    if (Date.now() - start > 6000) {
+      console.log('Running final items verification (timeout reached)...');
+      const ok = verifyItemsLoaded();
+      if (!ok) console.error('Final verification failed. This may affect item generation and loading.');
+      return;
     }
-  }, 1000);
+    if (window.weapons && window.weapons.length > 0) {
+      console.log('Running final items verification...');
+      const ok = verifyItemsLoaded();
+      if (!ok) console.error('Final verification failed. This may affect item generation and loading.');
+      return;
+    }
+    setTimeout(tryVerify, 150);
+  };
+  setTimeout(tryVerify, 250);
 });
 
 export default {}; 

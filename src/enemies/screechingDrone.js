@@ -10,9 +10,9 @@ export default {
         electric: 5
     },
     defenseTypes: {
-        sturdiness: 5,
-        structure: 15,
-        stability: 10
+        physicalResistance: 5,
+        elementalResistance: 15,
+        chemicalResistance: 10
     },
     lootConfig: {
         baseDropChance: 0.8,

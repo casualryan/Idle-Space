@@ -56,8 +56,11 @@ function addItemToInventory(newItem) {
             window.inventory.push(clone);
             console.log(`Added chip instance: ${clone.name}`);
         }
-    } else if (newItem && newItem.stackable) {
-        const existingItem = window.inventory.find(item => item.name === newItem.name && item.stackable === true);
+    } else if (newItem && (newItem.stackable || newItem.type === 'Material')) {
+        if (newItem.type === 'Material') newItem.stackable = true;
+        const existingItem = window.inventory.find(
+            item => item.name === newItem.name && (item.stackable === true || item.type === 'Material')
+        );
         if (existingItem) {
             existingItem.quantity += newItem.quantity;
             console.log(`Updated quantity of ${existingItem.name} to ${existingItem.quantity}`);
@@ -210,7 +213,7 @@ function updateInventoryDisplay() {
 
             // Create item icon
             const itemIcon = document.createElement('img');
-            itemIcon.src = item.icon || 'default-icon.png'; // Use a default icon if none provided
+            itemIcon.src = item.icon || 'icons/default-icon.png';
             itemIcon.alt = item.name || 'Unknown Item';
             itemIcon.width = 50; // Set icon size
             itemIcon.height = 50;
@@ -233,11 +236,12 @@ function updateInventoryDisplay() {
             
             inventoryList.appendChild(listItem);
 
-            // Left-click: do not open options popup anymore (reserved for right-click)
-            // If the item is usable (consumable), keep left-click to use
-            itemIcon.addEventListener('click', () => {
+            // Left-click: open options (or use if consumable) — swapped behavior
+            itemIcon.addEventListener('click', (e) => {
                 if (item.effect) {
                     showUseItemPopup(item);
+                } else {
+                    showItemOptionsPopup(item, e);
                 }
             });
             // Drag and drop to reorder inventory (drop BETWEEN items)
@@ -283,13 +287,13 @@ function updateInventoryDisplay() {
                     equipItem(item);
                 }
             });
-            // Right-click opens options popup
+            // Right-click: auto-equip if equippable; else use consumables
             itemIcon.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
-                if (item.effect) {
+                if (isEquippableItem(item)) {
+                    equipItem(item);
+                } else if (item.effect) {
                     showUseItemPopup(item);
-                } else {
-                    showItemOptionsPopup(item, e);
                 }
             });
         } else {
@@ -371,6 +375,21 @@ function equipItem(item) {
     applyAllPassivesToPlayer();
     
     updateInventoryDisplay();
+    // Recompute proc effects from equipped gear
+    if (typeof recomputePlayerEffects === 'function') {
+        recomputePlayerEffects();
+    } else {
+        // Inline fallback
+        try {
+            const newEffects = [];
+            const eq = player && player.equipment ? player.equipment : {};
+            const slots = ['mainHand','offHand','head','chest','legs','feet','gloves'];
+            slots.forEach(s => { const it = eq[s]; if (it && Array.isArray(it.effects)) newEffects.push(...it.effects); });
+            if (Array.isArray(eq.bionicSlots)) { eq.bionicSlots.forEach(it => { if (it && Array.isArray(it.effects)) newEffects.push(...it.effects); }); }
+            player.effects = newEffects;
+        } catch (_) {}
+    }
+
     updateEquipmentDisplay();
     updatePlayerStatsDisplay();
 
@@ -393,6 +412,8 @@ function updateEquipmentDisplay() {
     const paperDoll = document.getElementById('equipment-paper-doll');
     paperDoll.classList.add('updating');
     setTimeout(() => paperDoll.classList.remove('updating'), 500);
+
+    renderEquipmentStatsPanel();
 
     // Update equipment slots
     const slots = ['mainHand', 'offHand', 'head', 'chest', 'legs', 'feet', 'gloves'];
@@ -543,6 +564,134 @@ function updateEquipmentDisplay() {
             }
         }, (slots.length + index) * 100); // Continue the staggered timing from regular equipment
     });
+}
+
+function renderEquipmentStatsPanel() {
+    const statsPanel = document.getElementById('equipment-stats-panel');
+    const buildPanel = document.getElementById('equipment-build-panel');
+    if (!statsPanel || !buildPanel || !player || !player.equipment) return;
+
+    if (typeof player.calculateStats === 'function') {
+        player.calculateStats();
+    }
+
+    const total = player.totalStats || {};
+    const asPercent = (value, decimals = 1) => `${((value || 0) * 100).toFixed(decimals)}%`;
+    const asInt = (value) => Math.round(value || 0);
+    const toDamageGroup = (type) => {
+        if (type === 'kinetic' || type === 'slashing') return 'physical';
+        if (type === 'pyro' || type === 'cryo' || type === 'electric') return 'elemental';
+        if (type === 'corrosive' || type === 'radiation') return 'chemical';
+        return null;
+    };
+    const sectionRow = (label, value) => `
+        <div class="equipment-stat-row">
+            <span class="equipment-stat-label">${label}</span>
+            <span class="equipment-stat-value">${value}</span>
+        </div>
+    `;
+
+    const damageTypes = total.damageTypes || {};
+    const damageTypeModifiers = total.damageTypeModifiers || {};
+    const damageGroupModifiers = total.damageGroupModifiers || {};
+    const critChance = Math.max(0, Number(total.criticalChance || 0));
+    const critMultiplier = Math.max(1, Number(total.criticalMultiplier || 1));
+    const attackSpeed = Math.max(0, Number(total.attackSpeed || 0));
+    const critFactor = 1 + (critChance * Math.max(critMultiplier - 1, 0));
+
+    const dpsByType = {};
+    Object.keys(damageTypes).forEach(type => {
+        const base = Number(damageTypes[type] || 0);
+        if (base <= 0) return;
+        const typeMult = Number(damageTypeModifiers[type] || 1);
+        const groupKey = toDamageGroup(type);
+        const groupMult = groupKey ? Number(damageGroupModifiers[groupKey] || 1) : 1;
+        const dps = base * typeMult * groupMult * attackSpeed * critFactor;
+        dpsByType[type] = dps;
+    });
+    const totalDps = Object.values(dpsByType).reduce((sum, value) => sum + value, 0);
+    const dpsRows = Object.keys(dpsByType)
+        .sort((a, b) => dpsByType[b] - dpsByType[a])
+        .map(type => sectionRow(capitalize(type), dpsByType[type].toFixed(2)))
+        .join('');
+
+    statsPanel.innerHTML = `
+        <h3>Equipment Stats</h3>
+        <div class="equipment-stat-section">
+            <div class="equipment-stat-section-title">Core</div>
+            ${sectionRow('Health', asInt(total.health))}
+            ${sectionRow('Energy Shield', asInt(total.energyShield))}
+            ${sectionRow('Attack Speed', (total.attackSpeed || 0).toFixed(2))}
+        </div>
+        <div class="equipment-stat-section">
+            <div class="equipment-stat-section-title">Combat</div>
+            ${sectionRow('Crit Chance', asPercent(total.criticalChance, 2))}
+            ${sectionRow('Crit Multiplier', `${(total.criticalMultiplier || 0).toFixed(2)}x`)}
+            ${sectionRow('Precision', asInt(total.precision))}
+            ${sectionRow('Deflection', asInt(total.deflection))}
+        </div>
+        <div class="equipment-stat-section">
+            <div class="equipment-stat-section-title">Damage Per Second</div>
+            ${sectionRow('Total DPS', totalDps.toFixed(2))}
+            ${dpsRows || `<div class="equipment-panel-empty">No damage sources equipped.</div>`}
+        </div>
+        <div class="equipment-stat-section">
+            <div class="equipment-stat-section-title">Resistances</div>
+            ${sectionRow('Physical', `${asInt(total.defenseTypes?.physicalResistance)}%`)}
+            ${sectionRow('Elemental', `${asInt(total.defenseTypes?.elementalResistance)}%`)}
+            ${sectionRow('Chemical', `${asInt(total.defenseTypes?.chemicalResistance)}%`)}
+        </div>
+        <div class="equipment-stat-section">
+            <div class="equipment-stat-section-title">Efficiency</div>
+            ${sectionRow('Weapon', `${asInt(total.weaponEfficiency)}%`)}
+            ${sectionRow('Armor', `${asInt(total.armorEfficiency)}%`)}
+            ${sectionRow('Bionic', `${asInt(total.bionicEfficiency)}%`)}
+        </div>
+    `;
+
+    const normalSlots = ['mainHand', 'offHand', 'head', 'chest', 'legs', 'feet', 'gloves'];
+    const armorSlots = ['head', 'chest', 'legs', 'feet', 'gloves'];
+    const equippedItems = normalSlots
+        .map(slot => player.equipment[slot])
+        .filter(Boolean);
+    const bionicSlots = Array.isArray(player.equipment.bionicSlots) ? player.equipment.bionicSlots : [];
+    const equippedBionics = bionicSlots.filter(Boolean);
+
+    const damageTotals = {};
+    equippedItems.forEach(item => {
+        if (!item || !item.damageTypes) return;
+        Object.keys(item.damageTypes).forEach(type => {
+            const value = typeof item.damageTypes[type] === 'number'
+                ? item.damageTypes[type]
+                : 0;
+            if (value > 0) {
+                damageTotals[type] = (damageTotals[type] || 0) + value;
+            }
+        });
+    });
+
+    const dominantDamageType = Object.keys(damageTotals).sort((a, b) => damageTotals[b] - damageTotals[a])[0];
+    const warnings = [];
+    if (!player.equipment.mainHand) warnings.push('No main hand equipped.');
+    if (!player.equipment.chest) warnings.push('No chest armor equipped.');
+    if (equippedBionics.length === 0) warnings.push('No bionics equipped.');
+
+    buildPanel.innerHTML = `
+        <h3>Build Summary</h3>
+        <div class="equipment-stat-section">
+            <div class="equipment-stat-section-title">Loadout</div>
+            ${sectionRow('Armor Slots Filled', `${armorSlots.filter(slot => !!player.equipment[slot]).length}/5`)}
+            ${sectionRow('Main/Off Hand', `${player.equipment.mainHand ? 1 : 0}/${player.equipment.offHand ? 1 : 0}`)}
+            ${sectionRow('Bionics Filled', `${equippedBionics.length}/4`)}
+            ${sectionRow('Dominant Damage', dominantDamageType ? capitalize(dominantDamageType) : 'None')}
+        </div>
+        <div class="equipment-stat-section">
+            <div class="equipment-stat-section-title">Quick Warnings</div>
+            <div class="equipment-warning-list">
+                ${warnings.length ? warnings.map(w => `<div class="equipment-warning-item">${w}</div>`).join('') : '<div class="equipment-ok-item">Loadout looks solid.</div>'}
+            </div>
+        </div>
+    `;
 }
 
 // Function to show confirmation popup with optional secondary action
