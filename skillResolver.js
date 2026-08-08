@@ -325,6 +325,9 @@ function buildHitContext(profile, hitIndex) {
 
 function scaleDamageResult(damageResult, multiplier) {
     if (!damageResult || multiplier === 1) return damageResult;
+    if (typeof isDamagePacket === 'function' && isDamagePacket(damageResult)) {
+        return scaleDamagePacket(damageResult, multiplier);
+    }
     const scaled = {
         total: Math.round((damageResult.total || 0) * multiplier),
         damageBreakdown: {},

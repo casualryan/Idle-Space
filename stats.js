@@ -698,13 +698,6 @@ function calculateDamage(attacker, defender, attackContext = null) {
     let finalDamageBreakdown = {};
     let totalDamageDealt = 0;
 
-    // Define damage type groups
-    const damageTypeToGroup = {
-        'kinetic': 'physical', 'slashing': 'physical',
-        'pyro': 'elemental', 'cryo': 'elemental', 'electric': 'elemental',
-        'corrosive': 'chemical', 'radiation': 'chemical'
-    };
-
     // 1. Calculate Total Potential Damage (Sum of base damages after % increases)
     let totalPotentialDamage = 0;
     let adjustedBaseDamages = {}; // Store base damage *after* % mods for later proportion calculation
@@ -718,7 +711,7 @@ function calculateDamage(attacker, defender, attackContext = null) {
         }
 
         // Apply damage group % modifiers (e.g., +10% Elemental Damage -> multiplier 1.10)
-        const group = damageTypeToGroup[damageType];
+        const group = DAMAGE_TYPE_TO_GROUP[damageType];
         if (group && attacker.totalStats.damageGroupModifiers && attacker.totalStats.damageGroupModifiers[group]) {
             currentDamage *= attacker.totalStats.damageGroupModifiers[group];
         }
@@ -749,7 +742,16 @@ function calculateDamage(attacker, defender, attackContext = null) {
 
     // Handle case where total potential damage is zero
     if (totalPotentialDamage <= 0) {
-        return { total: 0, damageBreakdown: {}, isCritical: false };
+        return createDamagePacket({
+            source: attacker,
+            target: defender,
+            kind: ctx.kind || 'attack',
+            damage: {},
+            total: 0,
+            isCritical: false,
+            damageRoll: 0,
+            tags: ctx.tags || ['hit']
+        });
     }
 
     // 2. Damage Roll (Randomization based on Precision/Deflection)
@@ -833,12 +835,17 @@ function calculateDamage(attacker, defender, attackContext = null) {
     // Round total damage to nearest whole number
     totalDamageDealt = Math.round(totalDamageDealt);
 
-    return {
+    return createDamagePacket({
+        source: attacker,
+        target: defender,
+        kind: ctx.kind || 'attack',
+        damage: finalDamageBreakdown,
         total: totalDamageDealt,
-        damageBreakdown: finalDamageBreakdown,
         isCritical: isCriticalHit,
-        damageRoll: damagePercentage
-    };
+        damageRoll: damagePercentage,
+        mitigated: true,
+        tags: ctx.tags || ['hit']
+    });
 }
 
 // Calculate enemy's total stats (simpler version, assumes enemy object has base stats)

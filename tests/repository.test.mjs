@@ -24,6 +24,7 @@ function read(relativePath) {
 }
 
 const COMBAT_RUNTIME_FILES = [
+  'combatSchema.js',
   'combatState.js',
   'combatController.js',
   'combatEffects.js',
@@ -57,10 +58,11 @@ function evaluateClassic(relativePath, expression, extraGlobals = {}) {
   };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
+  const relativePaths = Array.isArray(relativePath) ? relativePath : [relativePath];
   vm.runInContext(
-    `${read(relativePath)}\n;globalThis.__testResult = (${expression});`,
+    `${relativePaths.map(read).join('\n')}\n;globalThis.__testResult = (${expression});`,
     sandbox,
-    { filename: relativePath }
+    { filename: relativePaths.join(' + ') }
   );
   return sandbox.__testResult;
 }
@@ -275,6 +277,7 @@ test('combat runtime keeps state, rules, sequencing, rewards, and rendering in e
   assert.deepEqual(runtimeCombatFiles, COMBAT_RUNTIME_FILES, 'combat subsystem dependency order changed');
 
   const logicFiles = [
+    'combatSchema.js',
     'combatState.js',
     'combatController.js',
     'combatEffects.js',
@@ -287,6 +290,7 @@ test('combat runtime keeps state, rules, sequencing, rewards, and rendering in e
   }
 
   const expectedOwners = new Map([
+    ['combatSchema.js', ['createCombatantReference', 'createDamagePacket', 'createDamageApplicationResult']],
     ['combatController.js', ['startCombat', 'stopCombat']],
     ['combatResolution.js', ['playerAttack', 'enemyAttack']],
     ['combatEffects.js', ['applyDamage']],
@@ -305,6 +309,160 @@ test('combat runtime keeps state, rules, sequencing, rewards, and rendering in e
   assert.ok(bootstrap.split('\n').length <= 15, 'combat bootstrap accumulated subsystem behavior');
   assert.doesNotMatch(bootstrap, /\bdocument\./, 'combat bootstrap contains rendering behavior');
   assert.match(read('combatState.js'), /window\.coreboundCombatState\s*=\s*combatState/);
+  assert.doesNotMatch(
+    read('combatResolution.js'),
+    /applyDamage\((?:player|enemy|attacker|defender)\s*,/,
+    'live attack resolution bypasses canonical damage packets'
+  );
+  assert.match(read('stats.js'), /return createDamagePacket\(\{/);
+});
+
+test('enemy templates and runtime combatants satisfy the authoritative combat schema', () => {
+  const schema = evaluateClassic(
+    'combatSchema.js',
+    '({ validateEnemyCombatTemplate, validateCombatantReference })'
+  );
+  const invalidEnemies = enemies
+    .map(schema.validateEnemyCombatTemplate)
+    .filter(result => !result.valid)
+    .map(result => `${result.name}: ${result.errors.join('; ')}`);
+  assert.deepEqual(invalidEnemies, []);
+
+  const runtimeEntity = {
+    name: 'Schema Drone',
+    level: 12,
+    currentHealth: 80,
+    currentShield: 15,
+    activeBuffs: [],
+    activeDebuffs: [],
+    totalStats: {
+      health: 100,
+      energyShield: 25,
+      attackSpeed: 1.2,
+      criticalChance: 0.1,
+      criticalMultiplier: 1.5,
+      damageTypes: { electric: 20 },
+      defenseTypes: { physicalResistance: 4, elementalResistance: 8, chemicalResistance: 2 }
+    }
+  };
+  const validation = schema.validateCombatantReference(runtimeEntity);
+  assert.equal(validation.valid, true);
+  assert.equal(validation.value.resources.health.current, 80);
+  assert.equal(validation.value.resources.health.maximum, 100);
+  assert.deepEqual({ ...validation.value.offense.damage }, { electric: 20 });
+});
+
+test('debuffs and item-triggered effects satisfy the authoritative combat schema', () => {
+  const definitions = evaluateClassic('debuffs.js', 'debuffs', { applyEffectDamage: () => {} });
+  const schema = evaluateClassic(
+    'combatSchema.js',
+    '({ validateDebuffDefinition, validateCombatItemEffects, validateCombatEffectDefinition })'
+  );
+
+  const invalidDebuffs = Object.entries(definitions)
+    .map(([key, definition]) => schema.validateDebuffDefinition(key, definition))
+    .filter(result => !result.valid)
+    .map(result => `${result.name}: ${result.errors.join('; ')}`);
+  const invalidItems = allItems
+    .map(item => schema.validateCombatItemEffects(item, definitions))
+    .filter(result => !result.valid)
+    .map(result => `${result.name}: ${result.errors.join('; ')}`);
+
+  assert.deepEqual(invalidDebuffs, []);
+  assert.deepEqual(invalidItems, []);
+
+  const reservedAreaEffect = allItems
+    .flatMap(item => item.effects || [])
+    .find(effect => effect.action === 'areaEffect');
+  assert.ok(reservedAreaEffect, 'the disabled multi-enemy area-effect fixture disappeared');
+  assert.equal(schema.validateCombatEffectDefinition(reservedAreaEffect, 'reserved effect', definitions).valid, true);
+  assert.equal(
+    schema.validateCombatEffectDefinition({ ...reservedAreaEffect, enabled: true }, 'enabled reserved effect', definitions).valid,
+    false
+  );
+  assert.equal(
+    schema.validateCombatEffectDefinition(
+      { trigger: 'sometimes', chance: 100, action: 'mystery', parameters: {} },
+      'unknown effect',
+      definitions
+    ).valid,
+    false
+  );
+});
+
+test('damage packets carry explicit actors and application returns a structured result', () => {
+  const result = evaluateClassic(
+    ['combatSchema.js', 'combatEffects.js'],
+    `(() => {
+      const source = {
+        name: 'Source',
+        currentHealth: 100,
+        currentShield: 0,
+        activeBuffs: [],
+        activeDebuffs: [],
+        totalStats: { health: 100, energyShield: 0, attackSpeed: 1, damageTypes: { pyro: 12 }, defenseTypes: {} }
+      };
+      const target = {
+        name: 'Target',
+        currentHealth: 20,
+        currentShield: 5,
+        activeBuffs: [],
+        activeDebuffs: [],
+        totalStats: { health: 20, energyShield: 5, attackSpeed: 1, damageTypes: {}, defenseTypes: {} }
+      };
+      const packet = createDamagePacket({ source, target, damage: { pyro: 12 }, total: 12, tags: ['hit'] });
+      const application = applyDamage(packet);
+      return { packet, application, target };
+    })()`,
+    {
+      player: null,
+      enemy: null,
+      animateShieldBarChunk: () => {},
+      animateHpBarChunk: () => {},
+      updateHPESBars: () => {},
+      addToCombatLog: () => {},
+      getDamageTypeColor: () => '#fff',
+      capitalize: value => value,
+      awardXPWithZonePenalty: () => {},
+      stopCombat: () => {}
+    }
+  );
+
+  assert.equal(result.packet.schema, 'corebound.damage-packet@1');
+  assert.equal(result.packet.source.name, 'Source');
+  assert.equal(result.packet.target.name, 'Target');
+  assert.equal(result.application.schema, 'corebound.damage-result@1');
+  assert.equal(result.application.shieldDamage, 5);
+  assert.equal(result.application.healthDamage, 7);
+  assert.equal(result.application.appliedDamage, 12);
+  assert.equal(result.target.currentShield, 0);
+  assert.equal(result.target.currentHealth, 13);
+  assert.equal(result.application.target.resources.health.current, 13);
+});
+
+test('damage schema normalizes legacy aliases and rejects unknown combat types', () => {
+  const result = evaluateClassic(
+    'combatSchema.js',
+    `(() => {
+      const source = { name: 'Source' };
+      const target = { name: 'Target' };
+      const aliased = createDamagePacket({ source, target, damage: { chemical: 9 }, total: 9 });
+      const unknown = createDamagePacket({ source, target, damage: { plasma: 9 }, total: 9 });
+      return {
+        aliased,
+        aliasedValidation: validateDamagePacket(aliased),
+        unknownValidation: validateDamagePacket(unknown),
+        scaled: scaleDamagePacket(aliased, 0.5)
+      };
+    })()`
+  );
+
+  assert.equal(result.aliased.damage.corrosive, 9);
+  assert.equal(result.aliasedValidation.valid, true);
+  assert.equal(result.unknownValidation.valid, false);
+  assert.match(result.unknownValidation.errors.join(' '), /plasma/);
+  assert.equal(result.scaled.damage.corrosive, 4.5);
+  assert.equal(result.scaled.total, 5);
 });
 
 test('classic runtime evaluates in its declared order', () => {
@@ -706,7 +864,7 @@ test('Exposed maximizes the roll and Zapped adds 50% critical damage', () => {
     }
   };
   const result = evaluateClassic(
-    'stats.js',
+    ['combatSchema.js', 'stats.js'],
     `(() => {
       const attacker = ${JSON.stringify(baseEntity)};
       const defender = ${JSON.stringify(baseEntity)};

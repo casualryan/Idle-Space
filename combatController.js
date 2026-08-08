@@ -553,6 +553,13 @@ function ensureEntityInitialization(entity, isPlayer) {
         }
     }
 
+    try {
+        assertCombatantReference(entity, isPlayer ? 'player combatant' : 'enemy combatant');
+    } catch (error) {
+        console.error(error.message);
+        return false;
+    }
+
     return true;
 }
 

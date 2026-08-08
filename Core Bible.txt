@@ -43,6 +43,9 @@ Hard account/system constants:
 ================================================================================
 
 Primary runtime modules:
+- combatSchema.js
+  Defines and validates canonical combatants, damage packets, damage results,
+  debuff definitions, and item-triggered combat effects.
 - global.js
   Owns player state, save/load/reset, autosave, shared UI refresh hooks.
 - combatState.js + combatController.js
@@ -309,9 +312,11 @@ Status effects:
   legacy status-effect pipeline has been removed.
 
 Effect trigger model:
-- Supported trigger names in processing path: onHit, onCritical, whenHit, bionic.
-- onHeal exists as schema term but has no central effect-processing driver in the
-  main combat trigger pipeline today.
+- Supported trigger names in the processing path: onHit, onCritical, whenHit.
+- Bionic effects use the same combat triggers and are identified by sourceSlot for
+  Bionic Efficiency; bionic is not a separate trigger.
+- areaEffect is reserved for future multi-enemy combat. Its existing authored
+  example must remain disabled until an action executor exists.
 
 ================================================================================
 10. ITEM, GENERATION, AND INSTANCE MODEL [IMPLEMENTED]

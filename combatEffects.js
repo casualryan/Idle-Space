@@ -16,6 +16,9 @@ function processEffects(entity, trigger, target, sourceDamage = 0) {
         return;
     }
 
+    const resolvedSourceDamage = isDamagePacket(sourceDamage)
+        ? sourceDamage.total
+        : Math.max(0, toFiniteCombatNumber(sourceDamage));
     const entityName = entity.name || 'Unknown entity';
     console.log(`Processing effects for ${entityName} with trigger '${trigger}'`);
 
@@ -58,7 +61,7 @@ function processEffects(entity, trigger, target, sourceDamage = 0) {
                 // Check if the effect activates based on modified chance
                 if (Math.random() < finalChance) {
                     console.log(`Effect triggered with ${(finalChance * 100).toFixed(1)}% chance (base: ${Number(effect.chance || 0).toFixed(1)}%, efficiency bonus: ${efficiencyBonus}%):`, effect);
-                    executeEffectAction(effect, entity, target, sourceDamage);
+                    executeEffectAction(effect, entity, target, resolvedSourceDamage);
                 } else {
                     console.log(`Effect did not trigger (${(finalChance * 100).toFixed(1)}% chance).`);
                 }
@@ -87,7 +90,7 @@ function executeEffectAction(effect, source, target, sourceDamage = 0) {
             // Round the damage to avoid fractional damage
             damage = Math.round(damage);
 
-            applyEffectDamage(target, damage, damageType, ignoreDefense);
+            applyEffectDamage(target, damage, damageType, ignoreDefense, null, source);
             break;
 
         case 'heal':
@@ -154,17 +157,66 @@ function executeEffectAction(effect, source, target, sourceDamage = 0) {
 }
 
 // Function to apply damage to target
-function applyDamage(target, damage, targetName, damageTypes = null) {
-    if (!target) return 0;
-
-    // Handle the case where damage is not a number (might be an object or null)
-    if (typeof damage !== 'number' || isNaN(damage)) {
-        console.error("Invalid damage value in applyDamage:", damage);
-        damage = 0;
+function coerceDamagePacket(packetOrTarget, legacyDamage, legacyTargetName, legacyDamageTypes) {
+    if (isDamagePacket(packetOrTarget)) {
+        return { packet: packetOrTarget, legacyCall: false };
     }
 
-    // Apply damage to shield first if available
-    let remainingDamage = damage;
+    const target = packetOrTarget;
+    const inferredSource = target?.isPlayer
+        ? (typeof enemy !== 'undefined' ? enemy : null)
+        : (typeof player !== 'undefined' ? player : null);
+
+    return {
+        legacyCall: true,
+        packet: createDamagePacket({
+            source: inferredSource,
+            target,
+            kind: 'legacy',
+            damage: legacyDamageTypes || {},
+            total: legacyDamage,
+            tags: ['hit', 'legacy'],
+            metadata: { targetName: legacyTargetName }
+        })
+    };
+}
+
+function handleDefeatedCombatant(target) {
+    if (!target || target.currentHealth > 0) return;
+
+    if (target.isPlayer) {
+        stopCombat('playerDefeated');
+        return;
+    }
+
+    try {
+        const xpValue = typeof target.experienceValue === 'number' ? target.experienceValue : 0;
+        awardXPWithZonePenalty(xpValue, target.name, target);
+    } catch (error) {
+        console.error('Unable to award enemy defeat experience:', error);
+    }
+    stopCombat('enemyDefeated');
+}
+
+// Canonical entry point for applying a damage packet. The legacy positional
+// signature remains available for old extensions while internal combat uses packets.
+function applyDamage(packetOrTarget, legacyDamage = 0, legacyTargetName = null, legacyDamageTypes = null) {
+    const { packet, legacyCall } = coerceDamagePacket(
+        packetOrTarget,
+        legacyDamage,
+        legacyTargetName,
+        legacyDamageTypes
+    );
+    assertDamagePacket(packet, 'applyDamage packet');
+
+    const target = getCombatantEntity(packet.target);
+    const targetName = packet.target.name || packet.metadata.targetName || 'Target';
+    const before = {
+        health: Math.max(0, toFiniteCombatNumber(target.currentHealth)),
+        shield: Math.max(0, toFiniteCombatNumber(target.currentShield))
+    };
+
+    let remainingDamage = packet.total;
     let shieldDamage = 0;
 
     if (target.currentShield > 0) {
@@ -172,176 +224,128 @@ function applyDamage(target, damage, targetName, damageTypes = null) {
         target.currentShield -= shieldDamage;
         remainingDamage -= shieldDamage;
 
-        // Animate shield damage
-        // Determine crit/debuff styling from global flags set by damage origin
-        animateShieldBarChunk(target, shieldDamage, !!window.__lastIsCrit, !!window.__lastIsDebuff);
+        if (packet.flags.animate) {
+            animateShieldBarChunk(target, shieldDamage, packet.isCritical, packet.flags.isDebuff);
+        }
     }
 
-    // Then apply remaining damage to health
+    const healthDamage = Math.min(before.health, Math.max(0, remainingDamage));
     if (remainingDamage > 0) {
         target.currentHealth = Math.max(0, target.currentHealth - remainingDamage);
-
-        // Animate health damage
-        animateHpBarChunk(target, remainingDamage, !!window.__lastIsCrit, !!window.__lastIsDebuff);
-    }
-
-    // Format damage types for display
-    let damageMessage = '';
-    const totalDamage = shieldDamage + (remainingDamage > 0 ? remainingDamage : 0);
-
-    if (damageTypes && typeof damageTypes === 'object') {
-        // Create a damage breakdown message
-        let parts = [];
-        for (const type in damageTypes) {
-            if (type !== 'total' && damageTypes[type] > 0) {
-                // Use getDamageTypeColor and capitalize from stats.js if available
-                const typeColor = typeof getDamageTypeColor === 'function' ? getDamageTypeColor(type) : '#FFFFFF';
-                const capType = typeof capitalize === 'function' ? capitalize(type) : type;
-                parts.push(`<span style="color: ${typeColor};">${Math.round(damageTypes[type])} ${capType}</span>`);
-            }
-        }
-
-        if (parts.length > 0) {
-            damageMessage = parts.join(' + ');
-        } else {
-            damageMessage = `${Math.round(totalDamage)}`;
-        }
-    } else {
-        damageMessage = `${Math.round(totalDamage)}`;
-    }
-
-    // Display damage in combat log
-    if (typeof addToCombatLog === 'function') {
-        addToCombatLog(`${targetName} takes ${damageMessage} damage!`, null, false);
-    } else {
-        logMessage(`${targetName} takes ${damageMessage} damage!`);
-    }
-
-    // Display popup; pass source flag (attacker) and dominant damage type for tinting
-    const isFromPlayer = !target.isPlayer; // if target is player, source is enemy; else player
-    let dominantType = 'neutral';
-    if (damageTypes && typeof damageTypes === 'object') {
-        let maxVal = -1;
-        for (const t in damageTypes) {
-            if (t === 'total') continue;
-            const v = Number(damageTypes[t]) || 0;
-            if (v > maxVal) { maxVal = v; dominantType = t.toLowerCase(); }
+        if (packet.flags.animate) {
+            animateHpBarChunk(target, remainingDamage, packet.isCritical, packet.flags.isDebuff);
         }
     }
-    // Removed floating toaster popups per request
 
-    // Update HP/Shield UI
+    const appliedDamage = shieldDamage + healthDamage;
+    const overkill = Math.max(0, remainingDamage - healthDamage);
+    const debuffsBefore = new Set((target.activeDebuffs || []).map(debuff => debuff.name));
+
+    if (packet.flags.showDefaultLog) {
+        const parts = [];
+        for (const [type, amount] of Object.entries(packet.damage)) {
+            if (amount <= 0) continue;
+            const typeColor = typeof getDamageTypeColor === 'function' ? getDamageTypeColor(type) : '#FFFFFF';
+            const label = typeof capitalize === 'function' ? capitalize(type) : type;
+            parts.push(`<span style="color: ${typeColor};">${Math.round(amount)} ${label}</span>`);
+        }
+        const damageMessage = parts.length > 0 ? parts.join(' + ') : String(Math.round(packet.total));
+        if (typeof addToCombatLog === 'function') {
+            addToCombatLog(`${targetName} takes ${damageMessage} damage!`, null, false);
+        } else if (typeof logMessage === 'function') {
+            logMessage(`${targetName} takes ${damageMessage} damage!`);
+        }
+    }
+
     updateHPESBars(target, target.isPlayer);
 
-    // Try to apply a debuff based on the damage type that was dealt
-    if (window.tryApplyDebuffFromDamage && damageTypes) {
-        // Get the attacker (source) based on which entity is taking damage
-        const source = target.isPlayer ? enemy : player;
-
-        // Add total damage to the damageTypes object
-        if (typeof damageTypes === 'object') {
-            const damageInfo = { ...damageTypes, total: totalDamage };
-
-            // Call the debuff application function with proper damage info
-            window.tryApplyDebuffFromDamage(source, target, damageInfo);
-        }
+    if (packet.flags.applyInherentDebuffs && window.tryApplyDebuffFromDamage && packet.total > 0) {
+        window.tryApplyDebuffFromDamage(
+            getCombatantEntity(packet.source),
+            target,
+            { ...packet.damage, total: packet.total }
+        );
     }
 
-    // Check if entity died
-    if (target.currentHealth <= 0) {
-        if (target.isPlayer) {
-            stopCombat("playerDefeated");
-        } else {
-            // Award XP from the defeated enemy before combat state is cleared
-            try {
-                const xpVal = (typeof target.experienceValue === 'number') ? target.experienceValue : 0;
-                awardXPWithZonePenalty(xpVal, target.name, target);
-            } catch (e) { /* ignore */ }
-            stopCombat("enemyDefeated");
-        }
+    const debuffsAfter = (target.activeDebuffs || []).map(debuff => debuff.name);
+    const application = createDamageApplicationResult(packet, {
+        before,
+        after: {
+            health: target.currentHealth,
+            shield: target.currentShield
+        },
+        shieldDamage,
+        healthDamage,
+        appliedDamage,
+        overkill,
+        targetDefeated: target.currentHealth <= 0,
+        appliedDebuffs: debuffsAfter.filter(name => !debuffsBefore.has(name))
+    });
+
+    if (application.targetDefeated && packet.flags.handleDefeat) {
+        handleDefeatedCombatant(target);
     }
 
-    return totalDamage;
+    return legacyCall ? packet.total : application;
 }
 
-function applyEffectDamage(target, amount, damageType, ignoreDefense = false, sourceInfo = null) {
-    if (!target) return;
+function applyEffectDamage(target, amount, damageType, ignoreDefense = false, sourceInfo = null, sourceEntity = null) {
+    if (!target) return null;
 
-    // Ensure amount is a number
-    amount = parseFloat(amount) || 0;
-    if (amount <= 0) return;
+    const rawAmount = Math.max(0, toFiniteCombatNumber(amount));
+    if (rawAmount <= 0) return null;
+    const displayAmount = Math.round(rawAmount * 10) / 10;
+    let appliedAmount = rawAmount;
 
-    // Round to 1 decimal place for display
-    const displayAmount = Math.round(amount * 10) / 10;
-
-    // Apply defense calculations if not ignoring defense
-    if (!ignoreDefense && target.totalStats && target.totalStats.defenseTypes) {
-        // Use the centralized function from stats.js if available
+    if (!ignoreDefense && target.totalStats?.defenseTypes) {
         const defenseType = typeof matchDamageToDefense === 'function' ? matchDamageToDefense(damageType) : '';
         if (defenseType && target.totalStats.defenseTypes[defenseType]) {
             const defense = target.totalStats.defenseTypes[defenseType];
-            const effectiveDefense = Math.min(defense, 80); // Hard cap effective resistance at 80%
-            amount = Math.max(0, amount * (1 - (effectiveDefense / 100)));
+            const effectiveDefense = Math.min(defense, 80);
+            appliedAmount = Math.max(0, appliedAmount * (1 - effectiveDefense / 100));
         }
     }
 
-    // Apply the damage
-    if (target.currentShield > 0) {
-        const shieldDamage = Math.min(target.currentShield, amount);
-        target.currentShield -= shieldDamage;
-        amount -= shieldDamage;
+    const fallbackTypeLabel = typeof capitalize === 'function'
+        ? capitalize(damageType || 'unknown')
+        : String(damageType || 'unknown');
+    const source = sourceEntity || { name: sourceInfo || `${fallbackTypeLabel} effect` };
+    const packet = createDamagePacket({
+        source,
+        target,
+        kind: 'effect',
+        damage: { [damageType]: appliedAmount },
+        total: appliedAmount,
+        mitigated: !ignoreDefense,
+        tags: ['effect', 'debuff'],
+        flags: {
+            applyInherentDebuffs: false,
+            showDefaultLog: false,
+            handleDefeat: false,
+            isDebuff: true,
+            ignoreDefense
+        },
+        metadata: { sourceInfo }
+    });
+    const application = applyDamage(packet);
 
-        // Animate shield damage
-        animateShieldBarChunk(target, shieldDamage);
-    }
-
-    if (amount > 0) {
-        target.currentHealth = Math.max(0, target.currentHealth - amount);
-
-        // Animate health damage
-        animateHpBarChunk(target, amount);
-    }
-
-    // Create a source description for the log
-    let sourceDesc = "";
+    let sourceDescription = '';
     if (sourceInfo) {
-        sourceDesc = ` from ${sourceInfo}`;
+        sourceDescription = ` from ${sourceInfo}`;
     } else if (damageType) {
-        // Use capitalize from stats.js if available
-        let capType = typeof capitalize === 'function' ? capitalize(damageType) : damageType;
-        sourceDesc = ` from ${capType} effect`;
+        sourceDescription = ` from ${fallbackTypeLabel} effect`;
     }
 
-    // Log the damage with source information
-    const targetName = target.name || (target.isPlayer ? "Player" : "Enemy");
+    const targetName = target.name || (target.isPlayer ? 'Player' : 'Enemy');
+    const damageTypeColor = typeof getDamageTypeColor === 'function' ? getDamageTypeColor(damageType) : '#FFFFFF';
+    const damageTypeLabel = typeof capitalize === 'function' ? capitalize(damageType || 'unknown') : (damageType || 'unknown');
+    addToCombatLog(
+        `${targetName} takes <span style="color: ${damageTypeColor}; font-weight: bold;">${displayAmount} ${damageTypeLabel}</span> damage${sourceDescription}`
+    );
 
-    // Format the message with damage type color (use function from stats.js if available)
-    let damageTypeColor = typeof getDamageTypeColor === 'function' ? getDamageTypeColor(damageType) : '#FFFFFF';
-    // Use capitalize from stats.js if available
-    let capType = typeof capitalize === 'function' ? capitalize(damageType || "unknown") : (damageType || "unknown");
+    if (application.targetDefeated) handleDefeatedCombatant(target);
 
-    const message = `${targetName} takes <span style="color: ${damageTypeColor}; font-weight: bold;">${displayAmount} ${capType}</span> damage${sourceDesc}`;
-
-    // Add to the combat log
-    addToCombatLog(message);
-
-    // Update UI
-    updateHPESBars(target, target.isPlayer);
-
-    // Check if target died
-    if (target.currentHealth <= 0) {
-        if (target.isPlayer) {
-            stopCombat("playerDefeated");
-        } else {
-            // Award per-enemy experience on death BEFORE clearing enemy in stopCombat
-            try {
-                const defeatedEnemy = enemy; // snapshot
-                const baseXp = (defeatedEnemy && typeof defeatedEnemy.experienceValue === 'number') ? defeatedEnemy.experienceValue : 0;
-                awardXPWithZonePenalty(baseXp, defeatedEnemy?.name, defeatedEnemy);
-            } catch (e) { /* ignore */ }
-            stopCombat("enemyDefeated");
-        }
-    }
+    return application;
 }
 
 function healEntity(entity, amount) {

@@ -19,10 +19,10 @@ function runSkillHitProcs(attacker, defender, damageResult, profile, hitIndex) {
 
     if (attacker.effects.length > 0) {
         if (typeof shouldProcOnHit === 'function' && shouldProcOnHit(profile, 'onHit', hitIndex)) {
-            processEffects(attacker, 'onHit', defender);
+            processEffects(attacker, 'onHit', defender, damageResult);
         }
         if (damageResult.isCritical && typeof shouldProcOnHit === 'function' && shouldProcOnHit(profile, 'onCritical', hitIndex)) {
-            processEffects(attacker, 'onCritical', defender, damageResult.total);
+            processEffects(attacker, 'onCritical', defender, damageResult);
         }
     }
 
@@ -31,7 +31,7 @@ function runSkillHitProcs(attacker, defender, damageResult, profile, hitIndex) {
     }
 
     if (defender.effects && defender.effects.length > 0) {
-        processEffects(defender, 'whenHit', attacker);
+        processEffects(defender, 'whenHit', attacker, damageResult);
     }
 
 }
@@ -40,7 +40,7 @@ function runIncomingHitDebuffs(attacker, defender, damageResult) {
     if (!Array.isArray(defender?.activeDebuffs)) return;
 
     const hit = {
-        ...(damageResult?.damageBreakdown || {}),
+        ...(damageResult?.damage || damageResult?.damageBreakdown || {}),
         total: Math.max(0, Number(damageResult?.total || 0))
     };
 
@@ -105,11 +105,9 @@ function executeEquippedSkill(attacker, defender) {
         attacker._activeSkillDebuffBonus = profile.debuffApplyBonus || 0;
 
         let lastDamageResult = null;
-        const attackDamageResult = {
-            total: 0,
-            damageBreakdown: {},
-            isCritical: false
-        };
+        const aggregateDamage = {};
+        let aggregateTotal = 0;
+        let aggregateCritical = false;
         const attackerLabel = attacker.name || 'Player';
         const defenderName = defender.name || 'Enemy';
 
@@ -123,10 +121,14 @@ function executeEquippedSkill(attacker, defender) {
             let damageResult;
             if (typeof calculateDamage === 'function') {
                 damageResult = calculateDamage(attacker, defender, hitCtx);
-                window.__lastIsCrit = !!damageResult.isCritical;
-                window.__lastIsDebuff = false;
             } else {
-                damageResult = { total: 0, damageBreakdown: {}, isCritical: false };
+                damageResult = createDamagePacket({
+                    source: attacker,
+                    target: defender,
+                    damage: {},
+                    total: 0,
+                    tags: ['hit']
+                });
             }
 
             if (typeof scaleDamageResult === 'function' && hitCtx.damageMultiplier !== 1) {
@@ -149,7 +151,7 @@ function executeEquippedSkill(attacker, defender) {
 
             if (!defender) break;
 
-            applyDamage(defender, damageResult.total, defenderName, damageResult.damageBreakdown);
+            applyDamage(damageResult);
 
             if (!attacker || !defender) break;
 
@@ -158,11 +160,10 @@ function executeEquippedSkill(attacker, defender) {
 
             runSkillHitProcs(attacker, defender, damageResult, profile, hit);
             lastDamageResult = damageResult;
-            attackDamageResult.total += damageResult.total;
-            attackDamageResult.isCritical ||= damageResult.isCritical;
-            for (const [damageType, amount] of Object.entries(damageResult.damageBreakdown || {})) {
-                attackDamageResult.damageBreakdown[damageType] =
-                    (attackDamageResult.damageBreakdown[damageType] || 0) + amount;
+            aggregateTotal += damageResult.total;
+            aggregateCritical ||= damageResult.isCritical;
+            for (const [damageType, amount] of Object.entries(damageResult.damage || {})) {
+                aggregateDamage[damageType] = (aggregateDamage[damageType] || 0) + amount;
             }
 
             if (!defender) break;
@@ -170,7 +171,15 @@ function executeEquippedSkill(attacker, defender) {
 
         attacker._activeSkillDebuffBonus = 0;
         if (lastDamageResult) {
-            runPostAttackDebuffs(attacker, defender, attackDamageResult);
+            runPostAttackDebuffs(attacker, defender, createDamagePacket({
+                source: attacker,
+                target: defender,
+                kind: 'attack-summary',
+                damage: aggregateDamage,
+                total: aggregateTotal,
+                isCritical: aggregateCritical,
+                tags: ['attack', 'summary']
+            }));
         }
 
         if (profile.comboAfterSkill !== false && lastDamageResult && attacker && defender) {
@@ -213,11 +222,15 @@ function enemyAttack() {
         let damageResult;
          if (typeof calculateDamage === 'function') {
              damageResult = calculateDamage(enemy, player);
-             window.__lastIsCrit = !!damageResult.isCritical;
-             window.__lastIsDebuff = false;
          } else {
              console.error("calculateDamage function not found!");
-             damageResult = { total: 0, damageBreakdown: {}, isCritical: false }; // Default to no damage
+             damageResult = createDamagePacket({
+                 source: enemy,
+                 target: player,
+                 damage: {},
+                 total: 0,
+                 tags: ['hit']
+             });
          }
 
         // Add combat log entry for damage info
@@ -232,7 +245,7 @@ function enemyAttack() {
             return;
         }
 
-        applyDamage(player, damageResult.total, "Player", damageResult.damageBreakdown);
+        applyDamage(damageResult);
         runIncomingHitDebuffs(enemy, player, damageResult);
         if (!isCombatActive || !player || !enemy) return;
         if (damageResult.isCritical) tryApplySeveredLimbFromCritical(enemy, player);
@@ -250,7 +263,7 @@ function enemyAttack() {
 
         // Process effects with explicit empty array check
         if (enemy && enemy.effects && Array.isArray(enemy.effects) && enemy.effects.length > 0) {
-            processEffects(enemy, 'onHit', player);
+            processEffects(enemy, 'onHit', player, damageResult);
         }
 
         // Check if player is still valid before proceeding
@@ -260,7 +273,7 @@ function enemyAttack() {
         }
 
         if (player && player.effects && Array.isArray(player.effects) && player.effects.length > 0) {
-            processEffects(player, 'whenHit', enemy);
+            processEffects(player, 'whenHit', enemy, damageResult);
         }
 
         // Process combo attacks for enemy
@@ -323,8 +336,9 @@ function processComboAttacks(attacker, defender, originalDamageResult, skillProf
         let totalComboDamage = 0;
         const comboDamageBreakdown = {};
 
-        for (const damageType in originalDamageResult.damageBreakdown) {
-            const originalDamage = originalDamageResult.damageBreakdown[damageType];
+        const originalDamageMap = originalDamageResult.damage || originalDamageResult.damageBreakdown || {};
+        for (const damageType in originalDamageMap) {
+            const originalDamage = originalDamageMap[damageType];
             const comboDamage = Math.round(originalDamage * finalComboDamagePercent / 100);
 
             if (comboDamage > 0) {
@@ -342,12 +356,17 @@ function processComboAttacks(attacker, defender, originalDamageResult, skillProf
                 addToCombatLog(`Combo hit ${i + 1}: ${totalComboDamage} damage`, '#ffcc66', false);
             }
 
-            applyDamage(defender, totalComboDamage, defenderName, comboDamageBreakdown);
-            runIncomingHitDebuffs(attacker, defender, {
+            const comboPacket = createDamagePacket({
+                source: attacker,
+                target: defender,
+                kind: 'combo',
+                damage: comboDamageBreakdown,
                 total: totalComboDamage,
-                damageBreakdown: comboDamageBreakdown,
-                isCritical: false
+                isCritical: false,
+                tags: ['hit', 'combo']
             });
+            applyDamage(comboPacket);
+            runIncomingHitDebuffs(attacker, defender, comboPacket);
 
             if (!isCombatActive || !attacker || !defender) break;
 

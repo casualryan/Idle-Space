@@ -730,7 +730,7 @@ function createShieldPulseAnimation() {
     }
 }
 
-function animateHpBarChunk(target, damageAmount) {
+function animateHpBarChunk(target, damageAmount, isCritical = false, isDebuff = false) {
     let hpBar, hpContainer, totalHp, currentHp;
 
     if (target === player) {
@@ -778,10 +778,10 @@ function animateHpBarChunk(target, damageAmount) {
     const damageNumber = document.createElement('div');
     damageNumber.classList.add('damage-number');
     let dmgText1 = `-${Math.round(damageAmount)}`;
-    if (window.__lastIsCrit === true) {
+    if (isCritical) {
         damageNumber.classList.add('dmg-crit');
         dmgText1 += '!';
-    } else if (window.__lastIsDebuff === true) {
+    } else if (isDebuff) {
         damageNumber.classList.add('dmg-debuff');
     }
     damageNumber.textContent = dmgText1;
@@ -801,7 +801,7 @@ function animateHpBarChunk(target, damageAmount) {
     });
 }
 
-function animateShieldBarChunk(target, shieldDamageAmount) {
+function animateShieldBarChunk(target, shieldDamageAmount, isCritical = false, isDebuff = false) {
     let esBar, esContainer, totalEs, currentEs;
 
     if (target === player) {
@@ -849,10 +849,10 @@ function animateShieldBarChunk(target, shieldDamageAmount) {
     const damageNumber = document.createElement('div');
     damageNumber.classList.add('damage-number');
     let dmgText2 = `-${Math.round(shieldDamageAmount)}`;
-    if (window.__lastIsCrit === true) {
+    if (isCritical) {
         damageNumber.classList.add('dmg-crit');
         dmgText2 += '!';
-    } else if (window.__lastIsDebuff === true) {
+    } else if (isDebuff) {
         damageNumber.classList.add('dmg-debuff');
     }
     damageNumber.textContent = dmgText2;

@@ -1,6 +1,7 @@
 // Classic runtime files that have not yet been converted to ES modules.
 // They are loaded sequentially by main.js so their dependencies are explicit.
 export const RUNTIME_SCRIPTS = [
+  'combatSchema.js',
   'stats.js',
   'recipes.js',
   'passives.js',
