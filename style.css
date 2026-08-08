@@ -3024,9 +3024,11 @@ hr {
 }
 
 .passive-tree-edge {
+    fill: none;
     stroke: rgba(78, 117, 139, 0.28);
     stroke-width: 5;
-    vector-effect: non-scaling-stroke;
+    stroke-linecap: round;
+    pointer-events: none;
 }
 
 .passive-tree-edge.is-available {
@@ -3036,7 +3038,12 @@ hr {
 .passive-tree-edge.is-active {
     stroke: #00dcb5;
     stroke-width: 7;
-    filter: drop-shadow(0 0 6px rgba(0, 255, 204, 0.7));
+}
+
+.passive-tree-clusters,
+.passive-tree-edges,
+.passive-tree-labels {
+    pointer-events: none;
 }
 
 .passive-tree-cluster {
@@ -3044,7 +3051,6 @@ hr {
     stroke: color-mix(in srgb, var(--sector-color) 20%, transparent);
     stroke-width: 2;
     stroke-dasharray: 5 7;
-    vector-effect: non-scaling-stroke;
     pointer-events: none;
 }
 
@@ -3066,7 +3072,6 @@ hr {
     fill: #07111f;
     stroke: color-mix(in srgb, var(--sector-color) 62%, #496273);
     stroke-width: 3;
-    vector-effect: non-scaling-stroke;
 }
 
 .passive-tree-node.node-travel circle,
@@ -3089,7 +3094,6 @@ hr {
     fill: color-mix(in srgb, var(--sector-color) 30%, #07111f);
     stroke: var(--sector-color);
     stroke-width: 2;
-    vector-effect: non-scaling-stroke;
 }
 
 .passive-tree-node:hover circle,
@@ -3097,18 +3101,17 @@ hr {
 .passive-tree-node.is-selected circle {
     stroke: #ffffff;
     stroke-width: 5;
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--sector-color) 72%, transparent));
 }
 
 .passive-tree-node.is-available circle {
     fill: color-mix(in srgb, var(--sector-color) 14%, #07111f);
     stroke: var(--sector-color);
-    filter: drop-shadow(0 0 7px color-mix(in srgb, var(--sector-color) 70%, transparent));
 }
 
 .passive-tree-node.is-active circle {
     fill: color-mix(in srgb, var(--sector-color) 60%, #07111f);
     stroke: #dffcff;
-    filter: drop-shadow(0 0 9px color-mix(in srgb, var(--sector-color) 88%, transparent));
 }
 
 .passive-tree-node.has-gear-rank circle {
@@ -3148,6 +3151,26 @@ hr {
     font-size: 15px;
     font-weight: bold;
 }
+
+#passive-tree-svg[data-detail="overview"] .passive-tree-edge { stroke-width: 11; }
+#passive-tree-svg[data-detail="overview"] .passive-tree-edge.is-active { stroke-width: 17; }
+#passive-tree-svg[data-detail="overview"] .passive-tree-node circle { stroke-width: 10; }
+#passive-tree-svg[data-detail="overview"] .passive-tree-node.node-travel circle,
+#passive-tree-svg[data-detail="overview"] .passive-tree-node.node-bridge circle { stroke-width: 7; }
+#passive-tree-svg[data-detail="overview"] .passive-tree-node.node-notable circle { stroke-width: 12; }
+#passive-tree-svg[data-detail="overview"] .passive-tree-node.node-keystone circle { stroke-width: 14; }
+#passive-tree-svg[data-detail="overview"] .passive-tree-cluster { stroke-width: 8; }
+#passive-tree-svg[data-detail="overview"] .passive-tree-cluster.is-specialist { stroke-width: 11; }
+
+#passive-tree-svg[data-detail="medium"] .passive-tree-edge { stroke-width: 6; }
+#passive-tree-svg[data-detail="medium"] .passive-tree-edge.is-active { stroke-width: 9; }
+#passive-tree-svg[data-detail="medium"] .passive-tree-node circle { stroke-width: 5; }
+#passive-tree-svg[data-detail="medium"] .passive-tree-node.node-travel circle,
+#passive-tree-svg[data-detail="medium"] .passive-tree-node.node-bridge circle { stroke-width: 4; }
+#passive-tree-svg[data-detail="medium"] .passive-tree-node.node-notable circle { stroke-width: 7; }
+#passive-tree-svg[data-detail="medium"] .passive-tree-node.node-keystone circle { stroke-width: 9; }
+#passive-tree-svg[data-detail="medium"] .passive-tree-cluster { stroke-width: 4; }
+#passive-tree-svg[data-detail="medium"] .passive-tree-cluster.is-specialist { stroke-width: 6; }
 
 .passive-node-tooltip {
     --sector-color: #5d91ad;

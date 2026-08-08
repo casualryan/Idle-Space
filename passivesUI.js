@@ -20,6 +20,23 @@ function getPassiveTreeHomeView() {
 let passiveTreeView = getPassiveTreeHomeView();
 let passiveTreeDragState = null;
 let passiveTreeHoveredNodeId = null;
+let passiveTreeRenderer = null;
+let passiveTreePendingView = null;
+let passiveTreeViewFrame = 0;
+let passiveTooltipFrame = 0;
+let passiveTooltipPointer = null;
+let passiveTooltipMetrics = null;
+let passiveTreeSearchTimer = 0;
+let passiveTreeSearchMatches = null;
+let passiveTreeSearchIndex = null;
+let passiveTreeValidation = null;
+
+const PASSIVE_SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+const PASSIVE_TREE_SEARCH_DELAY_MS = 140;
+const PASSIVE_TREE_RENDER_BUFFER = 0.24;
+const PASSIVE_TREE_OVERVIEW_THRESHOLD = 0.62;
+const PASSIVE_TREE_CLOSE_THRESHOLD = 0.24;
+const PASSIVE_TREE_OVERVIEW_TYPES = new Set(['origin', 'gateway', 'travel', 'bridge', 'notable', 'keystone']);
 
 function escapePassiveHTML(value) {
     return String(value ?? '')
@@ -144,6 +161,22 @@ function getPassiveEffectLines(node, rank = 1) {
     return lines;
 }
 
+function getPassiveTreeSearchIndex() {
+    if (passiveTreeSearchIndex) return passiveTreeSearchIndex;
+    passiveTreeSearchIndex = new Map(passives.map(node => [
+        node.id,
+        `${node.name} ${node.description} ${node.sector} ${node.type} ${getPassiveEffectLines(node).join(' ')}`.toLowerCase()
+    ]));
+    return passiveTreeSearchIndex;
+}
+
+function updatePassiveTreeSearchMatches() {
+    const query = passiveTreeSearch.trim().toLowerCase();
+    passiveTreeSearchMatches = query
+        ? new Set([...getPassiveTreeSearchIndex()].filter(([, haystack]) => haystack.includes(query)).map(([nodeId]) => nodeId))
+        : null;
+}
+
 function getPassiveNodeState(node) {
     const allocated = getPassiveNodeAllocatedRank(node.id);
     const gear = getPassiveNodeGearRank(node.id);
@@ -187,7 +220,7 @@ function investPassiveNode(nodeId) {
     });
     selectedPassiveNodeId = node.id;
     if (typeof logMessage === 'function') logMessage(`Allocated ${node.name}.`);
-    displayPassivesScreen();
+    refreshPassiveTreeDynamicState();
     return true;
 }
 
@@ -204,7 +237,7 @@ function refundPassiveNode(nodeId) {
         player.passivePoints++;
     });
     if (typeof logMessage === 'function') logMessage(`Refunded ${node.name}.`);
-    displayPassivesScreen();
+    refreshPassiveTreeDynamicState();
     return true;
 }
 
@@ -217,7 +250,7 @@ function refundAllPassiveNodes() {
     });
     selectedPassiveNodeId = PASSIVE_TREE_ORIGIN_ID;
     if (typeof logMessage === 'function') logMessage(`Refunded the passive tree and recovered ${refund} point${refund === 1 ? '' : 's'}.`);
-    displayPassivesScreen();
+    refreshPassiveTreeDynamicState();
     return true;
 }
 
@@ -246,9 +279,8 @@ function getPassiveNodeClasses(node, state) {
     if (state.available) classes.push('is-available');
     if (state.gear > 0) classes.push('has-gear-rank');
     if (node.id === selectedPassiveNodeId) classes.push('is-selected');
-    if (passiveTreeSearch) {
-        const haystack = `${node.name} ${node.description} ${node.sector} ${getPassiveEffectLines(node).join(' ')}`.toLowerCase();
-        classes.push(haystack.includes(passiveTreeSearch.toLowerCase()) ? 'is-search-match' : 'is-search-dimmed');
+    if (passiveTreeSearchMatches) {
+        classes.push(passiveTreeSearchMatches.has(node.id) ? 'is-search-match' : 'is-search-dimmed');
     }
     return classes.join(' ');
 }
@@ -285,24 +317,46 @@ function hidePassiveNodeTooltip() {
     if (!tooltip) return;
     tooltip.hidden = true;
     tooltip.removeAttribute('data-node-id');
+    passiveTooltipMetrics = null;
+    passiveTooltipPointer = null;
+    if (passiveTooltipFrame) cancelAnimationFrame(passiveTooltipFrame);
+    passiveTooltipFrame = 0;
 }
 
 function positionPassiveNodeTooltip(clientX, clientY) {
     const tooltip = document.getElementById('passive-node-tooltip');
     const viewport = tooltip?.closest('.passive-tree-viewport');
     if (!tooltip || !viewport || tooltip.hidden) return;
-    const viewportRect = viewport.getBoundingClientRect();
-    const tooltipRect = tooltip.getBoundingClientRect();
+    if (!passiveTooltipMetrics) {
+        const viewportRect = viewport.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        passiveTooltipMetrics = {
+            viewportRect,
+            tooltipWidth: tooltipRect.width,
+            tooltipHeight: tooltipRect.height
+        };
+    }
+    const { viewportRect, tooltipWidth, tooltipHeight } = passiveTooltipMetrics;
     const gap = 14;
     const margin = 8;
     const pointerX = clientX - viewportRect.left;
     const pointerY = clientY - viewportRect.top;
     let left = pointerX + gap;
     let top = pointerY + gap;
-    if (left + tooltipRect.width > viewportRect.width - margin) left = pointerX - tooltipRect.width - gap;
-    if (top + tooltipRect.height > viewportRect.height - margin) top = pointerY - tooltipRect.height - gap;
-    tooltip.style.left = `${Math.max(margin, Math.min(left, viewportRect.width - tooltipRect.width - margin))}px`;
-    tooltip.style.top = `${Math.max(margin, Math.min(top, viewportRect.height - tooltipRect.height - margin))}px`;
+    if (left + tooltipWidth > viewportRect.width - margin) left = pointerX - tooltipWidth - gap;
+    if (top + tooltipHeight > viewportRect.height - margin) top = pointerY - tooltipHeight - gap;
+    tooltip.style.left = `${Math.max(margin, Math.min(left, viewportRect.width - tooltipWidth - margin))}px`;
+    tooltip.style.top = `${Math.max(margin, Math.min(top, viewportRect.height - tooltipHeight - margin))}px`;
+}
+
+function schedulePassiveNodeTooltipPosition(clientX, clientY) {
+    passiveTooltipPointer = { clientX, clientY };
+    if (passiveTooltipFrame) return;
+    passiveTooltipFrame = requestAnimationFrame(() => {
+        passiveTooltipFrame = 0;
+        if (!passiveTooltipPointer) return;
+        positionPassiveNodeTooltip(passiveTooltipPointer.clientX, passiveTooltipPointer.clientY);
+    });
 }
 
 function showPassiveNodeTooltip(nodeId, clientX, clientY) {
@@ -313,6 +367,7 @@ function showPassiveNodeTooltip(nodeId, clientX, clientY) {
     tooltip.dataset.nodeId = node.id;
     tooltip.innerHTML = renderPassiveNodeTooltipContent(node);
     tooltip.hidden = false;
+    passiveTooltipMetrics = null;
     positionPassiveNodeTooltip(clientX, clientY);
 }
 
@@ -321,61 +376,274 @@ function showPassiveNodeTooltipAtElement(nodeId, element) {
     showPassiveNodeTooltip(nodeId, rect.right, rect.top + rect.height / 2);
 }
 
-function renderPassiveTreeGraph() {
-    const svg = document.getElementById('passive-tree-svg');
-    if (!svg) return;
-    const normalizedAllocations = normalizePassiveAllocations(player.passiveAllocations);
-    const manuallyActive = new Set([PASSIVE_TREE_ORIGIN_ID, ...Object.keys(normalizedAllocations)]);
-    const edgesMarkup = PASSIVE_TREE.edges.map(edge => {
+function createPassiveSvgElement(tagName, attributes = {}) {
+    const element = document.createElementNS(PASSIVE_SVG_NAMESPACE, tagName);
+    for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, String(value));
+    return element;
+}
+
+function initializePassiveTreeRenderer(svg) {
+    if (passiveTreeRenderer?.resizeObserver) passiveTreeRenderer.resizeObserver.disconnect();
+    const clustersLayer = createPassiveSvgElement('g', { class: 'passive-tree-clusters' });
+    const edgesLayer = createPassiveSvgElement('g', { class: 'passive-tree-edges' });
+    const labelsLayer = createPassiveSvgElement('g', { class: 'passive-tree-labels' });
+    const nodesLayer = createPassiveSvgElement('g', { class: 'passive-tree-nodes' });
+    const edgePaths = {
+        inactive: createPassiveSvgElement('path', { class: 'passive-tree-edge is-inactive' }),
+        available: createPassiveSvgElement('path', { class: 'passive-tree-edge is-available' }),
+        active: createPassiveSvgElement('path', { class: 'passive-tree-edge is-active' })
+    };
+    edgesLayer.append(edgePaths.inactive, edgePaths.available, edgePaths.active);
+    svg.replaceChildren(clustersLayer, edgesLayer, labelsLayer, nodesLayer);
+    passiveTreeRenderer = {
+        svg,
+        clustersLayer,
+        edgesLayer,
+        labelsLayer,
+        nodesLayer,
+        edgePaths,
+        nodeElements: new Map(),
+        clusterElements: new Map(),
+        labelElements: new Map(),
+        renderedNodeIds: new Set(),
+        renderBounds: null,
+        detailLevel: null,
+        viewportRect: null,
+        resizeObserver: null
+    };
+    if (typeof ResizeObserver === 'function') {
+        passiveTreeRenderer.resizeObserver = new ResizeObserver(() => {
+            if (!passiveTreeRenderer || passiveTreeRenderer.svg !== svg) return;
+            passiveTreeRenderer.viewportRect = null;
+            passiveTooltipMetrics = null;
+        });
+        passiveTreeRenderer.resizeObserver.observe(svg);
+    }
+}
+
+function getPassiveTreeDetailLevel(view = passiveTreePendingView || passiveTreeView) {
+    const home = getPassiveTreeHomeView();
+    const ratio = view.width / Math.max(1, home.width);
+    if (ratio >= PASSIVE_TREE_OVERVIEW_THRESHOLD) return 'overview';
+    if (ratio <= PASSIVE_TREE_CLOSE_THRESHOLD) return 'close';
+    return 'medium';
+}
+
+function getPassiveTreeRenderBounds(view) {
+    const padX = view.width * PASSIVE_TREE_RENDER_BUFFER;
+    const padY = view.height * PASSIVE_TREE_RENDER_BUFFER;
+    return {
+        x: view.x - padX,
+        y: view.y - padY,
+        width: view.width + padX * 2,
+        height: view.height + padY * 2
+    };
+}
+
+function passiveTreeBoundsContainView(bounds, view) {
+    return Boolean(bounds)
+        && view.x >= bounds.x
+        && view.y >= bounds.y
+        && view.x + view.width <= bounds.x + bounds.width
+        && view.y + view.height <= bounds.y + bounds.height;
+}
+
+function isPassivePointInsideBounds(x, y, bounds, margin = 0) {
+    return x + margin >= bounds.x
+        && y + margin >= bounds.y
+        && x - margin <= bounds.x + bounds.width
+        && y - margin <= bounds.y + bounds.height;
+}
+
+function getPassiveNodeRadius(node) {
+    if (node.type === 'origin') return 34;
+    if (node.type === 'keystone') return 30;
+    if (node.type === 'notable') return 23;
+    if (node.type === 'gateway') return 20;
+    return ['travel', 'bridge'].includes(node.type) ? 9 : 12;
+}
+
+function getPassiveTreeManualActiveSet() {
+    return new Set([
+        PASSIVE_TREE_ORIGIN_ID,
+        ...Object.keys(normalizePassiveAllocations(player.passiveAllocations))
+    ]);
+}
+
+function getPassiveGraphNodeState(node, manuallyActive) {
+    const allocated = manuallyActive.has(node.id);
+    const gear = getPassiveNodeGearRank(node.id);
+    const effective = (allocated && node.id !== PASSIVE_TREE_ORIGIN_ID ? 1 : 0)
+        + (node.gearScalable ? gear : 0);
+    return {
+        allocated,
+        gear,
+        effective,
+        active: node.id === PASSIVE_TREE_ORIGIN_ID || effective > 0,
+        connected: allocated,
+        available: node.id !== PASSIVE_TREE_ORIGIN_ID
+            && !allocated
+            && player.passivePoints > 0
+            && node.connections.some(connection => manuallyActive.has(connection))
+    };
+}
+
+function isPassivePriorityNode(node, manuallyActive) {
+    return node.id === selectedPassiveNodeId
+        || manuallyActive.has(node.id)
+        || getPassiveNodeGearRank(node.id) > 0
+        || Boolean(passiveTreeSearchMatches?.has(node.id))
+        || node.connections.some(connection => manuallyActive.has(connection));
+}
+
+function getOrCreatePassiveNodeElement(node) {
+    const cached = passiveTreeRenderer.nodeElements.get(node.id);
+    if (cached) return cached;
+    const radius = getPassiveNodeRadius(node);
+    const element = createPassiveSvgElement('g', {
+        'data-node-id': node.id,
+        transform: `translate(${node.x} ${node.y})`,
+        role: 'button',
+        tabindex: '0',
+        'aria-label': node.name
+    });
+    const circle = createPassiveSvgElement('circle', { r: radius });
+    element.append(circle);
+    if (node.type === 'keystone') {
+        element.append(createPassiveSvgElement('path', { d: 'M -13 0 L 0 -13 L 13 0 L 0 13 Z' }));
+    }
+    const gearLabel = createPassiveSvgElement('text', {
+        class: 'passive-node-gear',
+        x: radius - 3,
+        y: -radius + 7,
+        display: 'none'
+    });
+    element.append(gearLabel);
+    const entry = { element, gearLabel };
+    passiveTreeRenderer.nodeElements.set(node.id, entry);
+    return entry;
+}
+
+function updatePassiveTreeNodeElementState(nodeId, manuallyActive = getPassiveTreeManualActiveSet()) {
+    const node = getPassiveNode(nodeId);
+    const entry = passiveTreeRenderer?.nodeElements.get(nodeId);
+    if (!node || !entry) return;
+    const state = getPassiveGraphNodeState(node, manuallyActive);
+    entry.element.setAttribute('class', getPassiveNodeClasses(node, state));
+    entry.element.setAttribute('aria-pressed', state.active ? 'true' : 'false');
+    if (state.gear > 0) entry.gearLabel.removeAttribute('display');
+    else entry.gearLabel.setAttribute('display', 'none');
+    entry.gearLabel.textContent = state.gear > 0 ? `+${state.gear}` : '';
+}
+
+function getOrCreatePassiveClusterElement(cluster) {
+    let element = passiveTreeRenderer.clusterElements.get(cluster.id);
+    if (element) return element;
+    element = createPassiveSvgElement('circle', {
+        class: `passive-tree-cluster sector-${cluster.sector}${cluster.specialist ? ' is-specialist' : ''}`,
+        cx: cluster.x,
+        cy: cluster.y,
+        r: cluster.radius
+    });
+    passiveTreeRenderer.clusterElements.set(cluster.id, element);
+    return element;
+}
+
+function getOrCreatePassiveSectorLabel(sectorId) {
+    let element = passiveTreeRenderer.labelElements.get(sectorId);
+    if (element) return element;
+    const sector = PASSIVE_SECTOR_DEFINITIONS[sectorId];
+    const position = passivePolarPosition(4550, sector.angle);
+    element = createPassiveSvgElement('text', {
+        class: `passive-sector-label sector-${sectorId}`,
+        x: position.x,
+        y: position.y
+    });
+    element.textContent = sector.label;
+    passiveTreeRenderer.labelElements.set(sectorId, element);
+    return element;
+}
+
+function renderPassiveTreeEdgePaths(manuallyActive, visibleNodeIds) {
+    const pathParts = { inactive: [], available: [], active: [] };
+    for (const edge of PASSIVE_TREE.edges) {
         const from = getPassiveNode(edge.from);
         const to = getPassiveNode(edge.to);
+        const bothVisible = visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to);
+        const overviewRoute = passiveTreeRenderer.detailLevel === 'overview'
+            && isPassivePointInsideBounds(from.x, from.y, passiveTreeRenderer.renderBounds)
+            && isPassivePointInsideBounds(to.x, to.y, passiveTreeRenderer.renderBounds)
+            && ((visibleNodeIds.has(from.id) && PASSIVE_TREE_OVERVIEW_TYPES.has(from.type))
+                || (visibleNodeIds.has(to.id) && PASSIVE_TREE_OVERVIEW_TYPES.has(to.type)));
+        if (!bothVisible && !overviewRoute) continue;
         const active = manuallyActive.has(from.id) && manuallyActive.has(to.id);
-        const available = active
-            || (manuallyActive.has(from.id) && !manuallyActive.has(to.id))
-            || (manuallyActive.has(to.id) && !manuallyActive.has(from.id));
-        return `<line class="passive-tree-edge${active ? ' is-active' : ''}${available ? ' is-available' : ''}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"></line>`;
-    }).join('');
+        const available = active || manuallyActive.has(from.id) || manuallyActive.has(to.id);
+        const category = active ? 'active' : available ? 'available' : 'inactive';
+        pathParts[category].push(`M${from.x} ${from.y}L${to.x} ${to.y}`);
+    }
+    for (const [category, path] of Object.entries(passiveTreeRenderer.edgePaths)) {
+        path.setAttribute('d', pathParts[category].join(''));
+    }
+}
 
-    const clusterMarkup = (PASSIVE_TREE.clusters || []).map(cluster => `
-        <circle class="passive-tree-cluster sector-${cluster.sector}${cluster.specialist ? ' is-specialist' : ''}"
-            cx="${cluster.x}" cy="${cluster.y}" r="${cluster.radius}"></circle>`).join('');
+function rebuildPassiveTreeVisibleContent(view, detailLevel, manuallyActive) {
+    const bounds = getPassiveTreeRenderBounds(view);
+    const visibleNodeIds = new Set();
+    const nodeFragment = document.createDocumentFragment();
+    for (const node of passives) {
+        if (!isPassivePointInsideBounds(node.x, node.y, bounds, getPassiveNodeRadius(node))) continue;
+        const priority = isPassivePriorityNode(node, manuallyActive);
+        if (detailLevel === 'overview' && !PASSIVE_TREE_OVERVIEW_TYPES.has(node.type) && !priority) continue;
+        visibleNodeIds.add(node.id);
+        const entry = getOrCreatePassiveNodeElement(node);
+        updatePassiveTreeNodeElementState(node.id, manuallyActive);
+        nodeFragment.append(entry.element);
+    }
+    passiveTreeRenderer.nodesLayer.replaceChildren(nodeFragment);
 
-    const sectorLabels = PASSIVE_TREE_SECTOR_ORDER.map(sectorId => {
+    const clusterFragment = document.createDocumentFragment();
+    for (const cluster of PASSIVE_TREE.clusters || []) {
+        if (isPassivePointInsideBounds(cluster.x, cluster.y, bounds, cluster.radius)) {
+            clusterFragment.append(getOrCreatePassiveClusterElement(cluster));
+        }
+    }
+    passiveTreeRenderer.clustersLayer.replaceChildren(clusterFragment);
+
+    const labelFragment = document.createDocumentFragment();
+    for (const sectorId of PASSIVE_TREE_SECTOR_ORDER) {
         const sector = PASSIVE_SECTOR_DEFINITIONS[sectorId];
         const position = passivePolarPosition(4550, sector.angle);
-        return `<text class="passive-sector-label sector-${sectorId}" x="${position.x}" y="${position.y}">${escapePassiveHTML(sector.label)}</text>`;
-    }).join('');
+        if (isPassivePointInsideBounds(position.x, position.y, bounds, 100)) {
+            labelFragment.append(getOrCreatePassiveSectorLabel(sectorId));
+        }
+    }
+    passiveTreeRenderer.labelsLayer.replaceChildren(labelFragment);
+    passiveTreeRenderer.renderedNodeIds = visibleNodeIds;
+    passiveTreeRenderer.renderBounds = bounds;
+    passiveTreeRenderer.detailLevel = detailLevel;
+    renderPassiveTreeEdgePaths(manuallyActive, visibleNodeIds);
+}
 
-    const nodesMarkup = passives.map(node => {
-        const allocated = manuallyActive.has(node.id);
-        const gear = getPassiveNodeGearRank(node.id);
-        const effective = (allocated && node.id !== PASSIVE_TREE_ORIGIN_ID ? 1 : 0) + (node.gearScalable ? gear : 0);
-        const state = {
-            allocated,
-            gear,
-            effective,
-            active: node.id === PASSIVE_TREE_ORIGIN_ID || effective > 0,
-            connected: allocated,
-            available: node.id !== PASSIVE_TREE_ORIGIN_ID
-                && !allocated
-                && player.passivePoints > 0
-                && node.connections.some(connection => manuallyActive.has(connection))
-        };
-        const radius = node.type === 'origin' ? 34
-            : node.type === 'keystone' ? 30
-                : node.type === 'notable' ? 23
-                    : node.type === 'gateway' ? 20
-                        : ['travel', 'bridge'].includes(node.type) ? 9 : 12;
-        return `
-            <g class="${getPassiveNodeClasses(node, state)}" data-node-id="${node.id}" transform="translate(${node.x} ${node.y})" role="button" tabindex="0" aria-label="${escapePassiveHTML(node.name)}">
-                <circle r="${radius}"></circle>
-                ${node.type === 'keystone' ? `<path d="M -13 0 L 0 -13 L 13 0 L 0 13 Z"></path>` : ''}
-                ${state.gear > 0 ? `<text class="passive-node-gear" x="${radius - 3}" y="${-radius + 7}">+${state.gear}</text>` : ''}
-            </g>`;
-    }).join('');
-
-    svg.setAttribute('viewBox', `${passiveTreeView.x} ${passiveTreeView.y} ${passiveTreeView.width} ${passiveTreeView.height}`);
-    svg.innerHTML = `<g class="passive-tree-clusters">${clusterMarkup}</g><g class="passive-tree-edges">${edgesMarkup}</g><g class="passive-tree-labels">${sectorLabels}</g><g class="passive-tree-nodes">${nodesMarkup}</g>`;
+function renderPassiveTreeGraph({ forceVisibility = false, forceState = false } = {}) {
+    const svg = document.getElementById('passive-tree-svg');
+    if (!svg) return;
+    if (!passiveTreeRenderer || passiveTreeRenderer.svg !== svg) initializePassiveTreeRenderer(svg);
+    const view = passiveTreePendingView || passiveTreeView;
+    const detailLevel = getPassiveTreeDetailLevel(view);
+    svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.width} ${view.height}`);
+    svg.dataset.detail = detailLevel;
+    const manuallyActive = getPassiveTreeManualActiveSet();
+    const visibilityChanged = forceVisibility
+        || passiveTreeRenderer.detailLevel !== detailLevel
+        || !passiveTreeBoundsContainView(passiveTreeRenderer.renderBounds, view);
+    if (visibilityChanged) {
+        rebuildPassiveTreeVisibleContent(view, detailLevel, manuallyActive);
+    } else if (forceState) {
+        for (const nodeId of passiveTreeRenderer.renderedNodeIds) {
+            updatePassiveTreeNodeElementState(nodeId, manuallyActive);
+        }
+        renderPassiveTreeEdgePaths(manuallyActive, passiveTreeRenderer.renderedNodeIds);
+    }
 }
 
 function renderPassiveNodeDetails() {
@@ -423,30 +691,55 @@ function renderPassiveTreeSummary() {
 }
 
 function changePassiveTreeZoom(multiplier) {
+    const currentView = passiveTreePendingView || passiveTreeView;
     const home = getPassiveTreeHomeView();
-    const nextWidth = Math.min(home.width, Math.max(650, passiveTreeView.width * multiplier));
-    const nextHeight = Math.min(home.height, Math.max(650, passiveTreeView.height * multiplier));
-    passiveTreeView.x += (passiveTreeView.width - nextWidth) / 2;
-    passiveTreeView.y += (passiveTreeView.height - nextHeight) / 2;
-    passiveTreeView.width = nextWidth;
-    passiveTreeView.height = nextHeight;
-    renderPassiveTreeGraph();
+    const nextWidth = Math.min(home.width, Math.max(650, currentView.width * multiplier));
+    const nextHeight = Math.min(home.height, Math.max(650, currentView.height * multiplier));
+    schedulePassiveTreeView({
+        x: currentView.x + (currentView.width - nextWidth) / 2,
+        y: currentView.y + (currentView.height - nextHeight) / 2,
+        width: nextWidth,
+        height: nextHeight
+    });
 }
 
 function centerPassiveTreeView() {
-    passiveTreeView = getPassiveTreeHomeView();
-    renderPassiveTreeGraph();
+    schedulePassiveTreeView(getPassiveTreeHomeView());
+}
+
+function schedulePassiveTreeView(nextView) {
+    passiveTreePendingView = nextView;
+    if (passiveTreeViewFrame) return;
+    passiveTreeViewFrame = requestAnimationFrame(() => {
+        passiveTreeViewFrame = 0;
+        if (!passiveTreePendingView) return;
+        passiveTreeView = passiveTreePendingView;
+        passiveTreePendingView = null;
+        renderPassiveTreeGraph();
+    });
+}
+
+function getPassiveTreeViewportRect(svg, refresh = false) {
+    if (!passiveTreeRenderer || passiveTreeRenderer.svg !== svg) return svg.getBoundingClientRect();
+    if (refresh || !passiveTreeRenderer.viewportRect) {
+        passiveTreeRenderer.viewportRect = svg.getBoundingClientRect();
+    }
+    return passiveTreeRenderer.viewportRect;
 }
 
 function bindPassiveTreeInteractions() {
     const svg = document.getElementById('passive-tree-svg');
-    if (!svg) return;
+    if (!svg || svg.dataset.interactionsBound === 'true') return;
+    svg.dataset.interactionsBound = 'true';
     const getNodeElement = target => target?.closest?.('[data-node-id]');
     const selectNode = nodeId => {
+        const previousNodeId = selectedPassiveNodeId;
         selectedPassiveNodeId = nodeId;
         passiveTreeHoveredNodeId = null;
         hidePassiveNodeTooltip();
-        renderPassiveTreeGraph();
+        const manuallyActive = getPassiveTreeManualActiveSet();
+        updatePassiveTreeNodeElementState(previousNodeId, manuallyActive);
+        updatePassiveTreeNodeElementState(nodeId, manuallyActive);
         renderPassiveNodeDetails();
     };
     svg.addEventListener('pointerover', event => {
@@ -493,17 +786,30 @@ function bindPassiveTreeInteractions() {
             if (event.pointerType !== 'mouse') showPassiveNodeTooltipAtElement(element.dataset.nodeId, element);
             return;
         }
-        passiveTreeDragState = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, view: { ...passiveTreeView } };
+        if (event.button !== 0) return;
+        const view = passiveTreePendingView || passiveTreeView;
+        const rect = getPassiveTreeViewportRect(svg, true);
+        passiveTreeDragState = {
+            pointerId: event.pointerId,
+            clientX: event.clientX,
+            clientY: event.clientY,
+            rect,
+            view: { ...view }
+        };
         svg.setPointerCapture?.(event.pointerId);
         svg.classList.add('is-dragging');
+        hidePassiveNodeTooltip();
     });
     svg.addEventListener('pointermove', event => {
-        if (passiveTreeHoveredNodeId) positionPassiveNodeTooltip(event.clientX, event.clientY);
+        if (passiveTreeHoveredNodeId) schedulePassiveNodeTooltipPosition(event.clientX, event.clientY);
         if (!passiveTreeDragState || event.pointerId !== passiveTreeDragState.pointerId) return;
-        const rect = svg.getBoundingClientRect();
-        passiveTreeView.x = passiveTreeDragState.view.x - (event.clientX - passiveTreeDragState.clientX) * passiveTreeDragState.view.width / Math.max(1, rect.width);
-        passiveTreeView.y = passiveTreeDragState.view.y - (event.clientY - passiveTreeDragState.clientY) * passiveTreeDragState.view.height / Math.max(1, rect.height);
-        svg.setAttribute('viewBox', `${passiveTreeView.x} ${passiveTreeView.y} ${passiveTreeView.width} ${passiveTreeView.height}`);
+        const { rect, view } = passiveTreeDragState;
+        schedulePassiveTreeView({
+            x: view.x - (event.clientX - passiveTreeDragState.clientX) * view.width / Math.max(1, rect.width),
+            y: view.y - (event.clientY - passiveTreeDragState.clientY) * view.height / Math.max(1, rect.height),
+            width: view.width,
+            height: view.height
+        });
     });
     const stopDrag = event => {
         if (passiveTreeDragState && event.pointerId === passiveTreeDragState.pointerId) {
@@ -515,27 +821,24 @@ function bindPassiveTreeInteractions() {
     svg.addEventListener('pointercancel', stopDrag);
     svg.addEventListener('wheel', event => {
         event.preventDefault();
-        const rect = svg.getBoundingClientRect();
+        const rect = getPassiveTreeViewportRect(svg);
         const ratioX = (event.clientX - rect.left) / Math.max(1, rect.width);
         const ratioY = (event.clientY - rect.top) / Math.max(1, rect.height);
-        const multiplier = event.deltaY > 0 ? 1.12 : 0.88;
+        const multiplier = Math.exp(Math.max(-160, Math.min(160, event.deltaY)) * 0.0015);
+        const currentView = passiveTreePendingView || passiveTreeView;
         const home = getPassiveTreeHomeView();
-        const nextWidth = Math.min(home.width, Math.max(650, passiveTreeView.width * multiplier));
-        const nextHeight = Math.min(home.height, Math.max(650, passiveTreeView.height * multiplier));
-        passiveTreeView.x += (passiveTreeView.width - nextWidth) * ratioX;
-        passiveTreeView.y += (passiveTreeView.height - nextHeight) * ratioY;
-        passiveTreeView.width = nextWidth;
-        passiveTreeView.height = nextHeight;
-        svg.setAttribute('viewBox', `${passiveTreeView.x} ${passiveTreeView.y} ${passiveTreeView.width} ${passiveTreeView.height}`);
+        const nextWidth = Math.min(home.width, Math.max(650, currentView.width * multiplier));
+        const nextHeight = Math.min(home.height, Math.max(650, currentView.height * multiplier));
+        schedulePassiveTreeView({
+            x: currentView.x + (currentView.width - nextWidth) * ratioX,
+            y: currentView.y + (currentView.height - nextHeight) * ratioY,
+            width: nextWidth,
+            height: nextHeight
+        });
     }, { passive: false });
 }
 
-function displayPassivesScreen() {
-    ensurePlayerPassiveTreeState();
-    const screen = document.getElementById('passives-screen');
-    if (!screen) return;
-    const validation = validatePassiveTree();
-    if (!validation.valid) throw new TypeError(`Invalid passive tree: ${validation.errors.join('; ')}`);
+function createPassiveTreeScreen(screen, validation) {
     screen.innerHTML = `
         <div class="passive-tree-header">
             <div>
@@ -544,8 +847,8 @@ function displayPassivesScreen() {
                 <div id="passive-tree-summary" class="passive-tree-summary"></div>
             </div>
             <div class="passive-tree-points">
-                <span>Available</span><strong>${Math.max(0, player.passivePoints)}</strong>
-                <span>Allocated</span><strong>${getAllocatedPassivePointCount()}</strong>
+                <span>Available</span><strong id="passive-tree-available-points"></strong>
+                <span>Allocated</span><strong id="passive-tree-allocated-points"></strong>
             </div>
         </div>
         <div class="passive-tree-toolbar">
@@ -553,7 +856,7 @@ function displayPassivesScreen() {
             <button id="passive-zoom-in" aria-label="Zoom in">+</button>
             <button id="passive-zoom-out" aria-label="Zoom out">−</button>
             <button id="passive-center-tree">Center</button>
-            <button id="passive-refund-all" class="danger" ${getAllocatedPassivePointCount() <= 0 ? 'disabled' : ''}>Refund All</button>
+            <button id="passive-refund-all" class="danger">Refund All</button>
         </div>
         <div class="passive-tree-instructions">Drag to pan · Wheel to zoom · Double-click to allocate · Right-click to refund</div>
         <div class="passive-tree-layout">
@@ -563,19 +866,54 @@ function displayPassivesScreen() {
             </div>
             <aside id="passive-node-details" class="passive-node-details"></aside>
         </div>`;
-
-    renderPassiveTreeGraph();
-    renderPassiveNodeDetails();
-    renderPassiveTreeSummary();
+    passiveTreeRenderer = null;
+    updatePassiveTreeSearchMatches();
+    initializePassiveTreeRenderer(screen.querySelector('#passive-tree-svg'));
     bindPassiveTreeInteractions();
     screen.querySelector('#passive-tree-search')?.addEventListener('input', event => {
-        passiveTreeSearch = event.target.value.trim();
-        renderPassiveTreeGraph();
+        const query = event.target.value.trim();
+        if (passiveTreeSearchTimer) clearTimeout(passiveTreeSearchTimer);
+        passiveTreeSearchTimer = setTimeout(() => {
+            passiveTreeSearchTimer = 0;
+            if (query === passiveTreeSearch) return;
+            passiveTreeSearch = query;
+            updatePassiveTreeSearchMatches();
+            renderPassiveTreeGraph({ forceVisibility: true, forceState: true });
+        }, PASSIVE_TREE_SEARCH_DELAY_MS);
     });
     screen.querySelector('#passive-zoom-in')?.addEventListener('click', () => changePassiveTreeZoom(0.82));
     screen.querySelector('#passive-zoom-out')?.addEventListener('click', () => changePassiveTreeZoom(1.22));
     screen.querySelector('#passive-center-tree')?.addEventListener('click', centerPassiveTreeView);
     screen.querySelector('#passive-refund-all')?.addEventListener('click', refundAllPassiveNodes);
+}
+
+function renderPassiveTreePointCounters() {
+    const allocated = getAllocatedPassivePointCount();
+    const availableElement = document.getElementById('passive-tree-available-points');
+    const allocatedElement = document.getElementById('passive-tree-allocated-points');
+    const refundAllButton = document.getElementById('passive-refund-all');
+    if (availableElement) availableElement.textContent = Math.max(0, player.passivePoints).toLocaleString();
+    if (allocatedElement) allocatedElement.textContent = allocated.toLocaleString();
+    if (refundAllButton) refundAllButton.disabled = allocated <= 0;
+}
+
+function refreshPassiveTreeDynamicState() {
+    renderPassiveTreeGraph({ forceVisibility: true, forceState: true });
+    renderPassiveNodeDetails();
+    renderPassiveTreeSummary();
+    renderPassiveTreePointCounters();
+}
+
+function displayPassivesScreen() {
+    ensurePlayerPassiveTreeState();
+    const screen = document.getElementById('passives-screen');
+    if (!screen) return;
+    if (!passiveTreeValidation) passiveTreeValidation = validatePassiveTree();
+    if (!passiveTreeValidation.valid) {
+        throw new TypeError(`Invalid passive tree: ${passiveTreeValidation.errors.join('; ')}`);
+    }
+    if (!screen.querySelector('#passive-tree-svg')) createPassiveTreeScreen(screen, passiveTreeValidation);
+    refreshPassiveTreeDynamicState();
 }
 
 function refreshPassivesScreen() {

@@ -267,6 +267,29 @@ test('passive tree uses immediate viewport tooltips instead of persistent node l
   assert.match(styles, /\.passive-node-tooltip\s*\{[\s\S]*?pointer-events:\s*none/, 'tooltip can interfere with node hover');
 });
 
+test('passive tree renderer batches, culls, and incrementally updates the large graph', () => {
+  const uiSource = read('passivesUI.js');
+  const styles = read('style.css');
+  const passiveStyles = styles.slice(styles.indexOf('/* Radial passive tree v2 */'), styles.indexOf('/* Glow effect for the entire tier container */'));
+  const passiveDefinitions = evaluateClassic('passives.js', 'passives');
+  const overviewTypes = new Set(['origin', 'gateway', 'travel', 'bridge', 'notable', 'keystone']);
+  const overviewNodeCount = passiveDefinitions.filter(node => overviewTypes.has(node.type)).length;
+
+  assert.equal(overviewNodeCount, 484, 'overview detail unexpectedly includes the full minor-node population');
+  assert.ok(overviewNodeCount < passiveDefinitions.length / 2, 'overview detail does not substantially reduce live node count');
+  assert.doesNotMatch(uiSource, /svg\.innerHTML/, 'passive graph still destroys and recreates the SVG scene');
+  assert.doesNotMatch(uiSource, /createPassiveSvgElement\('line'/, 'connections are still individual SVG line elements');
+  assert.match(uiSource, /edgePaths\s*=\s*\{[\s\S]*?inactive:[\s\S]*?available:[\s\S]*?active:/, 'connection state is not batched into three paths');
+  assert.match(uiSource, /PASSIVE_TREE_RENDER_BUFFER[\s\S]*?passiveTreeBoundsContainView/, 'buffered viewport culling is missing');
+  assert.match(uiSource, /PASSIVE_TREE_OVERVIEW_TYPES[\s\S]*?detailLevel === 'overview'/, 'zoom-dependent overview detail is missing');
+  assert.match(uiSource, /requestAnimationFrame\(\(\) => \{[\s\S]*?passiveTreePendingView/, 'pan and zoom are not frame-coalesced');
+  assert.match(uiSource, /PASSIVE_TREE_SEARCH_DELAY_MS[\s\S]*?setTimeout/, 'search input is not debounced');
+  assert.match(uiSource, /updatePassiveTreeNodeElementState\(previousNodeId[\s\S]*?updatePassiveTreeNodeElementState\(nodeId/, 'selection still refreshes the entire graph');
+  assert.doesNotMatch(passiveStyles, /vector-effect:\s*non-scaling-stroke/, 'passive SVG still forces every stroke to remain screen-sized');
+  assert.match(passiveStyles, /\.passive-tree-edges[\s\S]*?pointer-events:\s*none/, 'decorative connections still participate in hit testing');
+  assert.doesNotMatch(passiveStyles, /\.passive-tree-node\.is-active circle\s*\{[^}]*filter:/, 'every allocated node still owns an expensive glow filter');
+});
+
 test('level progression awards two passive points and starts level one with two', () => {
   const globalSource = read('global.js');
   const codexSource = read('codex.js');
