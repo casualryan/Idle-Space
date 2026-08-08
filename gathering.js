@@ -37,10 +37,13 @@ function normalizeGatheringSkills(playerObject) {
     if (!playerObject) return;
     if (!playerObject.gatheringSkills) {
         playerObject.gatheringSkills = {
-            Mining: { level: 1, experience: 0 },
-            Medtek: { level: 1, experience: 0 }
+            Mining: { level: 1, experience: 0 }
         };
     }
+
+    // Retire disconnected legacy skills when loading older saves.
+    delete playerObject.gatheringSkills.Medtek;
+    delete playerObject.gatheringSkills.Foraging;
 
     if (!playerObject.gatheringSkills.Mining) {
         playerObject.gatheringSkills.Mining = { level: 1, experience: 0 };
@@ -314,6 +317,40 @@ function startGatheringActivity(skillName, activity) {
     }
 }
 
+function restoreGatheringActivity(savedActivity) {
+    if (!savedActivity || !window.activityManager) return false;
+    const skillName = savedActivity.skill || savedActivity.context?.skillName;
+    const activityName = savedActivity.context?.activity?.name || savedActivity.displayName;
+    const activity = gatheringActivities.find(candidate =>
+        candidate.skillType === skillName && candidate.name === activityName
+    );
+    if (!skillName || !activity) return false;
+
+    const result = window.activityManager.startActivity({
+        id: savedActivity.id || `${skillName}:${activity.name}`,
+        type: skillName.toLowerCase(),
+        displayName: activity.name,
+        rewards: [{ itemId: activity.item?.name || 'unknown', quantity: activity.item?.quantity || 1 }],
+        skill: skillName,
+        skillXp: activity.experience || 0,
+        cancellable: true,
+        repeat: true,
+        blocks: ['nonCombatPrimary'],
+        context: { skillName, activity },
+        progressMs: Math.min(Number(savedActivity.progressMs || 0), Number(savedActivity.durationMs || Infinity)),
+        completedCycles: Number(savedActivity.completedCycles || 0),
+        getDurationMs: () => {
+            const skillLevel = player.gatheringSkills?.[skillName]?.level || 1;
+            return getModifiedActivityTime(activity, skillLevel) * 1000;
+        },
+        onComplete: () => performGatheringAction(skillName, activity)
+    });
+    if (result.ok) syncGatheringStateFromManager();
+    return result.ok;
+}
+
+window.restoreGatheringActivity = restoreGatheringActivity;
+
 function stopGatheringActivity() {
     if (!window.activityManager) return;
     const state = window.activityManager.getState();
@@ -331,7 +368,7 @@ function stopGatheringActivity() {
     logMessage(`You stop ${label}.`);
 }
 
-function displayLootPopup(message) {
+function displayGatheringLootPopup(message) {
     const container = document.getElementById('loot-popups-container');
     if (!container) {
         console.error('Loot popups container not found in the DOM.');
@@ -364,7 +401,7 @@ function performGatheringAction(skillName, activity) {
         const yieldRoll = Math.random() * 100;
         if (yieldRoll < yieldBonus) {
             baseQuantity *= 2;
-            displayLootPopup('Yield Bonus! Double resources!');
+            displayGatheringLootPopup('Yield Bonus! Double resources!');
         }
 
         gatheredItem.quantity = baseQuantity;
@@ -383,7 +420,7 @@ function performGatheringAction(skillName, activity) {
             .filter(item => item.name === activity.item.name)
             .reduce((sum, item) => sum + item.quantity, 0);
 
-        displayLootPopup(`You gathered ${activity.item.name}. (${totalQuantity})`);
+        displayGatheringLootPopup(`You gathered ${activity.item.name}. (${totalQuantity})`);
     } else {
         console.error(`Item template not found for ${activity.item.name}`);
         return { ok: false, reason: 'Missing item template' };
@@ -406,7 +443,7 @@ function performGatheringAction(skillName, activity) {
                         alertSeverity: 'danger'
                     };
                 }
-                displayLootPopup(`Rare Find! You discovered ${activity.rareFind.name}!`);
+                displayGatheringLootPopup(`Rare Find! You discovered ${activity.rareFind.name}!`);
             } else {
                 console.error(`Rare item template not found for ${activity.rareFind.name}`);
             }
@@ -419,8 +456,6 @@ function performGatheringAction(skillName, activity) {
 }
 
 function displaySkillActivities(skillName) {
-    if (skillName.toLowerCase() === 'medtek') return;
-
     const skillLevel = player.gatheringSkills?.[skillName]?.level || 1;
     const skillXP = player.gatheringSkills?.[skillName]?.experience || 0;
 

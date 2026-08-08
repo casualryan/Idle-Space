@@ -41,6 +41,15 @@ import pristineMetalPlate from './pristineMetalPlate.js';
 import pureIronNugget from './pureIronNugget.js';
 import copperVeinSample from './copperVeinSample.js';
 import titaniumAlloyFragment from './titaniumAlloyFragment.js';
+import toxicResidue from './toxicResidue.js';
+import unstablePhaseCore from './unstablePhaseCore.js';
+import advancedAlloy from './advancedAlloy.js';
+import cryoCell from './cryoCell.js';
+import advancedBarrel from './advancedBarrel.js';
+import precisionMechanism from './precisionMechanism.js';
+import corrosiveFluid from './corrosiveFluid.js';
+import enhancedCuttingEdge from './enhancedCuttingEdge.js';
+import advancedElectronicCircuit from './advancedElectronicCircuit.js';
 
 // Export all materials as an array
 const materials = [
@@ -49,7 +58,7 @@ const materials = [
     titanium,
     ironOre,
     copperOre,
-    
+
     // Crafting items
     minorElectronicCircuit,
     unstablePhoton,
@@ -60,49 +69,60 @@ const materials = [
     metalScorpionFang,
     flameShell,
     pyroCore,
-    
+
     // Common Items (Tier 1)
     wireBundle,
     spiderLegSegment,
     opticSensor,
     metalFasteners,
     basicServo,
-    
+
     // Uncommon Items (Tier 2)
     smallPowerCell,
     copperCoil,
     memoryChip,
     stabilizer,
     basicSensorArray,
-    
+
     // Rare Items (Tier 3)
     advancedServo,
     targetingModule,
     powerConverter,
     titaniumPlating,
     neuralProcessor,
-    
+
     // Very Rare Items (Tier 4)
     quantumCapacitor,
     highDensityPowerCell,
     neuralNetworkModule,
-    
+
     // Epic Items (Tier 5)
     phaseConverter,
     aiCoreFragment,
     syntheticBiofluid,
-    
+
     // Legendary Items (Tier 6)
     quantumCore,
     temporalStabilizer,
     naniteCluster,
     fluxCrystal,
-    
+
     // Rare Finds
     pristineMetalPlate,
     pureIronNugget,
     copperVeinSample,
-    titaniumAlloyFragment
+    titaniumAlloyFragment,
+
+    // Specialized disassembly materials
+    toxicResidue,
+    unstablePhaseCore,
+    advancedAlloy,
+    cryoCell,
+    advancedBarrel,
+    precisionMechanism,
+    corrosiveFluid,
+    enhancedCuttingEdge,
+    advancedElectronicCircuit
 ];
 
 // Make materials available globally (only in browser environment)
@@ -110,4 +130,4 @@ if (typeof window !== 'undefined') {
     window.materials = materials;
 }
 
-export default materials; 
+export default materials;

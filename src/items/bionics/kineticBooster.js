@@ -1,5 +1,6 @@
 export default {
     name: 'Kinetic Booster',
+    levelRequirement: 1,
     type: 'Bionic',
     icon: 'icons/kinetic_booster.png',
     slot: 'bionic',
@@ -15,4 +16,4 @@ export default {
         },
     ],
     description: 'Increases Kinetic Damage Multiplier.'
-}; 
+};

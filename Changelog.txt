@@ -1,3 +1,25 @@
+8/7/26
+
+Changes:
+
+new characters now begin with a Broken Phase Sword and 1,000 credits
+only the authored Balanced combat style is currently player-facing
+successful delve rewards now enter a persistent claim cache
+empowered enemies now grant increased experience, credits, and drop chance
+fabrication now permits exactly one five-second job at a time
+
+Fixes:
+
+passive tiers now count only points invested in lower tiers
+passive caps now match their authored rank data, and missing passive bonuses were removed
+loot rolls now reroll among rarities actually populated for the enemy
+Seeping Wound defaults to five stacks and Severed Limb supports equipment-raised caps
+Bionic Sync and Bionic Efficiency now follow their intended stat and proc roles
+removed copied proc packages from ordinary legacy equipment
+removed load-order-dependent duplicate runtime functions
+player health and shield now persist correctly between delve encounters
+Sharpen now actually grants its listed kinetic damage
+
 9/2/25
 
 Changes:

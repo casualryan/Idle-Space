@@ -25,27 +25,10 @@ export default {
             corrosive: { min: 20, max: 30 }
         },
         slot: 'mainHand',
-        effects: [
-            {
-                trigger: 'onHit',
-                chance: 0.45,
-                action: 'applyStatusEffect',
-                parameters: {
-                    effect: 'Corroded',
-                    duration: 3,
-                    stacks: 1,
-                    maxStacks: 5,
-                    defenseReduction: {
-                        physical: 5,
-                        stacking: true
-                    }
-                }
-            }
-        ],
         isDisassembleable: true,
         disassembleResults: [
             { name: 'Corrosive Fluid', quantity: 2 },
             { name: 'Enhanced Cutting Edge', quantity: 1 }
         ],
-        description: 'Extremely fast acid-coated claws. 45% chance to apply Corroded for 3 seconds, reducing physical defenses with each stack.'
+        description: 'Extremely fast acid-coated claws specialized in corrosive damage.'
     };

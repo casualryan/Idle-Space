@@ -21,13 +21,8 @@ export default {
         {
             pick: { min: 1, max: 1 },
             from: [
-                { path: 'passiveBonuses.Kinetic Mastery', value: { min: 1, max: 2 } },
-                { path: 'passiveBonuses.Slashing Mastery', value: { min: 1, max: 2 } },
                 { path: 'passiveBonuses.Pyro Mastery', value: { min: 1, max: 2 } },
-                { path: 'passiveBonuses.Cryo Mastery', value: { min: 1, max: 2 } },
-                { path: 'passiveBonuses.Electric Mastery', value: { min: 1, max: 2 } },
-                { path: 'passiveBonuses.Chemical Mastery', value: { min: 1, max: 2 } },
-                { path: 'passiveBonuses.Radiation Mastery', value: { min: 1, max: 2 } }
+                { path: 'passiveBonuses.Chemical Mastery', value: { min: 1, max: 2 } }
             ]
         },
         {
@@ -39,15 +34,11 @@ export default {
             ]
         }
     ],
-    passiveBonuses: {
-        "Heart": 1
-    },
     isDisassembleable: true,
     disassembleResults: [
         { name: 'Scrap Metal', quantity: 5 }
     ]
 };
-
 
 
 

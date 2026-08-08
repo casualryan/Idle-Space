@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Idle Combat Game</title>
+    <title>Corebound: Synthetic Dominion</title>
     <link rel="stylesheet" href="style.css">
     <!-- Add Google Font -->
     <link href="https://fonts.googleapis.com/css2?family=Orbitron&display=swap" rel="stylesheet">
@@ -68,10 +68,6 @@
                 <li data-skill="Fabrication">
                     <img src="icons/fabricating-icon.png" alt="Fabricating Icon">
                     <span>Fabrication</span>
-                </li>
-                <li data-skill="Medtek">
-                    <img src="icons/medtek-icon.png" alt="Medtek Icon">
-                    <span>Medtek</span>
                 </li>
                 <!-- Add more non-combat skills as needed -->
             </ul>
@@ -350,17 +346,6 @@
             </section>
         </div>
 
-        <!-- Medtek Screen -->
-        <div id="medtek-screen" class="screen">
-            <h2>Medtek</h2>
-            <div class="activities"></div>
-            <h3>Progress</h3>
-            <div class="progress-container">
-                <div id="medtek-progress-bar" class="progress-bar gathering-bar"></div>
-            </div>
-            <button id="stop-medtek" style="display: none;">Stop Crafting</button>
-            <div id="medtek-skill-stats"></div>
-        </div>
     </div>
 
     <!-- Settings Menu (Modal) -->
@@ -434,46 +419,6 @@
             </div>
         </div>
     </div>
-
-    <!-- Load all item category files before the main items.js -->
-    <!-- All item types now loaded via Vite modules in main.js -->
-    <!-- <script src="weapons.js"></script> --> <!-- Replaced by Vite bundle -->
-    <!-- <script src="armor.js"></script> --> <!-- Replaced by Vite bundle -->
-    <!-- <script src="bionics.js"></script> --> <!-- Replaced by Vite bundle -->
-    <!-- <script src="materials.js"></script> --> <!-- Replaced by Vite bundle -->
-    <!-- <script src="components.js"></script> --> <!-- Replaced by Vite bundle -->
-    <script src="items.js"></script> <!-- Load base items first -->
-    <script src="stats.js"></script> <!-- Load stats calculations -->
-    <script src="recipes.js"></script>
-    <script src="enemies.js"></script>
-    <script src="injectors.js"></script>
-    <script src="passives.js"></script>
-    <script src="skills.js"></script>
-    <script src="skillResolver.js"></script>
-    <script src="gathering_activities.js"></script>
-    <script src="tooltip.js"></script>
-    <script src="activityManager.js"></script>
-    <script src="global.js"></script>
-    <script src="inventory.js"></script>
-    <script src="gathering.js"></script>
-    <script src="fabrication.js"></script>
-    <script src="npcshops.js"></script>
-    <script src="buffs.js"></script>
-    <script src="itemgenerator.js"></script>
-    <script src="passivesUI.js"></script>
-    <script src="skillsUI.js"></script>
-    <script src="sounds.js"></script>
-    <script src="statusEffects.js"></script>
-    <script src="locations.js"></script>
-    <script src="disassemble.js"></script>
-    <script src="lootPools.js"></script>
-    <script src="lootHandler.js"></script>
-    <script src="debuffs.js"></script>
-    <script src="combat.js"></script>
-    <script src="codex.js"></script>
-    
-    <!-- Item verification script to ensure weapons are properly loaded -->
-    <script type="module" src="./src/itemsVerifier.js"></script>
 
     <!-- Popups -->
     <div id="damage-popups-container"></div>

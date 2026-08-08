@@ -10,6 +10,7 @@ import cryoBooster from './cryoBooster.js';
 import electricBooster from './electricBooster.js';
 import slashingBooster from './slashingBooster.js';
 import radiationBooster from './radiationBooster.js';
+import chemicalBooster from './chemicalBooster.js';
 
 // Add all bionics to this array
 const bionics = [
@@ -23,7 +24,8 @@ const bionics = [
     cryoBooster,
     electricBooster,
     slashingBooster,
-    radiationBooster
+    radiationBooster,
+    chemicalBooster
 ];
 
-export default bionics; 
+export default bionics;

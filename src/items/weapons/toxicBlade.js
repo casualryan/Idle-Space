@@ -1,6 +1,7 @@
 // src/items/weapons/toxicBlade.js
 export default {
         name: 'Toxic Blade',
+        levelRequirement: 8,
         type: "Weapon",
         weaponType: "Dagger",
         icon: "icons/toxic_blade.png",
@@ -21,21 +22,10 @@ export default {
         criticalChanceModifierRange: { min: 15, max: 25 },
         defenseTypes: {},
         slot: 'mainHand',
-        effects: [
-            {
-                trigger: 'onHit',
-                chance: 0.25,
-                action: 'applyStatusEffect',
-                parameters: {
-                    effect: 'Corroded',
-                    duration: 5
-                }
-            }
-        ],
         isDisassembleable: true,
         disassembleResults: [
             { name: 'Scrap Metal', quantity: 1 },
             { name: 'Toxic Residue', quantity: 1 }
         ],
-        description: '25% chance on hit to apply Corroded for 5 seconds. Increases all chemical damage.'
+        description: 'A fast hybrid blade that increases corrosive and chemical damage.'
     };

@@ -13,9 +13,12 @@ function shouldDropLoot(enemy, player) {
     let dropChance = enemy.lootConfig.baseDropChance || 0.5; // Default to 50% if not specified
     
     // Apply player loot luck modifier if it exists
-    if (player && player.stats && player.stats.lootLuck) {
-        dropChance *= (1 + player.stats.lootLuck / 100);
+    const lootLuck = Number(player?.totalStats?.lootLuck ?? player?.stats?.lootLuck ?? 0);
+    if (lootLuck) {
+        dropChance *= (1 + lootLuck / 100);
     }
+
+    if (enemy.isEmpowered) dropChance *= 1.5;
     
     // Apply equipment modifiers that affect loot chance
     if (player && player.equipment) {
@@ -40,18 +43,21 @@ function shouldDropLoot(enemy, player) {
  * @param {Object} player - The player character for applying modifiers
  * @return {number} The tier ID that was selected
  */
-function rollLootTier(player) {
+function rollLootTier(player, allowedTierIds = null) {
     // Base probabilities defined in LOOT_TIERS
-    const tierList = Object.values(LOOT_TIERS);
+    const allowed = Array.isArray(allowedTierIds) ? new Set(allowedTierIds.map(Number)) : null;
+    const tierList = Object.values(LOOT_TIERS).filter(tier => !allowed || allowed.has(tier.id));
+    if (tierList.length === 0) return null;
     
     // Apply player modifiers to tier chances
     let modifiedTiers = tierList.map(tier => {
         let chance = tier.chance;
         
         // Apply player tier luck if it exists
-        if (player && player.stats && player.stats.tierLuck) {
+        const tierLuck = Number(player?.totalStats?.tierLuck ?? player?.stats?.tierLuck ?? 0);
+        if (tierLuck) {
             // Higher tiers get a bigger boost
-            const tierBoost = (tier.id - 1) * (player.stats.tierLuck / 100);
+            const tierBoost = (tier.id - 1) * (tierLuck / 100);
             chance *= (1 + tierBoost);
         }
         
@@ -80,8 +86,19 @@ function rollLootTier(player) {
         }
     }
     
-    // Fallback to tier 1 if something went wrong
-    return 1;
+    // Floating point fallback: use the final allowed tier.
+    return modifiedTiers[modifiedTiers.length - 1].id;
+}
+
+function getAvailableLootTiers(enemy) {
+    const poolsByTier = enemy?.lootConfig?.poolsByTier || {};
+    return Object.entries(poolsByTier)
+        .filter(([, poolNames]) => Array.isArray(poolNames) && poolNames.some(poolName => {
+            const pool = LOOT_POOLS[poolName];
+            return Array.isArray(pool?.items) && pool.items.length > 0;
+        }))
+        .map(([tier]) => Number(tier))
+        .filter(Number.isFinite);
 }
 
 /**
@@ -97,8 +114,9 @@ function rollItemCount(enemy, player) {
     let maxItems = enemy.lootConfig.maxItems || 1;
     
     // Apply player modifiers that affect item count
-    if (player && player.stats && player.stats.extraLoot) {
-        maxItems += player.stats.extraLoot;
+    const extraLoot = Number(player?.totalStats?.extraLoot ?? player?.stats?.extraLoot ?? 0);
+    if (extraLoot) {
+        maxItems += extraLoot;
     }
     
     // Make sure minItems doesn't exceed maxItems
@@ -174,11 +192,13 @@ function generateLoot(enemy, player) {
     
     // Determine how many items to drop
     const itemCount = rollItemCount(enemy, player);
+    const availableTiers = getAvailableLootTiers(enemy);
+    if (availableTiers.length === 0) return lootItems;
     
     // Generate each item
     for (let i = 0; i < itemCount; i++) {
         // Roll for a loot tier
-        const tier = rollLootTier(player);
+        const tier = rollLootTier(player, availableTiers);
         
         // Select a loot pool based on the enemy and tier
         const poolName = selectLootPool(enemy, tier);
@@ -240,9 +260,11 @@ function handleLootDrop(enemy) {
             const currencyAmount = getRandomInt(enemy.currencyDrop.min, enemy.currencyDrop.max);
 
             let finalAmount = currencyAmount;
-            if (player && player.stats && player.stats.currencyFind) {
-                finalAmount = Math.floor(currencyAmount * (1 + player.stats.currencyFind / 100));
+            const currencyFind = Number(player?.totalStats?.currencyFind ?? player?.stats?.currencyFind ?? 0);
+            if (currencyFind) {
+                finalAmount = Math.floor(currencyAmount * (1 + currencyFind / 100));
             }
+            if (enemy.isEmpowered) finalAmount = Math.floor(finalAmount * 1.5);
 
             updateCurrency(finalAmount);
             logMessage(`You found {flashing}${finalAmount} currency{end}`);
@@ -266,9 +288,10 @@ if (typeof module !== 'undefined' && module.exports) {
         rollLootTier,
         rollItemCount,
         selectLootPool,
-        selectItemFromPool
+        selectItemFromPool,
+        getAvailableLootTiers
     };
 } else {
     // For browser environment
     // These will be globally accessible
-} 
+}

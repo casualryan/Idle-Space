@@ -3,86 +3,83 @@ import materials from './items/materials/index.js';
 import armor from './items/armor/index.js';
 import bionics from './items/bionics/index.js';
 import chips from './items/chips/index.js';
-import enemies from './enemies/index.js';
+import enemyTemplates from './enemies/index.js';
+import { RUNTIME_SCRIPTS } from './runtimeScripts.js';
 
-console.log('Vite main.js - Starting to load all item types');
-console.log('Weapons array content:', weapons);
-console.log('Materials array content:', materials);
-console.log('Armor array content:', armor);
-console.log('Bionics array content:', bionics);
-console.log('Chips array content:', chips);
-console.log('Enemies array content:', enemies);
+const DEV_MODE_STORAGE_KEY = 'coreboundDeveloperMode';
 
-// First, immediately make all item types available
-window.weapons = weapons;
-window.materials = materials;
-window.armor = armor;
-window.bionics = bionics;
-window.chips = chips;
-window.enemies = enemies;
+function resolveDeveloperMode() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('dev') === '1') {
+    localStorage.setItem(DEV_MODE_STORAGE_KEY, 'true');
+  } else if (params.get('dev') === '0') {
+    localStorage.removeItem(DEV_MODE_STORAGE_KEY);
+  }
+  return localStorage.getItem(DEV_MODE_STORAGE_KEY) === 'true';
+}
 
-console.log('Vite main.js - All items assigned to window:');
-console.log('- Weapons:', window.weapons.length);
-console.log('- Materials:', window.materials.length);
-console.log('- Armor:', window.armor.length);
-console.log('- Bionics:', window.bionics.length);
-console.log('- Chips:', window.chips.length);
-console.log('- Enemies:', window.enemies.length);
+const developerMode = resolveDeveloperMode();
+const EQUIPMENT_SLOTS = new Set(['mainHand', 'offHand', 'head', 'chest', 'legs', 'feet', 'gloves', 'bionic', 'chip']);
+const visibleOnly = (entries) => entries
+  .filter(entry => developerMode || !entry.developerOnly)
+  .map(entry => {
+    if (!EQUIPMENT_SLOTS.has(entry.slot) || entry.levelRequirement != null) return entry;
+    return { ...entry, levelRequirement: Number(entry.level || 1) };
+  });
 
-// Then, add a failsafe loader to ensure all items are available to the rest of the system
-window.addEventListener('load', () => {
-  console.log('Window load event - ensuring all item types are available');
-  
-  // Double-check all item types are in the global scope
-  if (!window.weapons || window.weapons.length === 0) {
-    console.log('Re-applying weapons to window object after load');
-    window.weapons = weapons;
-  }
-  
-  if (!window.materials || window.materials.length === 0) {
-    console.log('Re-applying materials to window object after load');
-    window.materials = materials;
-  }
-  
-  if (!window.armor || window.armor.length === 0) {
-    console.log('Re-applying armor to window object after load');
-    window.armor = armor;
-  }
-  
-  if (!window.bionics || window.bionics.length === 0) {
-    console.log('Re-applying bionics to window object after load');
-    window.bionics = bionics;
-  }
-  
-  if (!window.chips || window.chips.length === 0) {
-    console.log('Re-applying chips to window object after load');
-    window.chips = chips;
-  }
-  if (!window.enemies || window.enemies.length === 0) {
-    console.log('Re-applying enemies to window object after load');
-    window.enemies = enemies;
-  }
-  
-  // Force reload items after we know all item types are available
-  if (window.loadItems && window.items && 
-      (!window.items.find(item => item.type === 'Weapon') || 
-       !window.items.find(item => item.type === 'Material') ||
-       !window.items.find(item => item.type === 'Armor') ||
-       !window.items.find(item => item.type === 'Bionic'))) {
-    console.log('Reloading all items to include all modular item types');
-    window.items = window.loadItems();
-    console.log('Items reloaded, counts:', {
-      weapons: window.items.filter(item => item.type === 'Weapon').length,
-      materials: window.items.filter(item => item.type === 'Material').length,
-      armor: window.items.filter(item => item.type === 'Armor').length,
-      bionics: window.items.filter(item => item.type === 'Bionic').length,
-       components: window.items.filter(item => item.type === 'Component').length
-    });
-  }
+window.coreboundConfig = Object.freeze({
+  developerMode,
+  missingIcon: 'icons/default-icon.png'
 });
 
-console.log('Vite main.js - Loaded all items successfully');
-console.log('Example weapon from Vite:', window.weapons[0]?.name || 'No weapons found');
-console.log('Example material from Vite:', window.materials[0]?.name || 'No materials found');
-console.log('Example armor from Vite:', window.armor[0]?.name || 'No armor found');
-console.log('Example bionic from Vite:', window.bionics[0]?.name || 'No bionics found');
+window.weapons = visibleOnly(weapons);
+window.materials = visibleOnly(materials);
+window.armor = visibleOnly(armor);
+window.bionics = visibleOnly(bionics);
+window.chips = visibleOnly(chips);
+window.enemies = visibleOnly(enemyTemplates);
+
+window.loadItems = function loadItems() {
+  window.items = [
+    ...window.weapons,
+    ...window.armor,
+    ...window.bionics,
+    ...window.materials,
+    ...window.chips
+  ];
+  return window.items;
+};
+
+window.loadItems();
+
+// A missing bespoke image should never render as the browser's broken-image icon.
+document.addEventListener('error', (event) => {
+  const image = event.target;
+  if (!(image instanceof HTMLImageElement)) return;
+  if (image.dataset.fallbackApplied === 'true') return;
+  image.dataset.fallbackApplied = 'true';
+  image.src = window.coreboundConfig.missingIcon;
+}, true);
+
+function loadClassicScript(path) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = `./${path}`;
+    script.async = false;
+    script.addEventListener('load', resolve, { once: true });
+    script.addEventListener('error', () => reject(new Error(`Failed to load ${path}`)), { once: true });
+    document.head.appendChild(script);
+  });
+}
+
+for (const path of RUNTIME_SCRIPTS) {
+  await loadClassicScript(path);
+}
+
+window.dispatchEvent(new CustomEvent('coreboundReady', {
+  detail: {
+    developerMode,
+    itemCount: window.items.length,
+    enemyCount: window.enemies.length
+  }
+}));

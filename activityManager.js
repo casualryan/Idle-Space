@@ -119,7 +119,7 @@
             type: payload.type || 'generic',
             displayName: payload.displayName || payload.id || 'Activity',
             durationMs: Number(payload.durationMs) || 1000,
-            progressMs: 0,
+            progressMs: Math.max(0, Number(payload.progressMs) || 0),
             progressPercent: 0,
             timeRemainingMs: Number(payload.durationMs) || 1000,
             rewards: Array.isArray(payload.rewards) ? payload.rewards : [],
@@ -131,7 +131,7 @@
             context: payload.context || {},
             getDurationMs: payload.getDurationMs,
             onComplete: payload.onComplete,
-            completedCycles: 0,
+            completedCycles: Math.max(0, Number(payload.completedCycles) || 0),
             startedAt: now,
             lastUpdatedAt: now,
         };

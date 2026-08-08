@@ -1,6 +1,7 @@
 // src/items/weapons/modPoolTestBlade.js
 export default {
   name: "Mod Pool Test Blade",
+  developerOnly: true,
   type: "Weapon",
   weaponType: "Sword",
   icon: "icons/ironsword.png",
@@ -29,5 +30,4 @@ export default {
   isDisassembleable: true,
   disassembleResults: [ { name: 'Scrap Metal', quantity: 1 } ]
 };
-
 

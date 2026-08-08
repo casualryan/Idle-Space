@@ -1,6 +1,7 @@
 // src/items/weapons/fireSpewerMk1.js
 export default {
         name: "Fire Spewer Mk1",
+        levelRequirement: 10,
         type: "Weapon",
         weaponType: "Pistol",
         icon: "icons/flame_thrower.png",

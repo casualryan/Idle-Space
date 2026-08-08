@@ -125,7 +125,7 @@ Definition:
 
 Per-fight behavior inside a delve:
 - HP/shield persist between fights.
-- Buffs are cleared between fights (with Medtek preservation hook support).
+- Buffs and debuffs are cleared between fights.
 - 3 second inter-fight pause.
 - attack timers reset on new spawn.
 
@@ -288,16 +288,17 @@ Application model:
 
 Buff model:
 - Timed stat changes processed in combat loop.
-- clearBuffs supports injector-preservation hook when requested.
+- Buffs are cleared at encounter boundaries without exceptions.
 
 Debuff model:
-- Debuff base chance: 0.10.
+- Each damage type has two inherent debuffs with an authored percentage chance.
 - Debuff chance can be increased by active style hit context bonus.
 - Dominant damage type chooses debuff family candidates.
-- Enemy-to-player application is blocked in this path.
+- Players and enemies use the same inherent damage-debuff application rules.
 
 Status effects:
-- Separate from debuff registry, with independent tick/expiry processing.
+- Buffs and debuffs are the authoritative effect registries. The disconnected
+  legacy status-effect pipeline has been removed.
 
 Effect trigger model:
 - Supported trigger names in processing path: onHit, onCritical, whenHit, bionic.
@@ -373,18 +374,18 @@ Combat/delve interactions:
 - Active crafting system, but not wired through activityManager.
 - Uses its own fabrication runtime tracking model.
 
-12.4 Medtek
------------
-- Injector crafting system exists.
-- Injectors are timed buffs in current implementation, not delve-scope-only picks.
+12.4 Reserved
+-------------
+- Medtek and injectors were removed from the active runtime. This section is
+  reserved for a future system rather than documenting disconnected code.
 
 ================================================================================
 13. SAVE/LOAD, VERSIONING, AND MIGRATIONS [IMPLEMENTED]
 ================================================================================
 
 Snapshot/version:
-- buildGameStateSnapshot includes meta.version = 3.
-- Includes combat styles state and activity state.
+- buildGameStateSnapshot includes meta.version = 4.
+- Includes combat styles, gathering progress, and fabrication reservation state.
 
 Slot model:
 - 5 save slots.

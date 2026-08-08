@@ -1,5 +1,6 @@
 export default {
     name: 'Reactive Barbs',
+    levelRequirement: 3,
     type: 'Bionic',
     icon: 'icons/reactive_barbs.png',
     slot: 'bionic',
@@ -11,7 +12,7 @@ export default {
             parameters: {
                 damageType: 'kinetic',
                 amount: 2,
-                ignoreDefenses: true
+                ignoreDefense: false
             }
         },
     ],
@@ -22,4 +23,4 @@ export default {
         },
     ],
     description: 'When hit, deal 2 Kinetic damage to the target.'
-}; 
+};

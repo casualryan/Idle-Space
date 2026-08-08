@@ -57,21 +57,6 @@ const balancedStyleNodes = [
     { id: 'combatThesis', name: 'Combat Thesis', type: 'keystone', x: 8, y: 11, maxPoints: 1, cost: 1, icon: 'core', description: 'Gain a broad mix of damage, speed, resistance, and debuff chance.', requires: ['ironRhythm'] },
 ];
 
-function cloneTree(nodes, prefix, namePrefix) {
-    return nodes.map((node) => {
-        const id = `${prefix}_${node.id}`;
-        const requires = (node.requires || []).map((req) => `${prefix}_${req}`);
-        const mutuallyExclusiveWith = (node.mutuallyExclusiveWith || []).map((ex) => `${prefix}_${ex}`);
-        return {
-            ...node,
-            id,
-            name: namePrefix ? `${namePrefix} ${node.name}` : node.name,
-            requires,
-            mutuallyExclusiveWith,
-        };
-    });
-}
-
 function makeStyle(id, name, description, preview, profile, nodes) {
     return {
         id,
@@ -97,46 +82,6 @@ const combatStyles = [
         '1.00x speed · 1 hit · 100% damage',
         { attackTimeMultiplier: 1, damageMultiplier: 1, hitCount: 1 },
         balancedStyleNodes
-    ),
-    makeStyle(
-        'twinStyle',
-        'Twin Style',
-        'A split attack profile favoring repeated strikes and proc consistency.',
-        '0.90x speed · 2 hits · 65% damage',
-        { attackTimeMultiplier: 0.9, damageMultiplier: 0.65, hitCount: 2 },
-        cloneTree(balancedStyleNodes, 'twin', 'Twin')
-    ),
-    makeStyle(
-        'heavyStyle',
-        'Heavy Style',
-        'Crushing cadence with slower tempo and stronger individual impacts.',
-        '1.35x speed · 1 hit · 140% damage',
-        { attackTimeMultiplier: 1.35, damageMultiplier: 1.4, hitCount: 1 },
-        cloneTree(balancedStyleNodes, 'heavy', 'Heavy')
-    ),
-    makeStyle(
-        'rapidStyle',
-        'Rapid Style',
-        'A fast pressure style built around volume and momentum.',
-        '0.75x speed · 4 hits · 45% damage',
-        { attackTimeMultiplier: 0.75, damageMultiplier: 0.45, hitCount: 4 },
-        cloneTree(balancedStyleNodes, 'rapid', 'Rapid')
-    ),
-    makeStyle(
-        'focusedStyle',
-        'Focused Style',
-        'A measured style emphasizing precision windows and crit scaling.',
-        '1.20x speed · 1 hit · 85% damage',
-        { attackTimeMultiplier: 1.2, damageMultiplier: 0.85, hitCount: 1, critChanceMultiplier: 1.1 },
-        cloneTree(balancedStyleNodes, 'focused', 'Focused')
-    ),
-    makeStyle(
-        'guardedStyle',
-        'Guarded Style',
-        'Defensive tempo that trades output for survivability and control.',
-        '1.05x speed · 1 hit · 90% damage',
-        { attackTimeMultiplier: 1.05, damageMultiplier: 0.9, hitCount: 1 },
-        cloneTree(balancedStyleNodes, 'guarded', 'Guarded')
     ),
 ];
 

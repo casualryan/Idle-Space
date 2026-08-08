@@ -1,5 +1,6 @@
 export default {
     name: "Metal Carapace",
+    levelRequirement: 20,
     type: "Armor",
     icon: "icons/heavy_armor.png",
     damageTypes: {},
@@ -20,25 +21,5 @@ export default {
             name: 'Scrap Metal', quantity: 3
         },
     ],
-    effects: [
-        {
-            trigger: 'whenHit',
-            chance: 0.1, // 10% chance
-            action: 'heal',
-            parameters: {
-                amount: 30
-            }
-        },
-        {
-            trigger: 'whenHit',
-            chance: 0.25, // 10% chance
-            action: 'dealDamage',
-            parameters: {
-                damageType: 'kinetic',
-                amount: 15,
-                ignoreDefenses: true
-            }
-        }
-    ],
-    description: '10% chance when hit to gain 30 life. 25% chance when hit to deal 15 Kinetic damage, ignoring defenses.'
-}; 
+    description: 'Heavy plating formed into a durable protective shell.'
+};

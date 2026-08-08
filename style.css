@@ -3489,6 +3489,99 @@ hr {
     box-shadow: 0 0 20px rgba(249, 65, 68, 0.7);
 }
 
+.delve-claim-cache-access {
+    display: grid;
+    gap: 6px;
+    margin: 0 0 12px;
+    padding: 12px;
+    border: 1px solid #ff6464;
+    border-radius: 6px;
+    background: rgba(70, 12, 20, 0.5);
+    color: #e0f2ff;
+    position: relative;
+    z-index: 2;
+}
+
+.delve-claim-cache-access strong {
+    color: #ffd166;
+    font-family: 'Orbitron', sans-serif;
+}
+
+.delve-claim-cache-access button,
+.delve-claim-cache-actions button,
+.delve-claim-cache-item button {
+    padding: 8px 12px;
+    border: 1px solid #00d9ff;
+    border-radius: 4px;
+    background: linear-gradient(to bottom, #063852, #021a2b);
+    color: #dffcff;
+    cursor: pointer;
+}
+
+.delve-claim-cache-warning {
+    color: #ff6b6b;
+    font-weight: 700;
+}
+
+.delve-claim-cache-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.78);
+}
+
+.delve-claim-cache-popup {
+    width: min(620px, 92vw);
+    max-height: 82vh;
+    overflow: auto;
+    padding: 20px;
+    border: 2px solid #00d9ff;
+    border-radius: 10px;
+    background: linear-gradient(160deg, #071c2d, #020912);
+    box-shadow: 0 0 28px rgba(0, 217, 255, 0.3);
+    color: #e0f2ff;
+}
+
+.delve-claim-cache-popup h2 {
+    margin-top: 0;
+    color: #00ffcc;
+}
+
+.delve-claim-cache-credits {
+    margin: 12px 0;
+    color: #ffd166;
+}
+
+.delve-claim-cache-list {
+    display: grid;
+    gap: 6px;
+    max-height: 42vh;
+    overflow: auto;
+    padding: 0;
+    list-style: none;
+}
+
+.delve-claim-cache-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+    border: 1px solid rgba(0, 217, 255, 0.25);
+    background: rgba(0, 40, 60, 0.55);
+}
+
+.delve-claim-cache-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+}
+
 .delve-location-button {
     padding: 12px 20px;
     background: linear-gradient(135deg, #003559, #005f73);
@@ -3767,6 +3860,9 @@ hr {
     transition: all 0.3s ease;
     position: relative;
     overflow: hidden;
+    color: #cccccc;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 14px;
 }
 
 .codex-category-button::before {
@@ -3814,6 +3910,7 @@ hr {
 .codex-category-button.active {
     background: linear-gradient(to bottom, #002e5c, #001c33);
     box-shadow: 0 0 10px rgba(0, 255, 204, 0.2);
+    color: #ffffff;
 }
 
 .codex-content {
@@ -3910,6 +4007,18 @@ hr {
     padding: 12px 15px;
     background: linear-gradient(to right, rgba(0, 30, 60, 0.8), rgba(0, 15, 30, 0.5));
     cursor: pointer;
+    color: #00ffcc;
+    font-size: 16px;
+}
+
+.codex-enemy > h4 {
+    color: #00ffcc;
+    margin: 12px 15px 4px;
+}
+
+.codex-enemy > .codex-text {
+    margin-left: 15px;
+    margin-right: 15px;
 }
 
 .codex-enemy-header h4 {

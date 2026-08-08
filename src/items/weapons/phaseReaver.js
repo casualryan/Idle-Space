@@ -24,21 +24,10 @@ export default {
         deflection: { min: 10, max: 15 },
         defenseTypes: {},
         slot: 'mainHand',
-        effects: [
-            {
-                trigger: 'onCritical',
-                chance: 0.4,
-                action: 'applyStatusEffect',
-                parameters: {
-                    effect: 'Phased',
-                    duration: 3
-                }
-            }
-        ],
         isDisassembleable: true,
         disassembleResults: [
             { name: 'Unstable Phase Core', quantity: 1 },
             { name: 'Advanced Alloy', quantity: 2 }
         ],
-        description: 'A fast-striking blade that occasionally phases targets out of reality. 40% chance on critical hits to apply Phased status for 3 seconds.'
+        description: 'A fast-striking phase blade tuned for physical damage and critical hits.'
     };

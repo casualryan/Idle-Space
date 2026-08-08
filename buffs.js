@@ -13,7 +13,9 @@ const buffs = [
         description: "Increases kinetic damage.",
         type: "buff",
         statChanges: {
-            kinetic: 5,
+            damageTypes: {
+                kinetic: 5
+            }
         },
         duration: 60000 
     },

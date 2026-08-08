@@ -1,5 +1,6 @@
 export default {
     name: 'Electric Booster',
+    levelRequirement: 1,
     type: 'Bionic',
     icon: 'icons/electric_booster.png',
     slot: 'bionic',
@@ -15,4 +16,4 @@ export default {
         },
     ],
     description: 'Increases Electric Damage Multiplier.'
-}; 
+};

@@ -1,5 +1,6 @@
 export default {
     name: 'Reaction Enhancer',
+    levelRequirement: 4,
     type: 'Bionic',
     icon: 'icons/reactionenhancer.png',
     slot: 'bionic',
@@ -11,4 +12,4 @@ export default {
         },
     ],
     description: 'Increases Attack Speed by 20%-35%.'
-}; 
+};

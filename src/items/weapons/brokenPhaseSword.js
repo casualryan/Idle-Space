@@ -1,6 +1,7 @@
 // src/items/weapons/brokenPhaseSword.js
 export default {
         name: "Broken Phase Sword",
+        levelRequirement: 1,
         type: "Weapon",
         weaponType: "Sword",
         icon: "icons/broken_phase_sword.png",
@@ -16,17 +17,5 @@ export default {
             },
         ],
         isDisassembleable: true,
-        effects: [
-            {
-                trigger: 'onHit',
-                chance: .2, // 20% chance
-                action: 'dealDamage',
-                parameters: {
-                    damageType: 'kinetic',
-                    amount: 5,
-                    ignoreDefense: true
-                }
-            }
-        ],
-        description: '20% chance on hit to deal 5 kinetic damage, ignoring defense. Adds bonus physical damage.'
+        description: 'A damaged phase blade kept functional through improvised repairs.'
     };

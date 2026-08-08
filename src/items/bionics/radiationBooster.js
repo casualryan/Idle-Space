@@ -1,5 +1,6 @@
 export default {
     name: 'Radiation Booster',
+    levelRequirement: 1,
     type: 'Bionic',
     icon: 'icons/radiation_booster.png',
     slot: 'bionic',
@@ -15,4 +16,4 @@ export default {
         },
     ],
     description: 'Increases Radiation Damage Multiplier.'
-}; 
+};

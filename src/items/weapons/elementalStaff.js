@@ -1,6 +1,7 @@
 // src/items/weapons/elementalStaff.js
 export default {
         name: 'Elemental Staff',
+        levelRequirement: 5,
         type: "Weapon",
         weaponType: "Staff",
         icon: "icons/staff.png",

@@ -1,6 +1,7 @@
 // src/items/weapons/brokenPoisonPistol.js
 export default {
         name: "Broken Poison Pistol",
+        levelRequirement: 1,
         type: "Weapon",
         weaponType: "Pistol",
         icon: "icons/poison_pistol.png",

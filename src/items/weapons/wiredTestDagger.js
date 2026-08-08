@@ -1,6 +1,7 @@
 // src/items/weapons/wiredTestDagger.js
 export default {
   name: "Wired Test Dagger",
+  developerOnly: true,
   type: "Weapon",
   weaponType: "Dagger",
   icon: "icons/ironsword.png",
@@ -26,5 +27,4 @@ export default {
   disassembleResults: [ { name: 'Scrap Metal', quantity: 1 } ],
   description: "Test dagger with a chance to spawn 1 wire socket that can be any color."
 };
-
 

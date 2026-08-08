@@ -164,6 +164,10 @@ function normalizeWeaponDamageTypes(source) {
 const weapons = rawWeapons.map((weapon) => {
   if (!weapon || typeof weapon !== 'object') return weapon;
   const migrated = { ...weapon };
+  if (migrated.levelRequirement == null) {
+    migrated.levelRequirement = Number(migrated.level || 1);
+  }
+  delete migrated.level;
   if (!migrated.weaponBaseDamage && migrated.damageTypes) {
     migrated.weaponBaseDamage = normalizeWeaponDamageTypes(migrated.damageTypes);
     delete migrated.damageTypes;

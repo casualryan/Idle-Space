@@ -1,5 +1,6 @@
 export default {
     name: 'Cryo Booster',
+    levelRequirement: 1,
     type: 'Bionic',
     icon: 'icons/cryo_booster.png',
     slot: 'bionic',
@@ -15,4 +16,4 @@ export default {
         },
     ],
     description: 'Increases Cryo Damage Multiplier.'
-}; 
+};

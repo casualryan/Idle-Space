@@ -1,5 +1,6 @@
 export default {
     name: 'Health Module',
+    levelRequirement: 1,
     type: 'Bionic',
     icon: 'icons/healthModule.png',
     healthBonusPercentRange: { min: 6, max: 9 },
@@ -11,4 +12,4 @@ export default {
         },
     ],
     description: 'Increases Max Health.'
-}; 
+};

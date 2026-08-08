@@ -310,6 +310,22 @@ document.addEventListener('DOMContentLoaded', () => {
     [s,f,o].forEach(el => { if (el) el.addEventListener('input', updateInventoryDisplay); });
 });
 
+function recomputePlayerEffects() {
+    const equipment = player?.equipment || {};
+    const equipped = ['mainHand', 'offHand', 'head', 'chest', 'legs', 'feet', 'gloves']
+        .map(slot => equipment[slot])
+        .filter(Boolean);
+    if (Array.isArray(equipment.bionicSlots)) {
+        equipped.push(...equipment.bionicSlots.filter(Boolean));
+    }
+    player.effects = equipped.flatMap(item => Array.isArray(item.effects)
+        ? item.effects.map(effect => ({ ...effect, sourceSlot: item.slot || null, sourceItemName: item.name }))
+        : []);
+    return player.effects;
+}
+
+window.recomputePlayerEffects = recomputePlayerEffects;
+
 // Function to equip an item from inventory
 function equipItem(item) {
     if (!item || !item.slot) {
@@ -376,19 +392,7 @@ function equipItem(item) {
     
     updateInventoryDisplay();
     // Recompute proc effects from equipped gear
-    if (typeof recomputePlayerEffects === 'function') {
-        recomputePlayerEffects();
-    } else {
-        // Inline fallback
-        try {
-            const newEffects = [];
-            const eq = player && player.equipment ? player.equipment : {};
-            const slots = ['mainHand','offHand','head','chest','legs','feet','gloves'];
-            slots.forEach(s => { const it = eq[s]; if (it && Array.isArray(it.effects)) newEffects.push(...it.effects); });
-            if (Array.isArray(eq.bionicSlots)) { eq.bionicSlots.forEach(it => { if (it && Array.isArray(it.effects)) newEffects.push(...it.effects); }); }
-            player.effects = newEffects;
-        } catch (_) {}
-    }
+    recomputePlayerEffects();
 
     updateEquipmentDisplay();
     updatePlayerStatsDisplay();
@@ -424,6 +428,7 @@ function updateEquipmentDisplay() {
         // Add a slight delay to each slot update for a cascading effect
         setTimeout(() => {
             slotElement.innerHTML = ''; // Clear current content
+            slotElement.onclick = null;
             
             if (equippedItem) {
                 // Create a wrapper div to hold icon and tooltip data
@@ -488,9 +493,9 @@ function updateEquipmentDisplay() {
                 setTimeout(() => slotElement.classList.remove('pulse-empty'), 1000);
                 
                 // Add click handler for empty slots
-                slotElement.addEventListener('click', () => {
+                slotElement.onclick = () => {
                     showEquipmentSelectionWindow(slotName);
-                });
+                };
                 slotElement.style.cursor = 'pointer';
             }
         }, index * 100); // Stagger the updates by 100ms per slot
@@ -503,6 +508,7 @@ function updateEquipmentDisplay() {
         // Add a slight delay for cascading effect, continuing from regular equipment
         setTimeout(() => {
             slotElement.innerHTML = '';
+            slotElement.onclick = null;
 
             if (item) {
                 const wrapper = document.createElement('div');
@@ -557,9 +563,9 @@ function updateEquipmentDisplay() {
                 setTimeout(() => slotElement.classList.remove('pulse-empty'), 1000);
                 
                 // Add click handler for empty bionic slots
-                slotElement.addEventListener('click', () => {
+                slotElement.onclick = () => {
                     showEquipmentSelectionWindow('bionic', index);
-                });
+                };
                 slotElement.style.cursor = 'pointer';
             }
         }, (slots.length + index) * 100); // Continue the staggered timing from regular equipment
@@ -718,15 +724,20 @@ function showConfirmationPopup(message, onConfirm, onSecondary = null) {
 
     const yesButton = document.createElement('button');
     yesButton.textContent = 'Yes';
+    const closePopup = () => {
+        document.removeEventListener('keydown', onKey);
+        if (overlay && overlay.parentNode) overlay.remove();
+    };
+
     yesButton.addEventListener('click', () => {
         try { if (typeof onConfirm === 'function') onConfirm(); } catch (e) { console.error(e); }
-        if (overlay && overlay.parentNode) overlay.remove();
+        closePopup();
     });
 
     const noButton = document.createElement('button');
     noButton.textContent = 'No';
     noButton.addEventListener('click', () => {
-        if (overlay && overlay.parentNode) overlay.remove();
+        closePopup();
     });
 
     buttonsContainer.appendChild(yesButton);
@@ -738,7 +749,7 @@ function showConfirmationPopup(message, onConfirm, onSecondary = null) {
         secondaryButton.textContent = 'Disassemble';
         secondaryButton.addEventListener('click', () => {
             try { if (typeof onSecondary === 'function') onSecondary(); } catch (e) { console.error(e); }
-            if (overlay && overlay.parentNode) overlay.remove();
+            closePopup();
         });
         buttonsContainer.appendChild(secondaryButton);
     }
@@ -748,8 +759,8 @@ function showConfirmationPopup(message, onConfirm, onSecondary = null) {
     document.body.appendChild(overlay);
 
     // Close when clicking outside
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-    const onKey = (e) => { if (e.key === 'Escape') { if (overlay && overlay.parentNode) overlay.remove(); document.removeEventListener('keydown', onKey); } };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closePopup(); });
+    const onKey = (e) => { if (e.key === 'Escape') closePopup(); };
     document.addEventListener('keydown', onKey);
 }
 
@@ -857,17 +868,13 @@ function getEquippedItemBySlot(slotName) {
 
 // Function to unequip an item
 function unequipItem(slotName) {
-    // Validate the slot exists and has an item
-    if (!player.equipment[slotName]) {
-        return false;
-    }
-
     // If the slot is a bionic slot, handle differently
     if (slotName.startsWith('bionic-slot-')) {
         const slotIndex = parseInt(slotName.split('-')[2]);
         if (isNaN(slotIndex) || slotIndex < 0 || slotIndex >= player.equipment.bionicSlots.length) {
             return false;
         }
+        if (!player.equipment.bionicSlots[slotIndex]) return false;
         // Add the bionic back to inventory
         addItemToInventory(player.equipment.bionicSlots[slotIndex]);
         
@@ -879,6 +886,7 @@ function unequipItem(slotName) {
         // Remove from equipment
         player.equipment.bionicSlots[slotIndex] = null;
     } else {
+        if (!player.equipment[slotName]) return false;
         // Regular equipment slot
         // Add back to inventory
         addItemToInventory(player.equipment[slotName]);
@@ -896,12 +904,11 @@ function unequipItem(slotName) {
     resetGearPassiveBonuses();
     
     // Recalculate player stats after unequipping the item
-    player.currentHealth = null;
-    player.currentShield = null;
     player.calculateStats();
     
     // Reapply passives since gear bonuses changed
     applyAllPassivesToPlayer();
+    recomputePlayerEffects();
 
     // Update displays
     updateInventoryDisplay();
@@ -1080,7 +1087,7 @@ function showEquipmentSelectionWindow(slotName, bionicIndex = null) {
         });
         unequipButton.addEventListener('click', () => {
             if (slotName === 'bionic') {
-                unequipBionic(bionicIndex);
+                unequipItem(`bionic-slot-${bionicIndex}`);
             } else {
                 unequipItem(slotName);
             }
@@ -1776,4 +1783,3 @@ function openManageWiresWindow(item) {
     const onKey = (e) => { if (e.key === 'Escape') { if (overlay && overlay.parentNode) overlay.remove(); document.removeEventListener('keydown', onKey); } };
     document.addEventListener('keydown', onKey);
 }
-

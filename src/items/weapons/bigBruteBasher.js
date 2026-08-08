@@ -1,6 +1,7 @@
 // src/items/weapons/bigBruteBasher.js
 export default {
     name: "Big Brute Basher",
+    levelRequirement: 50,
     type: "Weapon",
     weaponType: "Mace",
     icon: "icons/default-icon.png",
@@ -13,9 +14,6 @@ export default {
             kinetic: 100 // +100% kinetic damage
         }
     },
-    passiveBonuses: {
-        "Kinetic Mastery": 4
-    },
     slot: 'mainHand',
     wires: {
         totalSlots: "3-3",
@@ -27,5 +25,3 @@ export default {
         { name: 'Scrap Metal', quantity: 3 }
     ]
 };
-
-

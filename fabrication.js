@@ -3,7 +3,8 @@ console.log('fabricating.js loaded');
 console.log('window.inventory at the start:', window.inventory);
 console.log('addInventoryChangeListener at the start:', typeof addInventoryChangeListener);
 
-const ongoingFabrications = {}; // Tracks active fabrications by recipe name
+const ongoingFabrications = {}; // Single active job, keyed by recipe name for save compatibility.
+const FABRICATION_DURATION_MS = 5000;
 const FABRICATION_TAB_ORDER = [
     'Weapons',
     'Off-Hands',
@@ -270,8 +271,61 @@ function refreshDamageFocusControls(container, category) {
 }
 
 function getFabricationDurationMs(recipe) {
-    return (recipe.craftingTime || 5) * 1000;
+    return FABRICATION_DURATION_MS;
 }
+
+function scheduleFabrication(recipe, remainingMs = FABRICATION_DURATION_MS) {
+    const durationMs = FABRICATION_DURATION_MS;
+    const safeRemaining = Math.max(0, Math.min(durationMs, Number(remainingMs) || durationMs));
+    ongoingFabrications[recipe.name] = {
+        recipe,
+        startTime: Date.now() - (durationMs - safeRemaining),
+        durationMs,
+        intervalId: null
+    };
+
+    ongoingFabrications[recipe.name].intervalId = setInterval(() => {
+        if (!ongoingFabrications[recipe.name]) return;
+        const { percent } = getFabricationProgress(recipe.name);
+        syncAllFabricationUI();
+        if (percent >= 100) completeFabrication(recipe);
+    }, 100);
+}
+
+function getFabricationState() {
+    return Object.values(ongoingFabrications).map(fabrication => ({
+        recipeName: fabrication.recipe.name,
+        remainingMs: Math.max(0, fabrication.durationMs - (Date.now() - fabrication.startTime))
+    }));
+}
+
+function clearFabricationsOnLoad() {
+    Object.values(ongoingFabrications).forEach(fabrication => clearInterval(fabrication.intervalId));
+    Object.keys(ongoingFabrications).forEach(name => delete ongoingFabrications[name]);
+}
+
+function restoreFabricationState(savedFabrications) {
+    clearFabricationsOnLoad();
+    if (!Array.isArray(savedFabrications)) return;
+    const [activeJob, ...legacyExtraJobs] = savedFabrications;
+    if (activeJob) {
+        const recipe = window.recipes?.find(candidate => candidate.name === activeJob.recipeName);
+        if (recipe) scheduleFabrication(recipe, activeJob.remainingMs);
+    }
+    legacyExtraJobs.forEach(saved => {
+        const recipe = window.recipes?.find(candidate => candidate.name === saved.recipeName);
+        if (recipe) refundMaterials(recipe.ingredients);
+    });
+    if (legacyExtraJobs.length > 0) {
+        logMessage('Older concurrent fabrication jobs were cancelled and their materials refunded.');
+    }
+    renderFabricationActivePanel();
+    syncAllFabricationUI();
+}
+
+window.getFabricationState = getFabricationState;
+window.clearFabricationsOnLoad = clearFabricationsOnLoad;
+window.restoreFabricationState = restoreFabricationState;
 
 function getFabricationProgress(recipeName) {
     const fabrication = ongoingFabrications[recipeName];
@@ -383,6 +437,11 @@ function startFabrication(recipe) {
         return;
     }
 
+    if (Object.keys(ongoingFabrications).length > 0) {
+        logMessage('The fabricator can run exactly one job at a time. Cancel or finish the active job first.');
+        return;
+    }
+
     if (!hasRequiredMaterials(recipe.ingredients)) {
         logMessage('You do not have the required materials to fabricate this item.');
         return;
@@ -397,34 +456,12 @@ function startFabrication(recipe) {
         return;
     }
 
-    const startTime = Date.now();
-    const durationMs = getFabricationDurationMs(recipe);
-
-    ongoingFabrications[recipe.name] = {
-        recipe,
-        startTime,
-        durationMs,
-        intervalId: null
-    };
-
     removeMaterialsFromInventory(recipe.ingredients);
     updateInventoryDisplay();
-
-    function updateProgress() {
-        if (!ongoingFabrications[recipe.name]) return;
-
-        const { percent } = getFabricationProgress(recipe.name);
-        syncAllFabricationUI();
-
-        if (percent >= 100) {
-            completeFabrication(recipe);
-        }
-    }
-
-    ongoingFabrications[recipe.name].intervalId = setInterval(updateProgress, 100);
+    scheduleFabrication(recipe);
 
     renderFabricationActivePanel();
-    syncAllFabricationUI();
+    displayFabricationRecipes();
     logMessage(`Started fabricating: ${recipe.name}`);
 }
 
@@ -597,6 +634,9 @@ function createRecipeCard(recipe) {
     card.dataset.recipeName = recipe.name;
     const itemTemplate = getRecipeItemTemplate(recipe);
     const inProgress = !!ongoingFabrications[recipe.name];
+    const fabricatorBusy = !inProgress && Object.keys(ongoingFabrications).length > 0;
+    const requiredLevel = getRecipeLevel(recipe);
+    const levelLocked = Number.isFinite(requiredLevel) && requiredLevel !== Number.MAX_SAFE_INTEGER && player.level < requiredLevel;
     
     // Card header
     const header = document.createElement('div');
@@ -606,6 +646,13 @@ function createRecipeCard(recipe) {
         <div class="recipe-type">${getRecipeSubtitle(recipe, itemTemplate)}</div>
     `;
     card.appendChild(header);
+    if (levelLocked) {
+        const warning = document.createElement('div');
+        warning.className = 'recipe-level-warning';
+        warning.style.color = '#ff6464';
+        warning.textContent = `Requires level ${requiredLevel} to equip. You may still fabricate it.`;
+        card.appendChild(warning);
+    }
     
     // Card body
     const body = document.createElement('div');
@@ -659,7 +706,7 @@ function createRecipeCard(recipe) {
     // Crafting time
     const craftingTime = document.createElement('div');
     craftingTime.className = 'recipe-time';
-    craftingTime.textContent = `Crafting Time: ${recipe.craftingTime || 5} seconds`;
+    craftingTime.textContent = 'Crafting Time: 5 seconds';
     body.appendChild(craftingTime);
     
     // Add fabricate button with progress bar
@@ -679,10 +726,10 @@ function createRecipeCard(recipe) {
 
     const button = document.createElement('button');
     button.className = 'fab-button';
-    button.textContent = inProgress ? 'Cancel Fabrication' : 'Fabricate';
+    button.textContent = inProgress ? 'Cancel Fabrication' : (fabricatorBusy ? 'Fabricator Busy' : 'Fabricate');
 
     const canCraft = hasRequiredMaterials(recipe.ingredients);
-    button.disabled = inProgress ? false : !canCraft;
+    button.disabled = inProgress ? false : (!canCraft || fabricatorBusy);
 
     if (inProgress) {
         card.classList.add('recipe-card-fabricating');

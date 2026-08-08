@@ -857,7 +857,7 @@ function getItemTooltipContent(item, showRanges = false) {
             } else {
                 bionicEff = `${item.bionicEfficiency}%`;
             }
-            content += `<span style="color: #c5a3ff;">Bionic Efficiency:</span> +${bionicEff}<br>`;
+            content += `<span style="color: #c5a3ff;">Bionic Efficiency:</span> +${bionicEff} <span style="color:#9fb4c8;">(increases bionic proc chances)</span><br>`;
         }
         
         content += `</div>`;
@@ -879,7 +879,7 @@ function getItemTooltipContent(item, showRanges = false) {
         content += `<span style=\"color: #8ab6ff; font-weight: bold;\">Debuffs:</span><br>`;
         debuffEffects.forEach((eff) => {
             const name = (eff.parameters && eff.parameters.debuffName) ? eff.parameters.debuffName : (eff.debuffName || 'Unknown');
-            const chance = (typeof eff.chance === 'number') ? `${Math.round(eff.chance * 100)}%` : (eff.chancePercent ? `${eff.chancePercent}%` : '—');
+            const chance = (typeof eff.chance === 'number') ? `${Math.round(eff.chance)}%` : (eff.chancePercent ? `${eff.chancePercent}%` : '—');
             content += `<span style=\"color:#cfe6ff;\">${capitalize(name)}:</span> <span style=\"color:#ffd166;\">${chance} chance</span>`;
             if (eff.parameters && eff.parameters.duration) {
                 content += ` <span style=\"color:#a0bfff;\">(${eff.parameters.duration}s)</span>`;
@@ -896,6 +896,13 @@ function getItemTooltipContent(item, showRanges = false) {
             const txt2 = (showRanges && typeof v2 === 'object' && v2.min !== undefined) ? `${v2.min} - ${v2.max}` : `${v2}`;
             content += `<span style=\"color:#cfe6ff;\">Max Severed Limbs:</span> <span style=\"color:#ffd166;\">${txt2}</span><br>`;
         }
+        const seepingStacks = item.maxSeepingWoundStacks ?? item.statModifiers?.maxSeepingWoundStacks;
+        if (seepingStacks !== undefined) {
+            const stackBonus = (showRanges && typeof seepingStacks === 'object' && seepingStacks.min !== undefined)
+                ? `${seepingStacks.min} - ${seepingStacks.max}`
+                : `${seepingStacks}`;
+            content += `<span style=\"color:#cfe6ff;\">Maximum Seeping Wound Stacks:</span> <span style=\"color:#ffd166;\">+${stackBonus}</span><br>`;
+        }
         content += `</div>`;
     }
 
@@ -909,7 +916,7 @@ function getItemTooltipContent(item, showRanges = false) {
         } else {
             bionicSync = `${item.bionicSync}%`;
         }
-        content += `<span style="color: #b19cd9;">Bionic Sync:</span> +${bionicSync}<br>`;
+        content += `<span style="color: #b19cd9;">Bionic Sync:</span> +${bionicSync} <span style="color:#9fb4c8;">(amplifies static stats from equipped bionics)</span><br>`;
         content += `</div>`;
     }
 
@@ -1214,14 +1221,6 @@ document.addEventListener('DOMContentLoaded', () => {
     window.forceHideTooltip = hideTooltip;
     window._globalTooltip = globalTooltip;
 });
-
-// Helper function (keep as is)
-function capitalize(str) {
-    if (typeof str !== 'string' || str.length === 0) {
-        return '';
-    }
-    return str.charAt(0).toUpperCase() + str.slice(1);
-}
 
 // Export functions that need to be accessed from other files
 window.getItemTooltipContent = getItemTooltipContent;

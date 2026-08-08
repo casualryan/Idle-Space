@@ -1,11 +1,12 @@
 export default {
     name: "Heavy Metal Boots",
+    levelRequirement: 10,
     type: "Boots",
     icon: "icons/heavy_metal_boots.png",
     defenseTypes: {
-        toughness: { min: 5, max: 10 },
-        immunity: { min: 5, max: 10 },
-        antimagnet: { min: 5, max: 10 }
+        physicalResistance: { min: 5, max: 10 },
+        chemicalResistance: { min: 5, max: 10 },
+        elementalResistance: { min: 5, max: 10 }
     },
     healthBonus: { min: 30, max: 30 },
     healthBonusPercentRange: { min: 10, max: 15 },
@@ -18,4 +19,4 @@ export default {
         },
     ],
     description: 'Defensive boots.'
-}; 
+};

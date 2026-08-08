@@ -1,4 +1,4 @@
-const locations = [
+const allLocations = [
     {
         name: "Testing Grounds",
         recommendedLevel: 10,
@@ -7,7 +7,8 @@ const locations = [
         ],
         numFights: 1,
         description: "A testing ground for new weapons and equipment.",
-        locationCategory: "industrial"
+        locationCategory: "industrial",
+        developerOnly: true
     },
     {
         name: "Scrap Intake Yard",
@@ -150,6 +151,10 @@ const locations = [
         locationCategory: "dangerous"
     }
 ];
+
+const locations = allLocations.filter(location =>
+    window.coreboundConfig?.developerMode || !location.developerOnly
+);
 
 // Example for adding more areas/enemies:
 /*

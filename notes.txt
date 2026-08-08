@@ -32,8 +32,7 @@ IGNORE: Add area sort options in addition to search bar. Sort by level, area bio
 
 IGNORE: Indicator for "True Max Level" (8) on passive skills. Max level by allocating passive points is 4, this can be over-leveled up to 8 with equipment.
 
-IGNORE: TECH BLUEPRINTS. These will be permanently held blueprints you can USE to add to your fabrication window forever. There will be a blueprint book showing which one's you've gathered.
-The way these work is simple, some items will require a blueprint. Once one is added, you can now make that item a limited number of times before the blueprint wears out (say, 5?). 
+FUTURE: TECH BLUEPRINTS. Finding and reading a blueprint permanently adds its recipe to the fabrication window and blueprint book. Learned recipes can be fabricated an unlimited number of times; blueprints do not wear out.
 This adds chase to crafting, while make some drops more exciting because they are rarer but multi-use
 
 IGNORE: Look closer at "viral" mechanic. Currently it doesn't do much.

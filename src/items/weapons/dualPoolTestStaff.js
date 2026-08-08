@@ -1,6 +1,7 @@
 // src/items/weapons/dualPoolTestStaff.js
 export default {
   name: "Dual Pool Test Staff",
+  developerOnly: true,
   type: "Weapon",
   weaponType: "Staff",
   icon: "icons/elemental_staff.png",
@@ -25,7 +26,6 @@ export default {
       from: [
         { path: "passiveBonuses.Swift Strikes", value: "1-1" },
         { path: "passiveBonuses.Kinetic Focus", value: "1-2" },
-        { path: "passiveBonuses.Slashing Focus", value: "1-2" },
         { path: "passiveBonuses.Physical Mastery", value: "1-2" }
       ]
     }
@@ -36,5 +36,3 @@ export default {
   isDisassembleable: true,
   disassembleResults: [ { name: 'Flux Crystal', quantity: 1 } ]
 };
-
-

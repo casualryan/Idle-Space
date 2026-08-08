@@ -1,94 +1,76 @@
-# Idle Game 2
+# Corebound: Synthetic Dominion
 
-An idle combat game with modular weapons, equipment, and various gameplay systems.
+Corebound is a browser-based combat and progression game built with Vite. The
+current repair pass keeps the existing gameplay while making runtime order,
+content registration, saves, and validation explicit.
 
-## Setup with Vite
+## Run the game
 
-This project now uses Vite for bundling the game's assets.
-
-### Development
-
-To run the development server:
-
-```
+```bash
+npm install
 npm run dev
 ```
 
-This will start a local development server and automatically open the game in your default browser.
+Open the URL printed by Vite. Production output can be checked with:
 
-### Production Build
-
-To build for production:
-
-```
-npm run build
-```
-
-This creates optimized files in the `dist` folder.
-
-To preview the production build:
-
-```
+```bash
+npm run validate
 npm run preview
 ```
 
-## File Structure
+`npm run validate` runs repository integrity tests and then creates a production
+build in `dist/`.
 
-The game's assets are organized as follows:
+## Developer mode
 
-- `src/` - Source files
-  - `items/` - Game items (all modularized)
-    - `weapons/` - Individual weapon files + index.js + TEMPLATE.js
-    - `materials/` - Individual material files + index.js
-    - `armor/` - Individual armor files + index.js + TEMPLATE.js
-    - `bionics/` - Individual bionic files + index.js + TEMPLATE.js
-    - `components/` - Placeholder for future component system
-  - `main.js` - Main entry point (imports all item types)
+Add `?dev=1` to the game URL, for example:
 
-## Adding New Items
+```text
+http://localhost:5173/?dev=1
+```
 
-All item types are now organized as individual files in their respective directories:
+Developer mode persists across reloads. It exposes the Testing Grounds, Big
+Bertha, test-only equipment and shops, and developer tools. Visit the URL with
+`?dev=0` to disable it again.
 
-### Adding New Weapons
-1. Copy the `TEMPLATE.js` file in `src/items/weapons/`
-2. Name it according to your weapon name (in camelCase)
-3. Fill in the weapon details
-4. Import and add it to the weapons array in `src/items/weapons/index.js`
+## Runtime architecture
 
-### Adding New Armor
-1. Copy the `TEMPLATE.js` file in `src/items/armor/`
-2. Name it according to your armor name (in camelCase)
-3. Fill in the armor details
-4. Import and add it to the armor array in `src/items/armor/index.js`
+- `src/main.js` is the Vite entry point. It registers modular items and enemies,
+  applies the developer-mode content filter, and starts the classic runtime.
+- `src/runtimeScripts.js` is the single authoritative load order for the classic
+  scripts that have not yet been migrated to modules.
+- `src/items/` contains one module per item and category index files.
+- `src/enemies/` contains enemy templates and their category index.
+- Root-level runtime files contain the remaining game systems, including combat,
+  gathering, fabrication, saves, shops, locations, loot, and the Codex.
+- `tests/` checks content references, load-order collisions, and gameplay data
+  contracts so disconnected content fails loudly during development.
 
-### Adding New Bionics
-1. Copy the `TEMPLATE.js` file in `src/items/bionics/`
-2. Name it according to your bionic name (in camelCase)
-3. Fill in the bionic details
-4. Import and add it to the bionics array in `src/items/bionics/index.js`
+## Adding content
 
-### Adding New Materials
-1. Follow the existing pattern in `src/items/materials/`
-2. Create a new file with the material definition
-3. Import and add it to the materials array in `src/items/materials/index.js`
+Create the item or enemy in its matching `src/` folder, then import and register
+it in that folder's `index.js`. Equipment needs a numeric `levelRequirement`.
+Enemy rewards must use `lootConfig` and named pools from `lootPools.js`; even a
+single unique boss reward belongs in a weighted loot table.
 
-See the README.md files in each directory for more details.
+Effect `chance` values are authored as percentages (`25` means 25%). Ordinary
+base equipment should differ through its core stats, not bespoke effects, unless
+the item is intentionally designed as a unique.
 
-## Migration Status
+The in-game Codex builds its enemy, debuff, and loot information from the live
+registries. Keep those registries authoritative instead of duplicating their
+facts in UI copy.
 
-- [x] Weapons - Migrated to individual files ✅
-- [x] Materials - Migrated to individual files ✅
-- [x] Armor - Migrated to individual files ✅
-- [x] Bionics - Migrated to individual files ✅
-- [x] Components - Placeholder structure created ✅
+## Current gameplay contracts
 
-**Migration Complete!** All item types are now using the modular ES6 structure.
-
-## Build System
-
-This project uses Vite for modern development and building:
-
-- `index.html` - Main entry point using Vite
-- `index.vite.html` - Backup copy (can be removed in future)
-
-All legacy item files have been removed and the migration to modular ES6 structure is complete. 
+- New characters receive a Broken Phase Sword and 1,000 credits.
+- Only Balanced Style is exposed until additional combat styles have distinct,
+  authored trees.
+- Fabrication reserves materials immediately, takes five seconds, allows one
+  active job, and refunds the reservation when cancelled.
+- Successful delve rewards enter a persistent claim cache. Starting another
+  delve destroys anything left there; auto re-deploy waits for the cache to be
+  claimed or sold.
+- Recipes are all available during the current baseline. A future blueprint
+  progression system will permanently teach a recipe when its blueprint is
+  read; learned recipes will remain reusable without consuming the blueprint.

@@ -3,8 +3,9 @@ export default {
     type: 'Bionic',
     icon: 'icons/chemical_booster.png',
     slot: 'bionic',
+    levelRequirement: 1,
     statModifiers: {
-        damageTypes: {
+        damageGroups: {
             chemical: { min: 10, max: 18 },
         },
     },
@@ -15,4 +16,4 @@ export default {
         },
     ],
     description: 'Increases Chemical Damage Multiplier.'
-}; 
+};

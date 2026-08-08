@@ -210,14 +210,13 @@ Effects (unchanged)
       // - bionic: fires from passive bionic rhythms (uses bionicEfficiency)
       // - onHeal: fires when this entity receives a heal (no efficiency bonus)
 
-      chance: number (0-1), // 0.3 = 30% base chance; efficiencies may increase this
-      action: 'dealDamage' | 'heal' | 'applyBuff' | 'applyDebuff' | 'applyStatusEffect',
+      chance: number (0-100), // 30 = 30% base chance; efficiencies may increase this
+      action: 'dealDamage' | 'heal' | 'applyBuff' | 'applyDebuff',
       // action notes:
       // - dealDamage: direct damage to target; supports damageTypes in parameters
       // - heal: restore health to wearer or ally
       // - applyBuff: apply named buff to target/self
       // - applyDebuff: apply named debuff to target (e.g., seepingWound)
-      // - applyStatusEffect: alias for applyDebuff used by some items
 
       parameters: { ... }
     }

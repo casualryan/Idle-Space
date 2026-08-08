@@ -1,6 +1,7 @@
 // src/items/weapons/ionizingWhip.js
 export default {
     name: "Ionizing Whip",
+    levelRequirement: 45,
     type: "Weapon",
     weaponType: "Whip",
     icon: "icons/default-icon.png",
@@ -11,7 +12,7 @@ export default {
     effects: [
         {
             trigger: 'onHit',
-            chance: 1.0,
+            chance: 100,
             action: 'dealDamage',
             parameters: {
                 damageType: 'pyro',
@@ -23,7 +24,6 @@ export default {
     additionalComboAttacks: { min: 1, max: 1 },
     comboEffectiveness: { min: 100, max: 100 },
     passiveBonuses: {
-        "Electric Mastery": 2,
         "Pyro Mastery": 1
     },
     slot: 'mainHand',
@@ -37,5 +37,3 @@ export default {
         { name: 'Scrap Metal', quantity: 2 }
     ]
 };
-
-

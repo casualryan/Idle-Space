@@ -22,7 +22,7 @@ export default {
         effects: [
             {
                 trigger: 'onHit',
-                chance: 0.33,
+                chance: 33,
                 action: 'dealDamage',
                 parameters: {
                     damageType: 'kinetic',

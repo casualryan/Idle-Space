@@ -29,26 +29,20 @@ const npcs = [
                 price: 1,
                 stock: 10,
                 defaultStock: 1,
-                levelReq: 1
+                levelReq: 1,
+                developerOnly: true
             },
-            { itemName: "Mod Pool Test Blade", price: 1, stock: 999, defaultStock: 999, levelReq: 1 },
-            { itemName: "Dual Pool Test Staff", price: 1, stock: 999, defaultStock: 999, levelReq: 1 },
-            { itemName: "Wired Test Dagger", price: 1, stock: 999, defaultStock: 999, levelReq: 1 },
-            { itemName: "Red Test Chip", price: 1, stock: 999, defaultStock: 999, levelReq: 1 },
-            { itemName: "Critical Test Bionic", price: 1, stock: 999, defaultStock: 999, levelReq: 1 },
-            { itemName: "Pyro Booster", price: 1, stock: 999, defaultStock: 999, levelReq: 1 }
+            { itemName: "Mod Pool Test Blade", price: 1, stock: 999, defaultStock: 999, levelReq: 1, developerOnly: true },
+            { itemName: "Dual Pool Test Staff", price: 1, stock: 999, defaultStock: 999, levelReq: 1, developerOnly: true },
+            { itemName: "Wired Test Dagger", price: 1, stock: 999, defaultStock: 999, levelReq: 1, developerOnly: true },
+            { itemName: "Red Test Chip", price: 1, stock: 999, defaultStock: 999, levelReq: 1, developerOnly: true },
+            { itemName: "Critical Test Bionic", price: 1, stock: 999, defaultStock: 999, levelReq: 1, developerOnly: true },
+            { itemName: "Pyro Booster", price: 1, stock: 999, defaultStock: 999, levelReq: 1, developerOnly: true }
         ]
     },
     {
         name: "Nurse Jen",
         inventory: [
-            {
-                itemName: "Empty Injector",
-                price: 50,
-                stock: 30,
-                defaultStock: 30,
-                levelReq: 10
-            },
             {
                 itemName: "Unstable Photon",
                 price: 100,
@@ -66,14 +60,16 @@ const npcs = [
                 price: 1,
                 stock: 5,
                 defaultStock: 5,
-                levelReq: 1
+                levelReq: 1,
+                developerOnly: true
             },
             {
                 itemName: "Phase Reaver",
                 price: 1,
                 stock: 5,
                 defaultStock: 5,
-                levelReq: 1
+                levelReq: 1,
+                developerOnly: true
             },
             {
                 itemName: "Minor Electronic Circuit",
@@ -87,21 +83,24 @@ const npcs = [
                 price: 100,
                 stock: 3,
                 defaultStock: 3,
-                levelReq: 1
+                levelReq: 1,
+                developerOnly: true
             },
             {
                 itemName: "Nanonic Phase Sword of Incision",
                 price: 1,
                 stock: 1,
                 defaultStock: 1,
-                levelReq: 1
+                levelReq: 1,
+                developerOnly: true
             },
             {
                 itemName: "Synthesized Alloy Chestplate",
                 price: 1,
                 stock: 5,
                 defaultStock: 5,
-                levelReq: 1
+                levelReq: 1,
+                developerOnly: true
             },
             {
                 itemName: "Big Brute Basher",
@@ -190,6 +189,7 @@ function displayNPCShop(npc) {
 
     // List items for sale
     npc.inventory.forEach((invItem, index) => {
+        if (invItem.developerOnly && !window.coreboundConfig?.developerMode) return;
         const itemTemplate = items.find(i => i.name === invItem.itemName);
         const itemName = itemTemplate ? itemTemplate.name : invItem.itemName;
         const itemPrice = invItem.price;

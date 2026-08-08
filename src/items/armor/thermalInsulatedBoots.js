@@ -1,5 +1,6 @@
 export default {
     name: "Thermal Insulated Boots",
+    levelRequirement: 15,
     type: "Armor",
     icon: "icons/thermal_boots.png",
     defenseTypes: {
@@ -15,4 +16,4 @@ export default {
         },
     ],
     description: 'Defensive boots.'
-}; 
+};

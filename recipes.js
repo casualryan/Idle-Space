@@ -643,7 +643,7 @@ const LEGACY_RECIPE_DAMAGE_FOCUS = {
     "Fire Spewer Mk1": "pyro"
 };
 
-function normalizeDamageFocus(rawFocus) {
+function normalizeRecipeDamageFocus(rawFocus) {
     if (!rawFocus) return null;
     const normalized = rawFocus.toLowerCase();
     if (normalized === "corrosive") return "chemical";
@@ -663,7 +663,7 @@ function normalizeDamageFocus(rawFocus) {
 
 function inferDamageFocusByName(name) {
     const inferred = inferTheme(name);
-    return normalizeDamageFocus(inferred) || "kinetic";
+    return normalizeRecipeDamageFocus(inferred) || "kinetic";
 }
 
 const recipeByName = new Map();
@@ -671,12 +671,11 @@ for (const recipe of [...recipes, ...baselineRecipes]) {
     const mergedRecipe = { ...recipe };
     if (mergedRecipe.category === "Weapons" || mergedRecipe.category === "Shields") {
         const legacyFocus = LEGACY_RECIPE_DAMAGE_FOCUS[mergedRecipe.name];
-        mergedRecipe.damageFocus = normalizeDamageFocus(mergedRecipe.damageFocus)
-            || normalizeDamageFocus(legacyFocus)
+        mergedRecipe.damageFocus = normalizeRecipeDamageFocus(mergedRecipe.damageFocus)
+            || normalizeRecipeDamageFocus(legacyFocus)
             || inferDamageFocusByName(mergedRecipe.name);
     }
     recipeByName.set(mergedRecipe.name, mergedRecipe);
 }
 
 window.recipes = Array.from(recipeByName.values());
-

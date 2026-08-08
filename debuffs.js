@@ -16,12 +16,12 @@ const debuffs = {
         description: "Misses next attack, then removed",
         icon: "icons/debuff-staggered.png",
         damageType: "kinetic",
-        duration: 1, // Duration in attacks, not time
+        duration: -1, // Until the affected entity attempts an attack
         stackable: false,
         onApply: function(target) {
             console.log(`${target.name} is staggered and will miss their next attack!`);
         },
-        onAttack: function(attacker) {
+        onBeforeAttack: function(attacker) {
             console.log(`${attacker.name} missed their attack due to being staggered!`);
             // Remove the debuff after missing the attack
             removeDebuff(attacker, "staggered");
@@ -63,10 +63,10 @@ const debuffs = {
     // Slashing Debuffs
     "exposed": {
         name: "Exposed",
-        description: "Next attacks deal maximum damage",
+        description: "The next three incoming hits use their maximum damage roll",
         icon: "icons/debuff-exposed.png",
         damageType: "slashing",
-        duration: 3, // Number of hits
+        duration: -1, // Until three incoming hits are consumed
         stackable: false,
         hitsRemaining: 3,
         onApply: function(target) {
@@ -82,33 +82,40 @@ const debuffs = {
                     removeDebuff(target, "exposed");
                 }
                 
-                return {
-                    maximizeDamage: true
-                };
             }
-            return {};
         }
     },
     "severedLimb": {
         name: "Severed Limb",
-        description: "Damage permanently reduced to 3/4",
+        description: "Damage permanently reduced by 25% per severed limb",
         icon: "icons/debuff-severed-limb.png",
         damageType: "slashing",
         duration: -1, // Permanent (-1)
-        stackable: false,
-        onApply: function(target) {
-            // Check if already applied
-            if (target.hasDebuff && target.hasDebuff("severedLimb")) {
-                return false; // Don't apply again
+        stackable: true,
+        stacks: 1,
+        maxStacks: 1,
+        variableMaxStacks: true,
+        onApply: function(target, applier) {
+            const allowedStacks = Math.max(1, Math.floor(Number(applier?.totalStats?.maxSeveredLimbs || 1)));
+            const existingDebuff = target.activeDebuffs?.find(debuff => debuff.name === this.name);
+
+            if (existingDebuff) {
+                existingDebuff.maxStacks = allowedStacks;
+                if (existingDebuff.stacks >= allowedStacks) return false;
+                existingDebuff.stacks++;
+                this.stacks = existingDebuff.stacks;
+            } else {
+                this.stacks = 1;
+                this.maxStacks = allowedStacks;
             }
-            
-            console.log(`${target.name} has a severed limb! Damage permanently reduced to 3/4!`);
-            
-            // Store and modify damage multiplier
+
             if (!target.totalStats.damageMultipliers) {
                 target.totalStats.damageMultipliers = {};
             }
-            target.totalStats.damageMultipliers.severedLimb = 0.75;
+            const currentStacks = existingDebuff ? existingDebuff.stacks : this.stacks;
+            target.totalStats.damageMultipliers.severedLimb = Math.pow(0.75, currentStacks);
+            console.log(`${target.name} has ${currentStacks} severed limb${currentStacks === 1 ? '' : 's'}! Damage multiplier is ${target.totalStats.damageMultipliers.severedLimb}.`);
+            return !existingDebuff;
         }
         // No onRemove as it's permanent
     },
@@ -269,43 +276,35 @@ const debuffs = {
     // Electric Debuffs
     "zapped": {
         name: "Zapped",
-        description: "Next hit is a guaranteed critical with bonus damage",
+        description: "The next incoming hit is guaranteed to critically hit with +50% critical damage",
         icon: "icons/debuff-zapped.png",
         damageType: "electric",
         duration: -1, // Until next attack
         stackable: false,
-        critBonus: 50, // Percentage
+        critDamageBonus: 0.5,
         onApply: function(target, applier) {
             const statBonus = applier ? (applier.totalStats.debuffBonus || 0) : 0;
-            this.critBonus = 50 * (1 + statBonus);
-            console.log(`${target.name} is zapped! Next hit will be a critical with ${this.critBonus}% bonus critical damage!`);
-        },
-        onAttack: function(attacker, defender) {
-            // This should be checked before the attack is processed
-            console.log(`${attacker.name}'s next attack will be a guaranteed critical with bonus damage!`);
-            removeDebuff(attacker, "zapped");
-            return {
-                guaranteeCritical: true,
-                criticalDamageBonus: this.critBonus / 100
-            };
+            this.critDamageBonus = 0.5 * (1 + statBonus);
+            console.log(`${target.name} is zapped! The next incoming hit is guaranteed to critically hit.`);
         }
     },
     "shocked": {
         name: "Shocked",
-        description: "Takes 2x damage of next hit",
+        description: "The next incoming hit deals an additional 100% of that hit as electric damage",
         icon: "icons/debuff-shocked.png",
         damageType: "electric",
         duration: -1, // Until next hit
         stackable: false,
-        storedDamage: 0,
-        onApply: function(target, damage) {
-            this.storedDamage = damage ? damage.total * 2 : 0;
-            console.log(`${target.name} is shocked! Will take ${this.storedDamage} damage on next hit!`);
+        onApply: function(target) {
+            console.log(`${target.name} is shocked! The next incoming hit will discharge for equal electric damage.`);
         },
         onReceiveHit: function(target, damage) {
-            console.log(`${target.name} took ${this.storedDamage} additional damage from shock!`);
-            applyEffectDamage(target, this.storedDamage, "electric");
+            const bonusDamage = Math.max(0, Number(damage?.total || 0));
             removeDebuff(target, "shocked");
+            if (bonusDamage > 0) {
+                console.log(`${target.name} took ${bonusDamage} additional electric damage from Shocked!`);
+                applyEffectDamage(target, bonusDamage, "electric", false, "Shocked");
+            }
         }
     },
 
@@ -390,19 +389,19 @@ const debuffs = {
     // Radioactive Debuffs
     "unstable": {
         name: "Unstable",
-        description: "Takes 4x damage on next attack",
+        description: "After the next attack, takes radiation damage equal to the damage dealt",
         icon: "icons/debuff-unstable.png",
         damageType: "radiation",
         duration: -1, // Until next attack
         stackable: false,
         onApply: function(target) {
-            console.log(`${target.name} is unstable! Will take 4x their own damage on next attack!`);
+            console.log(`${target.name} is unstable! Their next attack will reflect its damage back as radiation.`);
         },
-        onAttack: function(attacker, defender, damage) {
+        onAfterAttack: function(attacker, defender, damage) {
             if (damage && damage.total) {
-                const reflectedDamage = damage.total * 4;
+                const reflectedDamage = damage.total;
                 console.log(`${attacker.name} took ${reflectedDamage} radiation damage from being unstable!`);
-                applyEffectDamage(attacker, reflectedDamage, "radiation");
+                applyEffectDamage(attacker, reflectedDamage, "radiation", false, "Unstable");
             }
             removeDebuff(attacker, "unstable");
         }
@@ -448,10 +447,12 @@ const debuffs = {
         description: "Deals 10% of the damage that applied this debuff every 0.5 seconds for 10 seconds. Stacks 5 times.",
         icon: "icons/debuff-seeping-wound.png",
         damageType: "slashing",
+        inherent: false,
         duration: 10, // Duration in seconds
         stackable: true,
         stacks: 1,
-        maxStacks: 10,
+        maxStacks: 5,
+        variableMaxStacks: true,
         tickInterval: 0.5, // Damage tick every 0.5 seconds
         lastTickTime: 0,
         baseDamagePercent: 0.10, // 10% of original damage
@@ -459,11 +460,14 @@ const debuffs = {
         onApply: function(target, applier, sourceDamage) {
             this.lastTickTime = Date.now();
             this.sourceDamage = sourceDamage || 0;
+            const allowedStacks = Math.max(5, Math.floor(Number(applier?.totalStats?.maxSeepingWoundStacks || 5)));
+            this.maxStacks = allowedStacks;
             
             // If already has the debuff, increase stacks
             const existingDebuff = target.activeDebuffs ? target.activeDebuffs.find(d => d.name === this.name) : null;
             if (existingDebuff) {
-                existingDebuff.stacks = Math.min(existingDebuff.stacks + 1, this.maxStacks);
+                existingDebuff.maxStacks = allowedStacks;
+                existingDebuff.stacks = Math.min(existingDebuff.stacks + 1, allowedStacks);
                 this.stacks = existingDebuff.stacks;
                 // Update source damage to the highest value
                 if (this.sourceDamage > existingDebuff.sourceDamage) {
@@ -657,7 +661,7 @@ function processDebuffs(entity, deltaTime) {
         const elapsedTime = (now - debuff.appliedTime) / 1000;
         
         // Check if expired
-        if (debuff.duration && elapsedTime >= debuff.duration) {
+        if (debuff.duration > 0 && elapsedTime >= debuff.duration) {
             debuffsToRemove.push(i);
             continue;
         }
@@ -733,12 +737,6 @@ function tryApplyDebuffFromDamage(source, target, damageInfo) {
         return;
     }
     
-    // Don't apply debuffs from enemies to players
-    if (source.isEnemy && target.isPlayer) {
-        console.log("tryApplyDebuffFromDamage: Enemies can't apply debuffs to players");
-        return;
-    }
-    
     console.log("tryApplyDebuffFromDamage called with damageInfo:", damageInfo);
     
     // Find the dominant damage type
@@ -760,8 +758,8 @@ function tryApplyDebuffFromDamage(source, target, damageInfo) {
     console.log(`tryApplyDebuffFromDamage: Dominant damage type is ${dominantType} with ${maxDamage} damage`);
     
     // Get debuffs for this damage type
-    const typedDebuffs = Object.entries(debuffs).filter(([key, debuff]) => 
-        debuff.damageType === dominantType
+    const typedDebuffs = Object.entries(debuffs).filter(([key, debuff]) =>
+        debuff.damageType === dominantType && debuff.inherent !== false
     );
     
     console.log(`tryApplyDebuffFromDamage: Found ${typedDebuffs.length} debuffs for type ${dominantType}`);
@@ -794,3 +792,9 @@ function tryApplyDebuffFromDamage(source, target, damageInfo) {
         }
     }
 }
+
+window.debuffs = debuffs;
+window.debuffBaseChance = DEBUFF_BASE_CHANCE;
+window.applyDebuff = applyDebuff;
+window.removeDebuff = removeDebuff;
+window.tryApplyDebuffFromDamage = tryApplyDebuffFromDamage;

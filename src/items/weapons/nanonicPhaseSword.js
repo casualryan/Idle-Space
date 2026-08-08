@@ -17,18 +17,16 @@ export default {
         severedLimbChance: 100,
         // +1 to maximum Severed Limbs on opponent  
         maxSeveredLimbs: 1,
+        // Raises Seeping Wound's default cap from 5 to 10.
+        maxSeepingWoundStacks: 5,
         // +50% Precision
         precision: 50,
     },
     criticalChanceModifierRange: { min: 10, max: 20 },
-    passiveBonuses: {
-        "Kinetic Mastery": 3,
-        "Slashing Mastery": 3
-    },
     effects: [
         {
             trigger: 'onCritical',
-            chance: 1.0, // 100% chance on critical strikes
+            chance: 100,
             action: 'applyDebuff',
             parameters: {
                 debuffName: 'seepingWound',
@@ -49,5 +47,5 @@ export default {
         blackSlotsMax: 1,
         colors: { red: "1-1", green: "1-1", blue: "1-1", black: "1-1" }
       },
-    description: 'An advanced nanonic phase blade that cuts through reality itself. The nanobots embedded in the blade seek out weak points in flesh, causing devastating wounds that refuse to heal. Forged for the most elite warriors, this weapon represents the pinnacle of close-combat technology.'
+    description: 'An advanced nanonic phase blade that raises the Seeping Wound cap to 10 and permits a second Severed Limb. Its nanobots seek out weak points in flesh, causing wounds that refuse to heal.'
 };

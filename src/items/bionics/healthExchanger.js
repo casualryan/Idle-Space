@@ -1,5 +1,6 @@
 export default {
     name: 'Health Exchanger',
+    levelRequirement: 5,
     type: 'Bionic',
     icon: 'icons/healthexchanger.png',
     slot: 'bionic',
@@ -14,4 +15,4 @@ export default {
         },
     ],
     description: 'Decreases Max Health by 10-30, but increases Max Energy Shield by 50-60 + 20%.'
-}; 
+};

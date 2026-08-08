@@ -1,5 +1,6 @@
 export default {
     name: 'Slashing Booster',
+    levelRequirement: 1,
     type: 'Bionic',
     icon: 'icons/slashing_booster.png',
     slot: 'bionic',
@@ -15,4 +16,4 @@ export default {
         },
     ],
     description: 'Increases Slashing Damage Multiplier.'
-}; 
+};

@@ -1,18 +1,20 @@
 {
-  "name": "idle-game-2",
+  "name": "corebound-synthetic-dominion",
   "version": "1.0.0",
-  "description": "",
+  "description": "Corebound: Synthetic Dominion",
   "type": "module",
   "main": "src/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.mjs",
+    "validate": "npm test && npm run build"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "vite": "^5.0.0"
+    "vite": "6.3.2"
   }
 }

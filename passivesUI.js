@@ -9,7 +9,27 @@ if (typeof player.passivePoints === 'undefined') {
 }
 const TIER_UNLOCK_THRESHOLD_INCREMENT = 3;
 const MAX_PASSIVE_RANK = 4; // Maximum number of points that can be manually allocated
-const MAX_EFFECTIVE_RANK = 8; // Absolute cap for passive effectiveness (alloc + gear)
+
+function getPassiveMaxEffectiveRank(passive) {
+    const authoredCaps = [];
+    for (const changes of Object.values(passive?.statChanges || {})) {
+        if (Array.isArray(changes)) {
+            authoredCaps.push(changes.length - 1);
+            continue;
+        }
+        for (const nestedChanges of Object.values(changes || {})) {
+            if (Array.isArray(nestedChanges)) authoredCaps.push(nestedChanges.length - 1);
+        }
+    }
+    return authoredCaps.length ? Math.max(0, Math.min(...authoredCaps)) : MAX_PASSIVE_RANK;
+}
+
+function getInvestedPassivePointsBelowTier(tierNumber) {
+    const tiersByName = new Map(passives.map(passive => [passive.name, passive.passiveTier]));
+    return Object.entries(player.passiveAllocations || {}).reduce((total, [name, points]) => {
+        return total + (Number(tiersByName.get(name)) < tierNumber ? Math.max(0, Number(points) || 0) : 0);
+    }, 0);
+}
 
 // Initialize gear bonuses if they don't exist
 if (!player.gearPassiveBonuses) {
@@ -43,7 +63,8 @@ function getPassiveTooltipContent(passive) {
     const allocatedRank = player.passiveAllocations[passive.name] || 0;
     const gearBonus = player.gearPassiveBonuses[passive.name] || 0;
     const effectiveRank = allocatedRank + gearBonus;
-    const wasted = Math.max(0, effectiveRank - MAX_EFFECTIVE_RANK);
+    const maxEffectiveRank = getPassiveMaxEffectiveRank(passive);
+    const wasted = Math.max(0, effectiveRank - maxEffectiveRank);
     
     let tip = `<div style="color: #e0f2ff; font-family: 'Orbitron', sans-serif; text-shadow: 0 0 5px rgba(0, 255, 204, 0.5); max-width: 300px; white-space: normal;">`;
     
@@ -69,7 +90,7 @@ function getPassiveTooltipContent(passive) {
     // Overcap note
     if (wasted > 0) {
         tip += `<div style="background: rgba(60, 0, 20, 0.45); padding: 4px; margin-bottom: 6px; border-radius: 2px; border-left: 2px solid #ff6b6b; color:#ffd6d9;">` +
-               `Overcap: +${wasted} provides no additional benefit (cap ${MAX_EFFECTIVE_RANK}).` +
+               `Overcap: +${wasted} provides no additional benefit (cap ${maxEffectiveRank}).` +
                `</div>`;
     }
     
@@ -193,7 +214,7 @@ function getPassiveTooltipContent(passive) {
         }
     }
     
-    if (hasNextLevel && effectiveRank < MAX_EFFECTIVE_RANK) {
+    if (hasNextLevel && effectiveRank < maxEffectiveRank) {
         tip += `</div><div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
         tip += `<span style="color: #00ffcc;">Next Level Bonus:</span>`;
         
@@ -393,12 +414,6 @@ function displayPassivesScreen() {
     if (!tiersContainer) return;
     tiersContainer.innerHTML = '';
     
-    // Calculate total invested points for tier unlocking
-    let totalInvested = 0;
-    for (const key in player.passiveAllocations) {
-        totalInvested += player.passiveAllocations[key];
-    }
-    
     // Group passives by tier
     const tierMap = {};
     passives.forEach(passive => {
@@ -421,12 +436,13 @@ function displayPassivesScreen() {
         
         // Calculate if tier is unlocked
         const unlockThreshold = (tierNum - 1) * TIER_UNLOCK_THRESHOLD_INCREMENT;
-        const unlocked = totalInvested >= unlockThreshold;
+        const investedBelowTier = getInvestedPassivePointsBelowTier(tierNum);
+        const unlocked = investedBelowTier >= unlockThreshold;
         
         header.innerHTML = `
             <div class="tier-header-bg ${unlocked ? 'tier-unlocked' : 'tier-locked'}">
                 <span class="tier-number">TIER ${tierNum}</span>
-                ${unlocked ? '<span class="tier-status">UNLOCKED</span>' : `<span class="tier-status">LOCKED (${unlockThreshold - totalInvested} MORE POINTS NEEDED)</span>`}
+                ${unlocked ? '<span class="tier-status">UNLOCKED</span>' : `<span class="tier-status">LOCKED (${unlockThreshold - investedBelowTier} MORE POINTS NEEDED)</span>`}
             </div>
         `;
         tierDiv.appendChild(header);
@@ -443,13 +459,14 @@ function displayPassivesScreen() {
             const allocatedRank = player.passiveAllocations[passive.name] || 0;
             const gearBonus = player.gearPassiveBonuses[passive.name] || 0;
             const effectiveRank = allocatedRank + gearBonus;
+            const maxEffectiveRank = getPassiveMaxEffectiveRank(passive);
             
             // Get passive name length to adjust styling
             const nameLength = passive.name.length;
             const fontSizeClass = nameLength > 12 ? 'long-name' : nameLength > 8 ? 'medium-name' : 'short-name';
             
             // Create card inner HTML with sci-fi styling
-            const overcap = Math.max(0, effectiveRank - MAX_EFFECTIVE_RANK);
+            const overcap = Math.max(0, effectiveRank - maxEffectiveRank);
             card.innerHTML = `
                 <div class="passive-card-inner ${unlocked ? '' : 'locked'}">
                     <div class="passive-name ${fontSizeClass}">${passive.name}</div>
@@ -753,11 +770,6 @@ function applyPassiveEffect(passive, level) {
                 break;
         }
     }
-}
-
-// Helper function to capitalize first letter
-function capitalize(str) {
-    return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 function formatDefenseTypeLabel(defenseType) {

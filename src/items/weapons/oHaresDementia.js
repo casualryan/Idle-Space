@@ -1,5 +1,6 @@
 export default {
     name: "O'Hare's Dementia",
+    levelRequirement: 35,
     type: "Weapon",
     weaponType: "Shotgun",
     icon: "icons/dementia.png",
@@ -16,7 +17,7 @@ export default {
     effects: [
         {
             trigger: 'onHit',
-            chance: 1,
+            chance: 100,
             action: 'dealDamage',
             parameters: {
                 damageType: 'slashing',
@@ -31,4 +32,4 @@ export default {
     ],
     isDisassembleable: true,
     description: "O'Hare was lost. With this, he found himself."
-}; 
+};

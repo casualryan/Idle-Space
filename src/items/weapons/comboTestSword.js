@@ -1,6 +1,8 @@
 // src/items/weapons/comboTestSword.js
 export default {
     name: "Combo Test Sword",
+    developerOnly: true,
+    levelRequirement: 10,
     type: "Weapon",
     weaponType: "Sword",
     icon: "icons/ironsword.png",
@@ -27,7 +29,7 @@ export default {
     effects: [
         {
             trigger: 'onHit',
-            chance: 0.3, // 30% base chance (will be boosted by weapon efficiency)
+            chance: 30,
             action: 'dealDamage',
             parameters: {
                 damageType: 'kinetic',

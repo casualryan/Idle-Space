@@ -49,7 +49,7 @@ export default {
         // {
         //     trigger: 'onHit', // onHit, onCritical, etc.
         //     chance: 0.2, // 20% chance
-        //     action: 'dealDamage', // dealDamage, applyStatusEffect, etc.
+        //     action: 'dealDamage', // dealDamage, heal, applyBuff, applyDebuff
         //     parameters: {
         //         // Parameters specific to the action
         //     }
@@ -62,4 +62,4 @@ export default {
         // Add more items...
     ],
     description: 'Weapon description goes here.'
-}; 
+};

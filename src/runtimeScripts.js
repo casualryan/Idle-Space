@@ -1,0 +1,28 @@
+// Classic runtime files that have not yet been converted to ES modules.
+// They are loaded sequentially by main.js so their dependencies are explicit.
+export const RUNTIME_SCRIPTS = [
+  'stats.js',
+  'recipes.js',
+  'passives.js',
+  'skills.js',
+  'skillResolver.js',
+  'gathering_activities.js',
+  'tooltip.js',
+  'activityManager.js',
+  'global.js',
+  'inventory.js',
+  'gathering.js',
+  'fabrication.js',
+  'npcshops.js',
+  'buffs.js',
+  'itemgenerator.js',
+  'passivesUI.js',
+  'skillsUI.js',
+  'sounds.js',
+  'locations.js',
+  'lootPools.js',
+  'lootHandler.js',
+  'debuffs.js',
+  'combat.js',
+  'codex.js'
+];

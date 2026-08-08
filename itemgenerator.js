@@ -14,7 +14,7 @@ const RANDOM_MODIFIER_COUNT_WEIGHTS = [
     { minLevel: 41, maxLevel: 50, weights: [{ count: 2, weight: 60 }, { count: 3, weight: 40 }] }
 ];
 
-const DAMAGE_TYPE_TO_GROUP = {
+const GENERATOR_DAMAGE_TYPE_TO_GROUP = {
     kinetic: 'physical',
     slashing: 'physical',
     pyro: 'elemental',
@@ -24,7 +24,7 @@ const DAMAGE_TYPE_TO_GROUP = {
     radiation: 'chemical'
 };
 
-const DAMAGE_GROUP_TO_TYPES = {
+const GENERATOR_DAMAGE_GROUP_TO_TYPES = {
     physical: ['kinetic', 'slashing'],
     elemental: ['pyro', 'cryo', 'electric'],
     chemical: ['corrosive', 'radiation']
@@ -108,7 +108,7 @@ function getDamageTypesFromItem(item) {
     if (!source || typeof source !== 'object') return result;
     Object.keys(source).forEach(rawType => {
         const type = rawType === 'mental' ? 'slashing' : rawType === 'magnetic' ? 'electric' : rawType === 'chemical' ? 'corrosive' : rawType;
-        if (!Object.prototype.hasOwnProperty.call(DAMAGE_TYPE_TO_GROUP, type)) return;
+        if (!Object.prototype.hasOwnProperty.call(GENERATOR_DAMAGE_TYPE_TO_GROUP, type)) return;
         const value = source[rawType];
         const numeric = typeof value === 'number'
             ? value
@@ -123,7 +123,7 @@ function getDamageTypesFromItem(item) {
 function getDamageGroupsFromDamageTypes(damageTypes) {
     const groups = new Set();
     damageTypes.forEach(type => {
-        const group = DAMAGE_TYPE_TO_GROUP[type];
+        const group = GENERATOR_DAMAGE_TYPE_TO_GROUP[type];
         if (group) groups.add(group);
     });
     return groups;
@@ -202,7 +202,7 @@ function createSharedModifierDefinitions() {
         }));
     });
 
-    Object.keys(DAMAGE_TYPE_TO_GROUP).forEach(type => {
+    Object.keys(GENERATOR_DAMAGE_TYPE_TO_GROUP).forEach(type => {
         const typeDisplay = type.charAt(0).toUpperCase() + type.slice(1).replace('corrosive', 'Corrosive');
         defs.push(createModifierDefinition({
             id: `damageTypePercent_${type}`,
@@ -215,7 +215,7 @@ function createSharedModifierDefinitions() {
         }));
     });
 
-    Object.keys(DAMAGE_GROUP_TO_TYPES).forEach(group => {
+    Object.keys(GENERATOR_DAMAGE_GROUP_TO_TYPES).forEach(group => {
         const nameMap = {
             physical: 'Physical Damage',
             elemental: 'Elemental Damage',
@@ -232,7 +232,7 @@ function createSharedModifierDefinitions() {
         }));
     });
 
-    Object.keys(DAMAGE_TYPE_TO_GROUP).forEach(type => {
+    Object.keys(GENERATOR_DAMAGE_TYPE_TO_GROUP).forEach(type => {
         const typeDisplay = type.charAt(0).toUpperCase() + type.slice(1).replace('corrosive', 'Corrosive');
         defs.push(createModifierDefinition({
             id: `flatDamage_${type}`,
@@ -244,8 +244,8 @@ function createSharedModifierDefinitions() {
         }));
     });
 
-    Object.keys(DAMAGE_TYPE_TO_GROUP).forEach((source) => {
-        Object.keys(DAMAGE_TYPE_TO_GROUP).forEach((target) => {
+    Object.keys(GENERATOR_DAMAGE_TYPE_TO_GROUP).forEach((source) => {
+        Object.keys(GENERATOR_DAMAGE_TYPE_TO_GROUP).forEach((target) => {
             if (source === target) return;
             defs.push(createModifierDefinition({
                 id: `weaponConversion_${source}_to_${target}`,
@@ -375,7 +375,7 @@ function getModifierContext(item) {
     const allowedWeaponLocalDamageTypes = new Set();
     if (isWeapon) {
         damageGroups.forEach((group) => {
-            (DAMAGE_GROUP_TO_TYPES[group] || []).forEach((type) => allowedWeaponLocalDamageTypes.add(type));
+            (GENERATOR_DAMAGE_GROUP_TO_TYPES[group] || []).forEach((type) => allowedWeaponLocalDamageTypes.add(type));
         });
     }
     const offensiveAllowed = isWeapon || (isOffHand && damageTypes.size > 0) || (isBionic && damageTypes.size > 0);
@@ -716,19 +716,16 @@ function generateItemInstance(template) {
                 const frac = rollPercentToFraction(template[key]);
                 if (frac !== undefined) {
                     item[key] = frac;
+                    const pct = Number((frac * 100).toFixed(2));
                     // Provide display helper for UI when it makes sense
                     if (key === 'attackSpeedModifier') {
-                        // store rolled percent for tooltip clarity
-                        const pct = rollFrom(template[key]);
-                        if (pct !== undefined) item.attackSpeedModifierPercent = pct;
+                        item.attackSpeedModifierPercent = pct;
                     }
                     if (key === 'healthBonusPercent') {
-                        const pct = rollFrom(template[key]);
-                        if (pct !== undefined) item.healthBonusPercentDisplay = pct;
+                        item.healthBonusPercentDisplay = pct;
                     }
                     if (key === 'energyShieldBonusPercent') {
-                        const pct = rollFrom(template[key]);
-                        if (pct !== undefined) item.energyShieldBonusPercentDisplay = pct;
+                        item.energyShieldBonusPercentDisplay = pct;
                     }
                 } else if (typeof template[key] === 'number') {
                     // Fallback: already a fraction

@@ -3,7 +3,8 @@ window.currentScreen = '';
 console.log('global.js loaded');
 console.log('window.inventory at the start:', window.inventory);
 
-let playerCurrency = 1000000;
+const STARTING_CREDITS = 1000;
+let playerCurrency = STARTING_CREDITS;
 
 // Add this near the top of the file with other constants
 const MAX_PLAYER_LEVEL = 51;
@@ -16,6 +17,7 @@ const SAVE_SLOT_KEY_PREFIX = 'idleCombatGameSave_slot_';
 function resetGearPassiveBonuses() {
     // Clear all gear passive bonuses
     player.gearPassiveBonuses = {};
+    const registeredPassiveNames = new Set((typeof passives !== 'undefined' ? passives : []).map(passive => passive.name));
     
     // Reapply from all equipped items
     const equipSlots = ['mainHand', 'offHand', 'head', 'chest', 'legs', 'feet', 'gloves'];
@@ -24,6 +26,7 @@ function resetGearPassiveBonuses() {
     for (const slot of equipSlots) {
         if (player.equipment[slot] && player.equipment[slot].passiveBonuses) {
             for (const passiveName in player.equipment[slot].passiveBonuses) {
+                if (!registeredPassiveNames.has(passiveName)) continue;
                 const bonusValue = player.equipment[slot].passiveBonuses[passiveName];
                 if (typeof bonusValue === 'number' && bonusValue > 0) {
                     if (!player.gearPassiveBonuses[passiveName]) {
@@ -41,6 +44,7 @@ function resetGearPassiveBonuses() {
         for (const bionicItem of player.equipment.bionicSlots) {
             if (bionicItem && bionicItem.passiveBonuses) {
                 for (const passiveName in bionicItem.passiveBonuses) {
+                    if (!registeredPassiveNames.has(passiveName)) continue;
                     const bonusValue = bionicItem.passiveBonuses[passiveName];
                     if (typeof bonusValue === 'number' && bonusValue > 0) {
                         if (!player.gearPassiveBonuses[passiveName]) {
@@ -89,6 +93,7 @@ const playerBaseStats = {
     // Severed limb system
     severedLimbChance: 0,   // % chance to sever limbs on critical strikes
     maxSeveredLimbs: 1,     // Maximum limbs that can be severed on opponent
+    maxSeepingWoundStacks: 5,
     damageTypes: {
         
     },
@@ -101,6 +106,7 @@ const playerBaseStats = {
 };
 
 let player = {
+    isPlayer: true,
     name: 'Player',
     level: 1,
     experience: 0,
@@ -108,7 +114,6 @@ let player = {
     currentShield: null,
     baseStats: JSON.parse(JSON.stringify(playerBaseStats)),
     totalStats: {},
-    statusEffects: [],
     effects: [],
     equipment: {
         mainHand: null,
@@ -124,12 +129,7 @@ let player = {
         Mining: {
             level: 1,
             experience: 0,
-        },
-        Medtek: {
-            level: 1,
-            experience: 0,
-        },
-        // Add other skills as needed
+        }
     },
     activeBuffs: [],
     // This property holds the cumulative passive bonus (e.g., 0.30 for +30%)
@@ -177,6 +177,8 @@ let player = {
         return this.totalStats;
     },
 };
+
+window.player = player;
 
 
 
@@ -493,7 +495,6 @@ function buildGameStateSnapshot() {
             baseStats: player.baseStats,
             currentHealth: player.currentHealth,
             currentShield: player.currentShield,
-            statusEffects: player.statusEffects,
             experience: player.experience,
             level: player.level,
             gatheringSkills: player.gatheringSkills,
@@ -517,13 +518,17 @@ function buildGameStateSnapshot() {
         currentDelveLocation: (typeof currentDelveLocation !== 'undefined') ? currentDelveLocation : null,
         currentMonsterIndex: (typeof currentMonsterIndex !== 'undefined') ? currentMonsterIndex : 0,
         delveBag: (typeof delveBag !== 'undefined') ? delveBag : { items: [], credits: 0 },
+        delveClaimCache: (typeof delveClaimCache !== 'undefined') ? delveClaimCache : { items: [], credits: 0 },
         activityState: {
             active: Boolean(managerState.active),
             currentActivity: managerState.currentActivity || null
         },
+        fabricationState: (typeof window.getFabricationState === 'function')
+            ? window.getFabricationState()
+            : [],
         meta: {
             savedAt: Date.now(),
-            version: 3
+            version: 5
         }
     };
 }
@@ -618,11 +623,16 @@ function loadGame(slotIndex = null) {
 
     try {
         // Stop any active systems before loading
-        if (isCombatActive) stopCombat('gameLoad');
+        if (typeof stopCombat === 'function' && (isCombatActive || isDelveInProgress)) {
+            stopCombat('gameLoad');
+        }
         if (window.activityManager && typeof window.activityManager.clearActivityOnLoad === 'function') {
             window.activityManager.clearActivityOnLoad();
         } else if (isGathering && typeof stopGatheringActivity === 'function') {
             stopGatheringActivity();
+        }
+        if (typeof window.clearFabricationsOnLoad === 'function') {
+            window.clearFabricationsOnLoad();
         }
 
         const gameState = JSON.parse(savedState);
@@ -673,7 +683,6 @@ function loadGame(slotIndex = null) {
 
         player.currentHealth = savedPlayer.currentHealth;
         player.currentShield = savedPlayer.currentShield;
-        player.statusEffects = savedPlayer.statusEffects || [];
         player.experience = Number(savedPlayer.experience || 0);
         player.level = Number(savedPlayer.level || 1);
         player.gatheringSkills = savedPlayer.gatheringSkills || player.gatheringSkills;
@@ -695,6 +704,9 @@ function loadGame(slotIndex = null) {
             player.gearPassiveBonuses = {};
         }
         applyAllPassivesToPlayer();
+        if (typeof window.recomputePlayerEffects === 'function') {
+            window.recomputePlayerEffects();
+        }
 
         player.equippedSkillId = restoredEquippedStyle;
         player.unlockedSkillIds = restoredUnlockedStyles;
@@ -719,6 +731,23 @@ function loadGame(slotIndex = null) {
         if (typeof delveBag !== 'undefined') {
             delveBag = gameState.delveBag || { items: [], credits: 0 };
         }
+        if (typeof delveClaimCache !== 'undefined') {
+            const savedCache = gameState.delveClaimCache || { items: [], credits: 0 };
+            delveClaimCache = {
+                items: Array.isArray(savedCache.items)
+                    ? savedCache.items.map(savedItem => restoreItem(savedItem))
+                    : [],
+                credits: Math.max(0, Number(savedCache.credits) || 0)
+            };
+        }
+
+        if (typeof window.restoreFabricationState === 'function') {
+            window.restoreFabricationState(gameState.fabricationState || []);
+        }
+
+        if (!isDelveInProgress && gameState.activityState?.active && typeof window.restoreGatheringActivity === 'function') {
+            window.restoreGatheringActivity(gameState.activityState.currentActivity);
+        }
 
         // Apply migration for the new defense system
         migrateDefenseTypes(player);
@@ -732,6 +761,16 @@ function loadGame(slotIndex = null) {
         setAutosaveTargetSlot(targetSlot);
         uiSelectedSaveSlot = targetSlot;
         renderSaveSlots();
+
+        if (isDelveInProgress && currentDelveLocation && typeof beginNextMonsterInSequence === 'function') {
+            // Loading restarts the current encounter with a fresh instance while
+            // preserving the delve index and exact contents of the delve bag.
+            clearBuffs(player);
+            setTimeout(() => {
+                currentLocation = currentDelveLocation;
+                beginNextMonsterInSequence();
+            }, 0);
+        }
 
         console.log(`Game loaded successfully from slot ${targetSlot}.`);
         logMessage(`Game loaded from slot ${targetSlot}.`);
@@ -904,7 +943,7 @@ function restoreEquipment(savedEquipment) {
     // Restore bionic slots
     equipment.bionicSlots = [];
     if (Array.isArray(savedEquipment.bionicSlots)) {
-        savedEquipment.bionicSlots.forEach(savedItem => {
+        savedEquipment.bionicSlots.slice(0, 4).forEach(savedItem => {
             if (savedItem) {
                 equipment.bionicSlots.push(restoreItem(savedItem));
             } else {
@@ -912,38 +951,26 @@ function restoreEquipment(savedEquipment) {
             }
         });
     }
+    while (equipment.bionicSlots.length < 4) equipment.bionicSlots.push(null);
     
     return equipment;
-}
-
-// Add missing function
-function stopDelveWithFailure() {
-    if (isDelveInProgress) {
-        logMessage("Your delve fails, and you lose all items you found!");
-        delveBag = { items: [], credits: 0 };
-        isDelveInProgress = false;
-        currentDelveLocation = null;
-        currentMonsterIndex = 0;
-        
-        // Ensure combat is fully stopped
-        if (isCombatActive) {
-            stopCombat('delveFailure');
-        }
-        
-        // Update UI
-        displayAdventureLocations();
-    }
 }
 
 // Reset game function
 function resetGame(slotIndex = null) {
     const targetSlot = slotIndex == null ? getUiSelectedSaveSlot() : sanitizeSaveSlotIndex(slotIndex);
     if (confirm(`Are you sure you want to reset save slot ${targetSlot}? This action cannot be undone.`)) {
-        if (typeof isCombatActive !== 'undefined' && isCombatActive) {
+        if (typeof stopCombat === 'function' && (
+            (typeof isCombatActive !== 'undefined' && isCombatActive) ||
+            (typeof isDelveInProgress !== 'undefined' && isDelveInProgress)
+        )) {
             stopCombat('resetGame');
         }
         if (window.activityManager && typeof window.activityManager.clearActivityOnLoad === 'function') {
             window.activityManager.clearActivityOnLoad();
+        }
+        if (typeof window.clearFabricationsOnLoad === 'function') {
+            window.clearFabricationsOnLoad();
         }
 
         // Clear localStorage for selected slot only
@@ -954,7 +981,6 @@ function resetGame(slotIndex = null) {
         player.totalStats = {};
         player.currentHealth = null;
         player.currentShield = null;
-        player.statusEffects = [];
         player.activeBuffs = [];
 		player.effects = [];
         player.experience = 0;
@@ -978,10 +1004,7 @@ function resetGame(slotIndex = null) {
         }
         
         player.gatheringSkills = {
-            Mining: { level: 1, experience: 0 },
-            Medtek: { level: 1, experience: 0 },
-            Foraging: { level: 1, experience: 0 },
-            // Add other skills as needed
+            Mining: { level: 1, experience: 0 }
         };
 
         // Reset equipment
@@ -999,6 +1022,16 @@ function resetGame(slotIndex = null) {
         // Clear inventory
         window.inventory = []; // Start with an empty inventory
 
+        if (typeof delveClaimCache !== 'undefined') {
+            delveClaimCache = { items: [], credits: 0 };
+        }
+        if (typeof isDelveInProgress !== 'undefined') isDelveInProgress = false;
+        if (typeof currentDelveLocation !== 'undefined') currentDelveLocation = null;
+        if (typeof currentMonsterIndex !== 'undefined') currentMonsterIndex = 0;
+        if (typeof delveBag !== 'undefined') delveBag = { items: [], credits: 0 };
+        if (typeof currentLocation !== 'undefined') currentLocation = null;
+        if (typeof closeDelveClaimCachePopup === 'function') closeDelveClaimCachePopup();
+
         // Add a starting item
         const startingItemTemplate = items.find(item => item.name === 'Broken Phase Sword');
         if (startingItemTemplate) {
@@ -1008,7 +1041,7 @@ function resetGame(slotIndex = null) {
             console.warn('Starting item template not found.');
         }
 
-        playerCurrency = 1000000;
+        playerCurrency = STARTING_CREDITS;
 
 		// Recalculate player stats and update UI
         player.calculateStats();
@@ -1035,142 +1068,13 @@ function resetGame(slotIndex = null) {
 // Auto-save interval (saves every 5 seconds)
 setInterval(() => saveGame(true, getAutosaveTargetSlot()), 5000);
 
-// Function to display adventure locations
-function displayAdventureLocations() {
-    const adventureDiv = document.getElementById('adventure-locations');
-
-    // Ensure the adventure locations div exists
-    if (!adventureDiv) {
-        console.error("Adventure locations div not found in the DOM.");
-        return;
-    }
-
-    adventureDiv.innerHTML = ''; // Clear existing content
-
-    if (!isCombatActive) {
-        // Display cards when not in combat
-        const grid = document.createElement('div');
-        grid.className = 'adventure-grid';
-        adventureDiv.appendChild(grid);
-
-        // Auto re-deploy toggle UI
-        const controls = document.getElementById('delve-controls');
-        if (controls) {
-            const autoWrap = document.createElement('label');
-            autoWrap.style.cssText = 'display:inline-flex; align-items:center; gap:6px; margin:8px 0; color:#cfe6ff;';
-            const autoChk = document.createElement('input');
-            autoChk.type = 'checkbox';
-            autoChk.checked = localStorage.getItem('autoRedeploy') === 'true';
-            autoChk.addEventListener('change', () => localStorage.setItem('autoRedeploy', autoChk.checked ? 'true' : 'false'));
-            autoWrap.appendChild(autoChk);
-            const autoLbl = document.createElement('span');
-            autoLbl.textContent = 'Auto re-deploy after delve completion';
-            autoWrap.appendChild(autoLbl);
-            controls.appendChild(autoWrap);
-        }
-
-        locations.forEach(location => {
-            const card = document.createElement('div');
-            card.className = 'adventure-card';
-
-            // Header
-            const header = document.createElement('div');
-            header.className = 'adventure-card-header';
-            const title = document.createElement('div');
-            title.className = 'adventure-card-title';
-            title.textContent = location.name;
-            header.appendChild(title);
-            if (location.recommendedLevel) {
-                const badge = document.createElement('span');
-                badge.className = 'adventure-badge';
-                badge.textContent = `Rec. Lv ${location.recommendedLevel}`;
-                const delta = (player && player.level ? player.level : 1) - location.recommendedLevel;
-                // Colorize by player level delta
-                if (delta <= -3) badge.setAttribute('data-diff', 'below-3');
-                else if (delta <= -1) badge.setAttribute('data-diff', 'below-1');
-                else if (delta === 0) badge.setAttribute('data-diff', 'even');
-                else if (delta <= 2) badge.setAttribute('data-diff', 'above-1');
-                else badge.setAttribute('data-diff', 'above-3');
-                header.appendChild(badge);
-            }
-            card.appendChild(header);
-
-            // Body
-            const body = document.createElement('div');
-            body.className = 'adventure-card-body';
-            const desc = document.createElement('div');
-            desc.className = 'adventure-card-desc';
-            desc.textContent = location.description || '';
-            body.appendChild(desc);
-
-            const meta = document.createElement('div');
-            meta.className = 'adventure-card-meta';
-            const fights = document.createElement('span');
-            fights.textContent = `${location.numFights || 0} fights`;
-            meta.appendChild(fights);
-            if (location.locationCategory) {
-                const sep = document.createElement('span');
-                sep.textContent = ' • ';
-                meta.appendChild(sep);
-                const cat = document.createElement('span');
-                cat.textContent = location.locationCategory;
-                meta.appendChild(cat);
-            }
-            body.appendChild(meta);
-            card.appendChild(body);
-
-            // Footer actions
-            const startBtn = document.createElement('button');
-            startBtn.className = 'adventure-start-btn';
-            startBtn.textContent = 'Delve';
-            startBtn.addEventListener('click', () => {
-                startAdventure(location);
-            });
-            card.appendChild(startBtn);
-
-            // Tooltip
-            card.setAttribute('data-has-tooltip', 'true');
-            card.setAttribute('data-tooltip-source', 'adventure-card');
-            card.setAttribute('data-tooltip-content', location.description || '');
-
-            grid.appendChild(card);
-        });
-    } else {
-        // Display "Flee" button when in combat
-        const fleeButton = document.createElement('button');
-        fleeButton.textContent = 'Flee';
-        fleeButton.addEventListener('click', () => {
-            stopCombat();
-        });
-        adventureDiv.appendChild(fleeButton);
-    }
-}
-
 // Event listeners
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialize items from the split item files
-    if (typeof loadItems === 'function') {
-        window.items = loadItems();
-        console.log('Items loaded from separate category files');
-        
-        // Double-check if weapons were properly loaded
-        if (window.items && window.weapons && window.weapons.length > 0 && 
-            !window.items.find(item => item.type === 'Weapon')) {
-            console.log('Weapons available but not in items array - reloading items');
-            window.items = loadItems();
-        }
-    }
-    
-    // Add a 2-second delayed check to make sure weapons are included in items
-    setTimeout(() => {
-        if (window.loadItems && window.items && window.weapons && 
-            window.weapons.length > 0 && 
-            !window.items.find(item => item.type === 'Weapon')) {
-            console.log('FINAL CHECK: Weapons still missing from items - forcing reload');
-            window.items = window.loadItems();
-            console.log(`After final reload: ${window.items.length} items, including ${window.items.filter(i => i.type === 'Weapon').length} weapons`);
-        }
-    }, 2000);
+    const developerMode = Boolean(window.coreboundConfig?.developerMode);
+    const devNav = document.querySelector('[data-settings-panel="dev"]');
+    const devPanel = document.getElementById('settings-panel-dev');
+    if (devNav) devNav.hidden = !developerMode;
+    if (devPanel && !developerMode) devPanel.hidden = true;
     
     document.getElementById('save-game').addEventListener('click', () => {
         const slot = getUiSelectedSaveSlot();
@@ -1298,7 +1202,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // Automatically load the game when the page is loaded from active slot.
     const startupSlot = getAutosaveTargetSlot();
     uiSelectedSaveSlot = startupSlot;
-    loadGame(startupSlot);
+    const startupLoad = loadGame(startupSlot);
+    if (!startupLoad.ok && startupLoad.reason === 'empty_slot') {
+        const startingItemTemplate = items.find(item => item.name === 'Broken Phase Sword');
+        if (startingItemTemplate && window.inventory.length === 0) {
+            window.inventory.push(generateItemInstance(startingItemTemplate));
+        }
+        playerCurrency = STARTING_CREDITS;
+        player.calculateStats();
+        player.currentHealth = player.totalStats.health;
+        player.currentShield = player.totalStats.energyShield;
+        logMessage('New character initialized with a Broken Phase Sword and 1,000 credits.');
+    }
     startGlobalStatusBannerUpdates();
 
     // Initial display updates

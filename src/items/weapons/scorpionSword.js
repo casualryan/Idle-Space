@@ -1,6 +1,7 @@
 // src/items/weapons/scorpionSword.js
 export default {
         name: "Scorpion Sword",
+        levelRequirement: 15,
         type: "Weapon",
         weaponType: "Sword",
         icon: "icons/scorpion_sword.png",
@@ -17,24 +18,12 @@ export default {
         attackSpeedModifierRange: { min: 15, max: 25 },
         criticalChanceModifierRange: { min: 20, max: 20 },
         defenseTypes: {},
-        effects: [
-            {
-                trigger: 'onHit',
-                chance: .25,
-                action: 'dealDamage',
-                parameters: {
-                    damageType: 'chemical',
-                    amount: 15,
-                    ignoreDefense: true
-                }
-            }
-        ],
         slot: 'mainHand',
         disassembleResults: [
             {
                 name: 'Metal Scorpion Fang', quantity: 1
             },
         ],
-        description: '25% chance on hit to deal 15 Chemical damage, ignoring defense.',
+        description: 'A scavenged blade reinforced with parts from a metal scorpion.',
         isDisassembleable: true,
     };

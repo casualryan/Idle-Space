@@ -1,5 +1,6 @@
 export default {
     name: 'Critical Test Bionic',
+    developerOnly: true,
     type: 'Bionic',
     slot: 'bionic',
     levelRequirement: 1,
@@ -8,4 +9,4 @@ export default {
     isDisassembleable: false,
     salePrice: 1,
     description: 'Guarantees Crits for Testing Purposes.'
-}; 
+};

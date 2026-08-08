@@ -357,7 +357,8 @@ function applyItemModifiers(stats, item, options = {}) {
 // Calculate player's total stats based on base, passives, gear, and buffs
 function calculatePlayerStats(playerObject) {
     // Start with a fresh copy of base stats
-    let stats = JSON.parse(JSON.stringify(playerBaseStats));
+    const baseStats = playerObject.baseStats || playerBaseStats;
+    let stats = JSON.parse(JSON.stringify(baseStats));
 
     // Initialize bonus fields
     stats.healthBonus = 0;
@@ -372,8 +373,8 @@ function calculatePlayerStats(playerObject) {
     for (const group of damageGroups) {
         stats.damageGroupModifiers[group] = 1.0;
     }
-    // Assuming base damage types are defined in playerBaseStats.damageTypes
-    for (let damageType in playerBaseStats.damageTypes) {
+    // Initialize modifiers for any permanent/base damage types on this player.
+    for (let damageType in (baseStats.damageTypes || {})) {
         stats.damageTypeModifiers[damageType] = 1.0;
     }
     // Ensure defense types are initialized
@@ -395,6 +396,7 @@ function calculatePlayerStats(playerObject) {
     if (stats.slashingMastery === undefined) stats.slashingMastery = 0;
     if (stats.severedLimbChance === undefined) stats.severedLimbChance = 0;
     if (stats.maxSeveredLimbs === undefined) stats.maxSeveredLimbs = 1;
+    if (stats.maxSeepingWoundStacks === undefined) stats.maxSeepingWoundStacks = 5;
 
 
     // --- Apply Passives ---
@@ -484,7 +486,7 @@ function calculatePlayerStats(playerObject) {
             }
             
             // Create enhanced bionic stats for other modifiers
-            const enhancedBionic = { ...bionic };
+            const enhancedBionic = JSON.parse(JSON.stringify(bionic));
             
             // Apply bionic sync to all numeric stat modifiers
             if (enhancedBionic.healthBonus !== undefined) {
@@ -574,6 +576,11 @@ function calculatePlayerStats(playerObject) {
                             if (stats.defenseTypes[defenseType] === undefined) stats.defenseTypes[defenseType] = 0;
                             stats.defenseTypes[defenseType] += buff.statChanges.defenseTypes[defenseType];
                         }
+                    } else if (stat === 'damageTypes' && buff.statChanges.damageTypes) {
+                        for (const damageType in buff.statChanges.damageTypes) {
+                            if (stats.damageTypes[damageType] === undefined) stats.damageTypes[damageType] = 0;
+                            stats.damageTypes[damageType] += buff.statChanges.damageTypes[damageType];
+                        }
                     } else if (
                         (stat === 'physicalResistance' || stat === 'elementalResistance' || stat === 'chemicalResistance') &&
                         stats.defenseTypes
@@ -644,6 +651,12 @@ function calculatePlayerStats(playerObject) {
     // Round flat damage types for display consistency
     for (let dt in stats.damageTypes) {
         stats.damageTypes[dt] = Math.round(stats.damageTypes[dt]);
+    }
+
+    const severedLimb = playerObject.activeDebuffs?.find(debuff => debuff.name === 'Severed Limb');
+    if (severedLimb) {
+        stats.damageMultipliers = stats.damageMultipliers || {};
+        stats.damageMultipliers.severedLimb = Math.pow(0.75, Math.max(1, Number(severedLimb.stacks) || 1));
     }
 
     // Assign the newly calculated stats back to the player object
@@ -743,7 +756,9 @@ function calculateDamage(attacker, defender, attackContext = null) {
     let attackerPrecision = attacker.totalStats.precision || 0;
     let defenderDeflection = defender.totalStats.deflection || 0;
     let skew = Math.max(0.1, 1 + (defenderDeflection - attackerPrecision) * 0.05);
-    let damagePercentage = skewedRandom(0.1, 1.0, skew); // Roll between 10% and 100%
+    const defenderDebuffs = Array.isArray(defender.activeDebuffs) ? defender.activeDebuffs : [];
+    const isExposed = defenderDebuffs.some(effect => effect.name === 'Exposed');
+    let damagePercentage = isExposed ? 1 : skewedRandom(0.1, 1.0, skew);
     let rolledDamage = totalPotentialDamage * damagePercentage;
 
     // Strict cap: ensure rolled damage doesn't exceed total potential damage
@@ -770,15 +785,22 @@ function calculateDamage(attacker, defender, attackContext = null) {
     let critMultiplier = 1.0;
 
     // Check for effects that guarantee or modify crits (e.g., Zapped debuff)
-    if (!ctx.skipCrit && defender.activeDebuffs && defender.activeDebuffs.some(effect => effect.name === "Zapped")) {
+    const zapped = !ctx.skipCrit
+        ? defenderDebuffs.find(effect => effect.name === 'Zapped')
+        : null;
+    if (zapped) {
         isCriticalHit = true;
-        // Find and potentially remove the Zapped debuff (assuming removeDebuff exists globally or is passed in)
-        if (typeof removeDebuff === 'function') removeDebuff(defender, "Zapped");
-        if (typeof logMessage === 'function') logMessage(`${defender.name || 'Target'} was Zapped! Guaranteed critical hit!`);
     }
 
     if (isCriticalHit) {
         critMultiplier = attacker.totalStats.criticalMultiplier || 1.5;
+        if (zapped) {
+            critMultiplier += Number(zapped.critDamageBonus || 0.5);
+            if (typeof removeDebuff === 'function') removeDebuff(defender, 'Zapped');
+            if (typeof logMessage === 'function') {
+                logMessage(`${defender.name || 'Target'} was Zapped! The incoming hit is a guaranteed critical.`);
+            }
+        }
         rolledDamage *= critMultiplier;
         if (typeof logMessage === 'function') logMessage(`${attacker.name || 'Attacker'} lands a critical hit!`);
     }
@@ -811,23 +833,11 @@ function calculateDamage(attacker, defender, attackContext = null) {
     // Round total damage to nearest whole number
     totalDamageDealt = Math.round(totalDamageDealt);
 
-    // Debugging Logs (optional)
-    console.log(`Damage Calc: Attacker=${attacker.name}, Defender=${defender.name}`);
-    console.log(` - Base Damages:`, baseDamages);
-    console.log(` - Adjusted Base Damages (after % mods):`, adjustedBaseDamages);
-    console.log(` - Total Potential Damage: ${totalPotentialDamage.toFixed(2)}`);
-    console.log(` - Damage Roll %: ${damagePercentage.toFixed(3)}, Skew: ${skew.toFixed(2)}`);
-    console.log(` - Rolled Damage (before crit): ${rolledDamage.toFixed(2)}`);
-    console.log(` - Critical Hit: ${isCriticalHit}, Multiplier: ${critMultiplier.toFixed(2)}`);
-    console.log(` - Rolled Damage (after crit): ${rolledDamage.toFixed(2)}`);
-    console.log(` - Defender Resistances Applied`);
-    console.log(` - Final Damage Breakdown:`, finalDamageBreakdown);
-    console.log(` - Total Damage Dealt: ${totalDamageDealt}`);
-
     return {
         total: totalDamageDealt,
         damageBreakdown: finalDamageBreakdown,
-        isCritical: isCriticalHit
+        isCritical: isCriticalHit,
+        damageRoll: damagePercentage
     };
 }
 
@@ -872,10 +882,20 @@ function calculateEnemyStats(enemyObject) {
 
     // Example: Apply buffs affecting flat stats
     if (enemyObject.activeBuffs) {
-        enemyObject.activeBuffs.forEach(buff => {
-            if (buff.statChanges) {
-                for (const stat in buff.statChanges) {
-                    if (enemyObject.totalStats.hasOwnProperty(stat) && typeof enemyObject.totalStats[stat] === 'number') {
+         enemyObject.activeBuffs.forEach(buff => {
+             if (buff.statChanges) {
+                 for (const stat in buff.statChanges) {
+                    if (stat === 'damageTypes' && buff.statChanges.damageTypes) {
+                        for (const damageType in buff.statChanges.damageTypes) {
+                            enemyObject.totalStats.damageTypes[damageType] =
+                                (enemyObject.totalStats.damageTypes[damageType] || 0) + buff.statChanges.damageTypes[damageType];
+                        }
+                    } else if (stat === 'defenseTypes' && buff.statChanges.defenseTypes) {
+                        for (const defenseType in buff.statChanges.defenseTypes) {
+                            enemyObject.totalStats.defenseTypes[defenseType] =
+                                (enemyObject.totalStats.defenseTypes[defenseType] || 0) + buff.statChanges.defenseTypes[defenseType];
+                        }
+                    } else if (enemyObject.totalStats.hasOwnProperty(stat) && typeof enemyObject.totalStats[stat] === 'number') {
                         enemyObject.totalStats[stat] += buff.statChanges[stat];
                     }
                     // Handle buffs affecting % modifiers if needed
@@ -893,6 +913,9 @@ function calculateEnemyStats(enemyObject) {
                  // Let's assume it adds to damageMultipliers for consistency
                  if (!enemyObject.totalStats.damageMultipliers) enemyObject.totalStats.damageMultipliers = {};
                  enemyObject.totalStats.damageMultipliers.rusted = 0.75; // Example value
+             }
+             if (debuff.name === 'Severed Limb') {
+                 enemyObject.totalStats.damageMultipliers.severedLimb = Math.pow(0.75, Math.max(1, Number(debuff.stacks) || 1));
              }
              // Handle other debuffs affecting stats (e.g., resistance reduction)
              // Note: Resistance reduction is often handled directly in the debuff's onApply/onRemove

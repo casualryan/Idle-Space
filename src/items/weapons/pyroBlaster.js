@@ -23,8 +23,9 @@ export default {
         slot: 'mainHand',
         effects: [
             {
+                enabled: false,
                 trigger: 'onHit',
-                chance: 0.4,
+                chance: 40,
                 action: 'areaEffect',
                 parameters: {
                     radius: 2,
@@ -38,5 +39,5 @@ export default {
             { name: 'Pyro Core', quantity: 1 },
             { name: 'Advanced Electronic Circuit', quantity: 2 }
         ],
-        description: 'Slow but devastating fire weapon. 40% chance to create a fiery explosion that damages nearby enemies.'
+        description: 'Slow but devastating fire weapon. Its area blast will activate when multi-enemy combat is introduced.'
     };

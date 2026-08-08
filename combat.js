@@ -24,6 +24,7 @@ let currentDelveLocation = null;
 let currentMonsterIndex = 0; // which monster in the sequence
 let interFightPauseTimer = null;
 let delveBag = { items: [], credits: 0 };
+let delveClaimCache = { items: [], credits: 0 };
 
 document.addEventListener('DOMContentLoaded', () => {
     updatePlayerStatsDisplay();
@@ -177,9 +178,9 @@ function startCombat() {
         stopGatheringActivity();
     }
 
-    // Full player stats reset and initialization
-    console.log("Starting combat - full player stats initialization");
-    resetPlayerStats();
+    // Recalculate combat stats without healing between delve encounters.
+    console.log("Starting combat - preparing player stats");
+    preparePlayerForCombat();
 
     isCombatActive = true;
 
@@ -188,7 +189,7 @@ function startCombat() {
         spawnEnemy();
     }
 
-    // Don't need to clear buffs again since resetPlayerStats already did it
+    // Player buffs and debuffs were cleared while preserving current resources.
 
     if (enemy) {
         clearBuffs(enemy);
@@ -293,12 +294,14 @@ function combatLoop() {
         document.getElementById('enemy-attack-progress-bar').style.width = `${enemyProgress}%`;
     }
 
-    // Safely process entity buffs and status effects
+    // Safely process entity buffs and debuffs
     try {
         if (player) {
             processBuffs(player, deltaTime);
             if (player.currentHealth > 0) {
-                processStatusEffects(player, deltaTime);
+                if (window.processDebuffs && Array.isArray(player.activeDebuffs)) {
+                    window.processDebuffs(player, deltaTime);
+                }
             }
         }
 
@@ -307,8 +310,6 @@ function combatLoop() {
                 processBuffs(enemy, deltaTime);
             }
             if (enemy.currentHealth > 0) {
-                processStatusEffects(enemy, deltaTime);
-
                 // Process debuffs on the enemy
                 if (window.processDebuffs && typeof window.processDebuffs === 'function' && enemy.activeDebuffs) {
                     window.processDebuffs(enemy, deltaTime);
@@ -424,8 +425,8 @@ function stopCombat(reason) {
             // Don't end the delve, we'll handle the next monster
             currentMonsterIndex++;
 
-            // Clear buffs between fights, but preserve any future medtek injectors
-            clearBuffs(player, true);
+            // Every encounter starts clean; buffs and debuffs do not carry forward.
+            clearBuffs(player);
             if (enemy) {
                 clearBuffs(enemy);
             }
@@ -452,8 +453,10 @@ function stopCombat(reason) {
         // Auto re-deploy if user has it enabled
         try {
             const auto = localStorage.getItem('autoRedeploy') === 'true';
-            if (auto && window.lastDelveLocation) {
+            if (auto && window.lastDelveLocation && !hasDelveClaimCacheRewards()) {
                 setTimeout(() => startAdventure(window.lastDelveLocation), 500);
+            } else if (auto && hasDelveClaimCacheRewards()) {
+                logMessage('Auto re-deploy paused until the Delve Claim Cache is cleared.');
             }
         } catch (e) { /* ignore */ }
         console.log("stopCombat - delveCompleted - after displayAdventureLocations");
@@ -566,7 +569,6 @@ function spawnEnemyForSequence(monsterName, isEmpowered = false) {
 	}
 
 	// Initialize basic properties
-	enemy.statusEffects = [];
 	enemy.activeBuffs = [];
 	enemy.effects = enemy.effects || [];
 
@@ -583,6 +585,7 @@ function spawnEnemyForSequence(monsterName, isEmpowered = false) {
 
     // Apply empowered bonuses if applicable
     if (isEmpowered) {
+        enemy.isEmpowered = true;
         // Boost stats
         enemy.health = Math.round(enemy.health * 1.5);
         enemy.currentHealth = enemy.health; // Reset current health to new max
@@ -647,9 +650,10 @@ function ensureEntityInitialization(entity, isPlayer) {
 
     // Ensure basic properties exist
     if (!entity.effects) entity.effects = [];
-    if (!entity.statusEffects) entity.statusEffects = [];
     if (!entity.activeBuffs) entity.activeBuffs = [];
     if (!entity.activeDebuffs) entity.activeDebuffs = [];
+    entity.isPlayer = Boolean(isPlayer);
+    entity.isEnemy = !isPlayer;
 
     // Ensure totalStats exists
     if (!entity.totalStats) {
@@ -708,7 +712,7 @@ function ensureEntityInitialization(entity, isPlayer) {
         try {
             // Ensure calculateEnemyStats is available (from stats.js)
             if (typeof calculateEnemyStats === 'function') {
-                calculateEnemyStats(enemy);
+                calculateEnemyStats(entity);
             } else {
                  console.error("calculateEnemyStats function not found!");
                  return false;
@@ -722,27 +726,22 @@ function ensureEntityInitialization(entity, isPlayer) {
     return true;
 }
 
-function resetPlayerStats() {
-    // First initialize base stats
-    player.baseStats = JSON.parse(JSON.stringify(playerBaseStats));
+function preparePlayerForCombat() {
+    const previousHealth = player.currentHealth;
+    const previousShield = player.currentShield;
 
-    // Calculate total stats
+    clearBuffs(player);
     player.calculateStats();
 
-    // Set current health and shield to full
-    player.currentHealth = player.totalStats.health;
-    player.currentShield = player.totalStats.energyShield;
+    player.currentHealth = previousHealth == null
+        ? player.totalStats.health
+        : Math.max(0, Math.min(previousHealth, player.totalStats.health));
+    player.currentShield = previousShield == null
+        ? player.totalStats.energyShield
+        : Math.max(0, Math.min(previousShield, player.totalStats.energyShield));
 
-    // Clear status effects
-    player.statusEffects = [];
-
-    // Update display
     updatePlayerStatsDisplay();
-
-    // Clear any buffs
-    clearBuffs(player);
-
-    console.log("Player stats reset:", player);
+    console.log("Player prepared for combat:", player);
 }
 
 // ============================================================================
@@ -771,6 +770,10 @@ function runSkillHitProcs(attacker, defender, damageResult, profile, hitIndex) {
         }
     }
 
+    if (damageResult.isCritical) {
+        tryApplySeveredLimbFromCritical(attacker, defender);
+    }
+
     if (defender.effects && defender.effects.length > 0) {
         processEffects(defender, 'whenHit', attacker);
     }
@@ -780,6 +783,32 @@ function runSkillHitProcs(attacker, defender, damageResult, profile, hitIndex) {
             if (debuff && debuff.onReceiveHit) {
                 debuff.onReceiveHit(defender, { total: damageResult.total, ...damageResult.damageBreakdown }, attacker);
             }
+        }
+    }
+}
+
+function tryApplySeveredLimbFromCritical(attacker, defender) {
+    const chance = Math.max(0, Number(attacker?.totalStats?.severedLimbChance || 0));
+    if (!defender || chance <= 0 || Math.random() * 100 >= chance) return false;
+    return typeof applyDebuff === 'function'
+        ? applyDebuff(defender, 'severedLimb', attacker)
+        : false;
+}
+
+function runPreAttackDebuffs(attacker, defender) {
+    if (!Array.isArray(attacker?.activeDebuffs)) return true;
+    for (const debuff of [...attacker.activeDebuffs]) {
+        if (typeof debuff?.onBeforeAttack !== 'function') continue;
+        if (debuff.onBeforeAttack(attacker, defender) === false) return false;
+    }
+    return true;
+}
+
+function runPostAttackDebuffs(attacker, defender, damageResult) {
+    if (!Array.isArray(attacker?.activeDebuffs)) return;
+    for (const debuff of [...attacker.activeDebuffs]) {
+        if (typeof debuff?.onAfterAttack === 'function') {
+            debuff.onAfterAttack(attacker, defender, damageResult);
         }
     }
 }
@@ -801,17 +830,7 @@ function executeEquippedSkill(attacker, defender) {
     }
 
     try {
-        // Debuff onAttack once per skill cycle (e.g. stagger)
-        if (defender.activeDebuffs && Array.isArray(defender.activeDebuffs)) {
-            for (const debuff of defender.activeDebuffs) {
-                if (debuff && debuff.onAttack) {
-                    const result = debuff.onAttack(defender, attacker);
-                    if (result === false) {
-                        return;
-                    }
-                }
-            }
-        }
+        if (!runPreAttackDebuffs(attacker, defender)) return;
 
         const profile = typeof resolveSkillProfile === 'function'
             ? resolveSkillProfile(attacker)
@@ -820,6 +839,11 @@ function executeEquippedSkill(attacker, defender) {
         attacker._activeSkillDebuffBonus = profile.debuffApplyBonus || 0;
 
         let lastDamageResult = null;
+        const attackDamageResult = {
+            total: 0,
+            damageBreakdown: {},
+            isCritical: false
+        };
         const attackerLabel = attacker.name || 'Player';
         const defenderName = defender.name || 'Enemy';
 
@@ -865,11 +889,20 @@ function executeEquippedSkill(attacker, defender) {
 
             runSkillHitProcs(attacker, defender, damageResult, profile, hit);
             lastDamageResult = damageResult;
+            attackDamageResult.total += damageResult.total;
+            attackDamageResult.isCritical ||= damageResult.isCritical;
+            for (const [damageType, amount] of Object.entries(damageResult.damageBreakdown || {})) {
+                attackDamageResult.damageBreakdown[damageType] =
+                    (attackDamageResult.damageBreakdown[damageType] || 0) + amount;
+            }
 
             if (!defender) break;
         }
 
         attacker._activeSkillDebuffBonus = 0;
+        if (lastDamageResult) {
+            runPostAttackDebuffs(attacker, defender, attackDamageResult);
+        }
 
         if (profile.comboAfterSkill !== false && lastDamageResult && attacker && defender) {
             processComboAttacks(attacker, defender, lastDamageResult, profile);
@@ -905,18 +938,7 @@ function enemyAttack() {
     }
 
     try {
-        // Process any debuffs that might prevent the attack
-        if (enemy.activeDebuffs && Array.isArray(enemy.activeDebuffs)) {
-            for (const debuff of enemy.activeDebuffs) {
-                if (debuff && debuff.onAttack) {
-                    const result = debuff.onAttack(enemy, player);
-                    if (result === false) {
-                        // Attack was prevented by a debuff
-                        return;
-                    }
-                }
-            }
-        }
+        if (!runPreAttackDebuffs(enemy, player)) return;
 
         // Get damage calculation with breakdown using the centralized function
         let damageResult;
@@ -942,6 +964,8 @@ function enemyAttack() {
         }
 
         applyDamage(player, damageResult.total, "Player", damageResult.damageBreakdown);
+        if (damageResult.isCritical) tryApplySeveredLimbFromCritical(enemy, player);
+        runPostAttackDebuffs(enemy, player, damageResult);
 
         // Check again after damage application if entities still exist
         if (!player || !enemy) {
@@ -1062,12 +1086,14 @@ function processComboHitProcs(attacker, defender, procStrength) {
 
     const effectsCopy = [...attacker.effects];
     for (const effect of effectsCopy) {
-        if (!effect || effect.trigger !== 'onHit') continue;
+        if (!effect || effect.enabled === false || effect.trigger !== 'onHit') continue;
 
-        let baseChance = effect.chance || 0;
+        let baseChance = Math.max(0, Number(effect.chance || 0)) / 100;
         let efficiencyBonus = 0;
         if (attacker.totalStats) {
-            efficiencyBonus = attacker.totalStats.weaponEfficiency || 0;
+            efficiencyBonus = effect.sourceSlot === 'bionic'
+                ? (attacker.totalStats.bionicEfficiency || 0)
+                : (attacker.totalStats.weaponEfficiency || 0);
         }
         const modifiedChance = (baseChance + (baseChance * efficiencyBonus / 100)) * procStrength;
         const finalChance = Math.min(modifiedChance, 1.0);
@@ -1089,6 +1115,151 @@ window.executeEquippedSkill = executeEquippedSkill;
 // 5. DELVE SYSTEM
 // ============================================================================
 
+function hasDelveClaimCacheRewards() {
+    return delveClaimCache.items.length > 0 || delveClaimCache.credits > 0;
+}
+
+function closeDelveClaimCachePopup() {
+    document.getElementById('delve-claim-cache-overlay')?.remove();
+}
+
+function getDelveClaimCacheSaleValue() {
+    return delveClaimCache.items.reduce((total, item) => {
+        const quantity = item?.stackable ? Math.max(1, Number(item.quantity) || 1) : 1;
+        return total + (typeof getItemSalePrice === 'function' ? getItemSalePrice(item) * quantity : 0);
+    }, 0);
+}
+
+function refreshDelveClaimCacheUI(reopenPopup = false) {
+    displayAdventureLocations();
+    if (reopenPopup && hasDelveClaimCacheRewards()) showDelveClaimCachePopup();
+    else if (!hasDelveClaimCacheRewards()) {
+        closeDelveClaimCachePopup();
+        try {
+            const auto = localStorage.getItem('autoRedeploy') === 'true';
+            if (auto && window.lastDelveLocation && !isCombatActive && !isDelveInProgress) {
+                setTimeout(() => startAdventure(window.lastDelveLocation), 500);
+            }
+        } catch (error) { /* localStorage may be unavailable */ }
+    }
+}
+
+function claimDelveCacheCredits() {
+    if (delveClaimCache.credits <= 0) return;
+    playerCurrency += delveClaimCache.credits;
+    logMessage(`Claimed ${delveClaimCache.credits} credits from the Delve Claim Cache.`);
+    delveClaimCache.credits = 0;
+}
+
+function claimDelveCacheItem(index) {
+    const item = delveClaimCache.items[index];
+    if (!item) return false;
+    if (!addItemToInventory(item)) {
+        if (typeof showWarningPopup === 'function') {
+            showWarningPopup('Your inventory is full. Free a slot or sell the remaining cache items.');
+        }
+        return false;
+    }
+    delveClaimCache.items.splice(index, 1);
+    logMessage(`Claimed ${item.quantity || 1} x ${item.name}.`);
+    refreshDelveClaimCacheUI(true);
+    return true;
+}
+
+function claimAllDelveCacheRewards() {
+    claimDelveCacheCredits();
+    const remaining = [];
+    for (const item of delveClaimCache.items) {
+        if (!addItemToInventory(item)) remaining.push(item);
+        else logMessage(`Claimed ${item.quantity || 1} x ${item.name}.`);
+    }
+    delveClaimCache.items = remaining;
+    if (remaining.length > 0 && typeof showWarningPopup === 'function') {
+        showWarningPopup(`${remaining.length} claim-cache item${remaining.length === 1 ? '' : 's'} could not fit in your inventory.`);
+    }
+    refreshDelveClaimCacheUI(remaining.length > 0);
+}
+
+function sellRemainingDelveCacheRewards() {
+    const saleValue = getDelveClaimCacheSaleValue();
+    const itemCount = delveClaimCache.items.length;
+    playerCurrency += delveClaimCache.credits + saleValue;
+    const totalCredits = delveClaimCache.credits + saleValue;
+    delveClaimCache = { items: [], credits: 0 };
+    logMessage(`Cleared the Delve Claim Cache: ${itemCount} item${itemCount === 1 ? '' : 's'} sold or discarded for ${totalCredits} credits.`);
+    refreshDelveClaimCacheUI(false);
+}
+
+function discardDelveClaimCacheForNewDelve() {
+    if (!hasDelveClaimCacheRewards()) return;
+    const lostItems = delveClaimCache.items.length;
+    const lostCredits = delveClaimCache.credits;
+    delveClaimCache = { items: [], credits: 0 };
+    closeDelveClaimCachePopup();
+    logMessage(`Starting a new delve destroyed ${lostItems} unclaimed item${lostItems === 1 ? '' : 's'} and ${lostCredits} unclaimed credits.`);
+}
+
+function showDelveClaimCachePopup() {
+    closeDelveClaimCachePopup();
+    if (!hasDelveClaimCacheRewards()) return;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'delve-claim-cache-overlay';
+    overlay.className = 'delve-claim-cache-overlay';
+
+    const popup = document.createElement('section');
+    popup.className = 'delve-claim-cache-popup';
+    popup.setAttribute('role', 'dialog');
+    popup.setAttribute('aria-modal', 'true');
+    popup.setAttribute('aria-labelledby', 'delve-claim-cache-title');
+
+    const rows = delveClaimCache.items.map((item, index) => `
+        <li class="delve-claim-cache-item">
+            <span>${item.name} x${item.quantity || 1}</span>
+            <button type="button" data-claim-cache-index="${index}">Claim</button>
+        </li>
+    `).join('');
+
+    popup.innerHTML = `
+        <h2 id="delve-claim-cache-title">Delve Claim Cache</h2>
+        <p class="delve-claim-cache-warning">Unclaimed rewards disappear when you start another delve.</p>
+        <div class="delve-claim-cache-credits">Credits waiting: ${delveClaimCache.credits}</div>
+        <ul class="delve-claim-cache-list">${rows || '<li class="delve-claim-cache-empty">No items waiting.</li>'}</ul>
+        <div class="delve-claim-cache-actions">
+            <button type="button" data-claim-cache-action="all">Claim All That Fits</button>
+            <button type="button" data-claim-cache-action="sell">Sell/Discard Remaining (${getDelveClaimCacheSaleValue()} item credits)</button>
+            <button type="button" data-claim-cache-action="close">Close</button>
+        </div>
+    `;
+
+    popup.querySelectorAll('[data-claim-cache-index]').forEach(button => {
+        button.addEventListener('click', () => claimDelveCacheItem(Number(button.dataset.claimCacheIndex)));
+    });
+    popup.querySelector('[data-claim-cache-action="all"]').addEventListener('click', claimAllDelveCacheRewards);
+    popup.querySelector('[data-claim-cache-action="sell"]').addEventListener('click', sellRemainingDelveCacheRewards);
+    popup.querySelector('[data-claim-cache-action="close"]').addEventListener('click', closeDelveClaimCachePopup);
+
+    overlay.appendChild(popup);
+    document.body.appendChild(overlay);
+}
+
+function appendDelveClaimCacheAccess(container) {
+    if (!hasDelveClaimCacheRewards()) return;
+    const panel = document.createElement('div');
+    panel.className = 'delve-claim-cache-access';
+    panel.innerHTML = `
+        <strong>Unclaimed Delve Rewards</strong>
+        <span>${delveClaimCache.items.length} item${delveClaimCache.items.length === 1 ? '' : 's'} · ${delveClaimCache.credits} credits</span>
+        <span class="delve-claim-cache-warning">Starting another delve destroys them.</span>
+        <button type="button">Open Claim Cache</button>
+    `;
+    panel.querySelector('button').addEventListener('click', showDelveClaimCachePopup);
+    container.appendChild(panel);
+}
+
+window.hasDelveClaimCacheRewards = hasDelveClaimCacheRewards;
+window.showDelveClaimCachePopup = showDelveClaimCachePopup;
+
 function startAdventure(location) {
     if (window.activityManager && typeof window.activityManager.isActivityActive === 'function' && window.activityManager.isActivityActive()) {
         window.activityManager.cancelActivity('delveStart', { silent: true });
@@ -1107,6 +1278,7 @@ function startAdventure(location) {
 
     // Reset and prepare for adventure
     clearLog();
+    discardDelveClaimCacheForNewDelve();
     logMessage(`You begin your delve into ${location.name}.`);
     currentLocation = location;
     // Remember for auto re-deploy preference
@@ -1260,6 +1432,7 @@ function displayAdventureLocations() {
         autoRow.appendChild(autoChk);
         autoRow.appendChild(autoLbl);
         interfaceContainer.appendChild(autoRow);
+        appendDelveClaimCacheAccess(interfaceContainer);
         
         // Add scanner effect
         const scannerEffect = document.createElement('div');
@@ -1695,8 +1868,7 @@ function beginNextMonsterInSequence() {
         player.currentHealth = player.totalStats.health;
         player.currentShield = player.totalStats.energyShield;
 
-        // Clear buffs at the end of a delve (except for future medtek injectors)
-        clearBuffs(player, true);
+        clearBuffs(player);
 
         // Now restart health regeneration
         stopHealthRegen();
@@ -1790,9 +1962,11 @@ function addMonsterLootToDelveBag(monster) {
 
             // Apply player currency modifiers if they exist
             let finalAmount = amt;
-            if (player && player.stats && player.stats.currencyFind) {
-                finalAmount = Math.floor(amt * (1 + player.stats.currencyFind / 100));
+            const currencyFind = Number(player?.totalStats?.currencyFind ?? player?.stats?.currencyFind ?? 0);
+            if (currencyFind) {
+                finalAmount = Math.floor(amt * (1 + currencyFind / 100));
             }
+            if (monster.isEmpowered) finalAmount = Math.floor(finalAmount * 1.5);
 
             delveBag.credits += finalAmount;
             logMessage(`Credits added to delve bag: ${finalAmount}`);
@@ -1808,26 +1982,17 @@ function finalizeDelveLoot() {
     isDelveInProgress = false;
     console.log("finalizeDelveLoot - after setting flag - isDelveInProgress:", isDelveInProgress);
 
-    // Clear all buffs except medtek injectors when completing a delve
-    clearBuffs(player, true);
+    clearBuffs(player);
 
-    logMessage("You successfully cleared the delve and collect your spoils!");
+    logMessage("You successfully cleared the delve. Your spoils are waiting in the Delve Claim Cache.");
 
-    delveBag.items.forEach(loot => {
-        const itemTemplate = items.find(i => i.name === loot.name);
-        if (itemTemplate) {
-            const instance = generateItemInstance(itemTemplate);
-            instance.quantity = loot.quantity;
-            addItemToInventory(instance);
-            logMessage(`Acquired ${loot.quantity} x ${loot.name}.`);
-        }
-    });
-    if (delveBag.credits > 0) {
-        playerCurrency += delveBag.credits;
-        logMessage(`Gained ${delveBag.credits} credits!`);
-    }
+    delveClaimCache = {
+        items: delveBag.items.slice(),
+        credits: delveBag.credits
+    };
     delveBag = { items: [], credits: 0 };
     updateDelveBagUI(); // Update UI when loot is finalized
+    setTimeout(showDelveClaimCachePopup, 0);
 }
 
 function stopDelveWithFailure() {
@@ -1947,8 +2112,9 @@ function calculateZoneXPPenaltyPercent() {
     } catch (e) { return 0; }
 }
 
-function awardXPWithZonePenalty(baseXP, defeatedName) {
+function awardXPWithZonePenalty(baseXP, defeatedName, defeatedEnemy = null) {
     let xp = Math.floor(Number(baseXP) || 0);
+    if (defeatedEnemy?.isEmpowered) xp = Math.floor(xp * 1.5);
     const penalty = calculateZoneXPPenaltyPercent();
     if (penalty > 0 && xp > 0) {
         // Apply penalty and round down per spec
@@ -2718,10 +2884,10 @@ function animateHpBarChunk(target, damageAmount) {
     const damageNumber = document.createElement('div');
     damageNumber.classList.add('damage-number');
     let dmgText1 = `-${Math.round(damageAmount)}`;
-    if (typeof lastDamageWasCrit === 'boolean' && lastDamageWasCrit) {
+    if (window.__lastIsCrit === true) {
         damageNumber.classList.add('dmg-crit');
         dmgText1 += '!';
-    } else if (typeof lastDamageWasDebuff === 'boolean' && lastDamageWasDebuff) {
+    } else if (window.__lastIsDebuff === true) {
         damageNumber.classList.add('dmg-debuff');
     }
     damageNumber.textContent = dmgText1;
@@ -2789,10 +2955,10 @@ function animateShieldBarChunk(target, shieldDamageAmount) {
     const damageNumber = document.createElement('div');
     damageNumber.classList.add('damage-number');
     let dmgText2 = `-${Math.round(shieldDamageAmount)}`;
-    if (typeof lastDamageWasCrit === 'boolean' && lastDamageWasCrit) {
+    if (window.__lastIsCrit === true) {
         damageNumber.classList.add('dmg-crit');
         dmgText2 += '!';
-    } else if (typeof lastDamageWasDebuff === 'boolean' && lastDamageWasDebuff) {
+    } else if (window.__lastIsDebuff === true) {
         damageNumber.classList.add('dmg-debuff');
     }
     damageNumber.textContent = dmgText2;
@@ -2842,24 +3008,24 @@ function processEffects(entity, trigger, target, sourceDamage = 0) {
             console.warn('Skipping invalid effect:', effect);
             continue;
         }
+        if (effect.enabled === false) continue;
 
         if (effect.trigger === trigger) {
             // Make sure effect has a chance property
-            let baseChance = effect.chance || 0;
+            let baseChance = Math.max(0, Number(effect.chance || 0)) / 100;
             
             // Apply efficiency modifiers based on trigger type and entity stats
             let efficiencyBonus = 0;
             if (entity.totalStats) {
                 // Determine efficiency type based on the source of the effect
-                if (trigger === 'onHit' || trigger === 'onCritical') {
+                if (effect.sourceSlot === 'bionic') {
+                    efficiencyBonus = entity.totalStats.bionicEfficiency || 0;
+                } else if (trigger === 'onHit' || trigger === 'onCritical') {
                     // Weapon/attack effects - use weapon efficiency
                     efficiencyBonus = entity.totalStats.weaponEfficiency || 0;
                 } else if (trigger === 'whenHit') {
                     // Defensive effects - use armor efficiency
                     efficiencyBonus = entity.totalStats.armorEfficiency || 0;
-                } else if (trigger === 'bionic') {
-                    // Bionic effects - use bionic efficiency
-                    efficiencyBonus = entity.totalStats.bionicEfficiency || 0;
                 }
             }
             
@@ -2870,7 +3036,7 @@ function processEffects(entity, trigger, target, sourceDamage = 0) {
             try {
                 // Check if the effect activates based on modified chance
                 if (Math.random() < finalChance) {
-                    console.log(`Effect triggered with ${(finalChance * 100).toFixed(1)}% chance (base: ${(baseChance * 100).toFixed(1)}%, efficiency bonus: ${efficiencyBonus}%):`, effect);
+                    console.log(`Effect triggered with ${(finalChance * 100).toFixed(1)}% chance (base: ${Number(effect.chance || 0).toFixed(1)}%, efficiency bonus: ${efficiencyBonus}%):`, effect);
                     executeEffectAction(effect, entity, target, sourceDamage);
                 } else {
                     console.log(`Effect did not trigger (${(finalChance * 100).toFixed(1)}% chance).`);
@@ -3068,7 +3234,7 @@ function applyDamage(target, damage, targetName, damageTypes = null) {
             // Award XP from the defeated enemy before combat state is cleared
             try {
                 const xpVal = (typeof target.experienceValue === 'number') ? target.experienceValue : 0;
-                awardXPWithZonePenalty(xpVal, target.name);
+                awardXPWithZonePenalty(xpVal, target.name, target);
             } catch (e) { /* ignore */ }
             stopCombat("enemyDefeated");
         }
@@ -3150,7 +3316,7 @@ function applyEffectDamage(target, amount, damageType, ignoreDefense = false, so
             try {
                 const defeatedEnemy = enemy; // snapshot
                 const baseXp = (defeatedEnemy && typeof defeatedEnemy.experienceValue === 'number') ? defeatedEnemy.experienceValue : 0;
-                awardXPWithZonePenalty(baseXp, defeatedEnemy?.name);
+                awardXPWithZonePenalty(baseXp, defeatedEnemy?.name, defeatedEnemy);
             } catch (e) { /* ignore */ }
             stopCombat("enemyDefeated");
         }
@@ -3217,8 +3383,8 @@ function processBuffs(entity, deltaTime) {
         }
     }
     if (buffsChanged) {
-        entity.calculateStats();
         if (entity === player) {
+            entity.calculateStats();
             updatePlayerStatsDisplay();
         } else if (entity === enemy) {
             // Use calculateEnemyStats if available
@@ -3230,34 +3396,12 @@ function processBuffs(entity, deltaTime) {
     }
 }
 
-// Function to process status effects and buffs
-function processStatusEffects(entity, deltaTime) {
-    // Process status effects (e.g., debuffs)
-    for (let i = entity.statusEffects.length - 1; i >= 0; i--) {
-        const effect = entity.statusEffects[i];
-        if (effect.duration > 0) {
-            effect.remainingDuration -= deltaTime;
-            if (effect.onTick) effect.onTick(effect);
-
-            if (effect.remainingDuration <= 0) {
-                if (effect.onExpire) effect.onExpire(effect);
-                entity.statusEffects.splice(i, 1); // Remove expired effect
-            }
-        }
-    }
-}
-
-function clearBuffs(entity, preserveMedtekInjectors = false) {
+function clearBuffs(entity) {
     if (!entity) return;
 
     // Clear buffs
     if (entity.activeBuffs && entity.activeBuffs.length > 0) {
-        if (preserveMedtekInjectors) {
-            entity.activeBuffs = entity.activeBuffs.filter(buff =>
-                buff.name && buff.name.includes('Medtek Injector'));
-        } else {
-            entity.activeBuffs = [];
-        }
+        entity.activeBuffs = [];
     }
 
     // Clear debuffs if they exist
@@ -3286,31 +3430,8 @@ function clearBuffs(entity, preserveMedtekInjectors = false) {
     }
 }
 
-function applyStatusEffect(target, effectName) {
-    // Create the status effect instance using the factory function
-    let effectFactory = statusEffects[effectName];
-    if (effectFactory) {
-        let effect = effectFactory(target);
-        target.statusEffects.push(effect);
-    } else {
-        console.error(`Status effect '${effectName}' not found.`);
-    }
-}
-
 // Function to handle loot drops
 function dropLoot(enemy) {
     // Use the new loot handler
     handleLootDrop(enemy);
 }
-
-// ============================================================================
-// 8. HELPERS
-// ============================================================================
-
-function getRandomInt(min, max) {
-    // Ensure min and max are integers
-    min = Math.ceil(min);
-    max = Math.floor(max);
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
