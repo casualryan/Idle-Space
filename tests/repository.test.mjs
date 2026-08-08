@@ -334,6 +334,18 @@ test('async runtime loading cannot miss the one-time DOMContentLoaded event', ()
   );
 });
 
+test('fabrication cards keep intrinsic row height inside the scrolling screen', () => {
+  const styles = read('style.css');
+  const recipeContainerRule = styles.match(/\.recipe-container\s*\{([^}]*)\}/)?.[1] || '';
+  const recipeCardRule = styles.match(/\.recipe-card\s*\{([^}]*)\}/)?.[1] || '';
+
+  assert.match(recipeContainerRule, /grid-auto-rows:\s*max-content/);
+  assert.match(recipeContainerRule, /flex:\s*0 0 auto/);
+  assert.match(recipeContainerRule, /overflow:\s*visible/);
+  assert.match(recipeCardRule, /width:\s*100%/);
+  assert.match(recipeCardRule, /height:\s*auto/);
+});
+
 test('Codex sources live enemy, loot, and debuff registries', () => {
   const source = read('codex.js');
   assert.match(source, /window\.enemies/);
