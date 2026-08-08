@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 import enemies from '../src/enemies/index.js';
@@ -12,7 +14,7 @@ import materials from '../src/items/materials/index.js';
 import weapons from '../src/items/weapons/index.js';
 import { RUNTIME_SCRIPTS } from '../src/runtimeScripts.js';
 
-const repositoryRoot = path.resolve(import.meta.dirname, '..');
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const allItems = [...weapons, ...materials, ...armor, ...bionics, ...chips];
 const itemNames = new Set(allItems.map(item => item.name));
 const enemyNames = new Set(enemies.map(enemy => enemy.name));
@@ -523,7 +525,7 @@ test('area XP rewards advance each five-level band in a reasonable number of cle
   const enemyByName = new Map(enemies.map(entry => [entry.name, entry]));
   const xpForLevel = level => level <= 1 ? 100 : Math.round((xpForLevel(level - 1) + 15) * 1.15);
 
-  for (const area of areas.filter(entry => !entry.developerOnly)) {
+  for (const area of areas.filter(entry => !entry.developerOnly && entry.recommendedLevel < 50)) {
     const totalWeight = area.enemies.reduce((sum, entry) => sum + entry.spawnRate, 0);
     const xpPerFight = area.enemies.reduce((sum, entry) => {
       return sum + (entry.spawnRate / totalWeight) * enemyByName.get(entry.name).experienceValue;
@@ -537,6 +539,48 @@ test('area XP rewards advance each five-level band in a reasonable number of cle
     assert.ok(expectedClears >= 7 && expectedClears <= 13,
       `${area.name} requires about ${expectedClears.toFixed(1)} clears for its level band`);
   }
+});
+
+test('max-level areas form four ordered endgame tiers', () => {
+  const areas = evaluateClassic('locations.js', 'locations').filter(area => area.locationCategory === 'endgame');
+  assert.deepEqual(Array.from(areas, area => area.endgameTier), [1, 2, 3, 4]);
+  assert.ok(areas.every(area => area.recommendedLevel === 50));
+  assert.ok(areas.every(area => area.enemies.length >= 5));
+
+  const enemyByName = new Map(enemies.map(entry => [entry.name, entry]));
+  for (const area of areas) {
+    assert.ok(area.enemies.every(entry => enemyByName.get(entry.name)?.level > 50));
+  }
+  for (let index = 1; index < areas.length; index++) {
+    assert.ok(areas[index].numFights >= areas[index - 1].numFights);
+    assert.ok(areas[index].enemies[0].empoweredChance >= areas[index - 1].enemies[0].empoweredChance);
+  }
+});
+
+test('balance simulation preserves the authored difficulty curve', () => {
+  const output = execFileSync(process.execPath, ['scripts/analyze-progression-balance.mjs'], {
+    cwd: repositoryRoot,
+    encoding: 'utf8'
+  });
+  const report = JSON.parse(output);
+  const leveling = report.filter(area => area.contentBand === 'leveling');
+  const endgame = report.filter(area => area.contentBand === 'max-level');
+  const starterRate = leveling.find(area => area.starter).starter.result.winRate;
+  const middleRates = leveling
+    .filter(area => area.entry.profile.level >= 16 && area.entry.profile.level <= 41)
+    .map(area => area.entry.result.winRate);
+
+  assert.ok(starterRate >= 0.5 && starterRate <= 0.7);
+  assert.ok(middleRates.reduce((sum, rate) => sum + rate, 0) / middleRates.length >= 0.85);
+  assert.ok(endgame[0].baseline.result.winRate >= 0.8);
+
+  for (let index = 1; index < endgame.length; index++) {
+    assert.ok(endgame[index].baseline.result.winRate < endgame[index - 1].baseline.result.winRate);
+    assert.ok(endgame[index].fineTuned.result.winRate < endgame[index - 1].fineTuned.result.winRate);
+  }
+
+  assert.ok(endgame[2].fineTuned.result.winRate >= 0.6 && endgame[2].fineTuned.result.winRate <= 0.9);
+  assert.ok(endgame[3].fineTuned.result.winRate >= 0.25 && endgame[3].fineTuned.result.winRate <= 0.6);
 });
 
 test('new-character, fabrication, empowered reward, and claim-cache rules remain wired', () => {

@@ -1664,7 +1664,9 @@ function displayAdventureLocations() {
             // Category indicator
             const categoryTag = document.createElement('div');
             categoryTag.className = 'category-tag';
-            categoryTag.textContent = category.toUpperCase();
+            categoryTag.textContent = category === 'endgame'
+                ? `ENDGAME T${loc.endgameTier || 1}`
+                : category.toUpperCase();
             categoryTag.style.position = 'absolute';
             categoryTag.style.top = '8px';
             categoryTag.style.right = '8px';
@@ -1701,6 +1703,12 @@ function displayAdventureLocations() {
                     categoryTag.style.background = 'rgba(220, 53, 69, 0.3)';
                     categoryTag.style.border = '1px solid #dc3545';
                     categoryTag.style.color = '#f08080';
+                    break;
+                case 'endgame':
+                    categoryTag.style.background = 'rgba(153, 51, 255, 0.35)';
+                    categoryTag.style.border = '1px solid #c266ff';
+                    categoryTag.style.color = '#e0b3ff';
+                    locationCard.style.borderColor = '#8f3dcc';
                     break;
                 default:
                     categoryTag.style.background = 'rgba(108, 117, 125, 0.3)';

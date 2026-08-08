@@ -149,6 +149,66 @@ const allLocations = [
         numFights: 8,
         description: "Apex baseline war-factory depths where titan-grade enemies drop final L46-50 progression materials.",
         locationCategory: "dangerous"
+    },
+    {
+        name: "Crownfall Perimeter",
+        recommendedLevel: 50,
+        enemies: [
+            { name: "Crownfall Skirmisher", spawnRate: 3, empoweredChance: 0.2 },
+            { name: "Ashglass Stalker", spawnRate: 3, empoweredChance: 0.2 },
+            { name: "Voltage Suppressor", spawnRate: 2, empoweredChance: 0.2 },
+            { name: "Phase-Marked Gunner", spawnRate: 2, empoweredChance: 0.2 },
+            { name: "Perimeter Siege Frame", spawnRate: 1, empoweredChance: 0.2 }
+        ],
+        numFights: 8,
+        description: "The first max-level proving ground. A complete level-50 loadout should clear it reliably, but unfinished defenses are exposed quickly.",
+        locationCategory: "endgame",
+        endgameTier: 1
+    },
+    {
+        name: "Null-Signal Bastion",
+        recommendedLevel: 50,
+        enemies: [
+            { name: "Nullwire Reaper", spawnRate: 3, empoweredChance: 0.25 },
+            { name: "Blackout Array", spawnRate: 2, empoweredChance: 0.25 },
+            { name: "Cryogenic Interdictor", spawnRate: 2, empoweredChance: 0.25 },
+            { name: "Caustic Signal Eater", spawnRate: 2, empoweredChance: 0.25 },
+            { name: "Bastion Silence Engine", spawnRate: 1, empoweredChance: 0.25 }
+        ],
+        numFights: 9,
+        description: "A hardened signal fortress for established max-level builds with deliberate resistance coverage and strong crafted rolls.",
+        locationCategory: "endgame",
+        endgameTier: 2
+    },
+    {
+        name: "Sovereign War Foundry",
+        recommendedLevel: 50,
+        enemies: [
+            { name: "Sovereign Blade Assembly", spawnRate: 3, empoweredChance: 0.3 },
+            { name: "Crown Mass Driver", spawnRate: 2, empoweredChance: 0.3 },
+            { name: "Furnace Judgment Engine", spawnRate: 2, empoweredChance: 0.3 },
+            { name: "Stormwall Custodian", spawnRate: 2, empoweredChance: 0.3 },
+            { name: "War Foundry Exarch", spawnRate: 1, empoweredChance: 0.3 }
+        ],
+        numFights: 10,
+        description: "A high-pressure war line meant to defeat generic max-level gear and reward a build tuned for its mixed physical and elemental threats.",
+        locationCategory: "endgame",
+        endgameTier: 3
+    },
+    {
+        name: "Corebound Terminus",
+        recommendedLevel: 50,
+        enemies: [
+            { name: "Terminus Nullblade", spawnRate: 3, empoweredChance: 0.35 },
+            { name: "Corebound Disassembler", spawnRate: 2, empoweredChance: 0.35 },
+            { name: "Eventide Arc Vessel", spawnRate: 2, empoweredChance: 0.35 },
+            { name: "Entropy Containment Choir", spawnRate: 2, empoweredChance: 0.35 },
+            { name: "Dominion Finalizer", spawnRate: 1, empoweredChance: 0.35 }
+        ],
+        numFights: 10,
+        description: "The current apex. High-roll equipment, focused damage, and carefully balanced defenses are expected; merely reaching level 50 is not enough.",
+        locationCategory: "endgame",
+        endgameTier: 4
     }
 ];
 

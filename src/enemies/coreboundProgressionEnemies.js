@@ -8,14 +8,18 @@ const ZONE_POOL_CONFIG = {
     7: { primary: 'z7Phase', secondary: 'z7Spire', maxTier: 6 },
     8: { primary: 'z8Storm', secondary: 'z8Furnace', maxTier: 6 },
     9: { primary: 'z9Isotope', secondary: 'z9Cathedral', maxTier: 6 },
-    10: { primary: 'z10Titan', secondary: 'z10Core', maxTier: 6 }
+    10: { primary: 'z10Titan', secondary: 'z10Core', maxTier: 6 },
+    11: { primary: 'z10Core', secondary: 'z10Titan', maxTier: 6 },
+    12: { primary: 'z10Titan', secondary: 'z10Core', maxTier: 6 },
+    13: { primary: 'z10Core', secondary: 'z10Titan', maxTier: 6 },
+    14: { primary: 'z10Titan', secondary: 'z10Core', maxTier: 6 }
 };
 
 // Area-level pacing correction after simulating both entry-level and
 // end-of-band crafted loadouts through complete delves. These multipliers
 // smooth abrupt gear breakpoints without flattening enemy archetypes.
 const ZONE_COMBAT_TUNING = {
-    1: { health: 1, damage: 1 },
+    1: { health: 0.48, damage: 0.55 },
     2: { health: 1, damage: 1 },
     3: { health: 1, damage: 1 },
     4: { health: 0.85, damage: 0.85 },
@@ -24,7 +28,11 @@ const ZONE_COMBAT_TUNING = {
     7: { health: 1, damage: 1.25 },
     8: { health: 0.7, damage: 0.85 },
     9: { health: 0.8, damage: 1.35 },
-    10: { health: 0.65, damage: 0.85 }
+    10: { health: 0.65, damage: 0.85 },
+    11: { health: 1, damage: 1.25 },
+    12: { health: 1, damage: 1.2 },
+    13: { health: 1, damage: 1.25 },
+    14: { health: 0.8, damage: 1.15 }
 };
 
 const BLUEPRINTS = [
@@ -77,7 +85,27 @@ const BLUEPRINTS = [
     { id: 'cb_foundry_phase_guillotine', name: 'Foundry Phase Guillotine', level: 48, zone: 10, damageType: 'slashing', archetype: 'balanced' },
     { id: 'cb_flux_forged_storm_engine', name: 'Flux-Forged Storm Engine', level: 49, zone: 10, damageType: 'electric', archetype: 'shield' },
     { id: 'cb_containment_titan', name: 'Containment Titan', level: 50, zone: 10, damageType: 'corrosive', archetype: 'heavy' },
-    { id: 'cb_titan_foundry_heart', name: 'Titan Foundry Heart', level: 50, zone: 10, damageType: 'pyro', archetype: 'heavyShield' }
+    { id: 'cb_titan_foundry_heart', name: 'Titan Foundry Heart', level: 50, zone: 10, damageType: 'pyro', archetype: 'heavyShield' },
+    { id: 'cb_crownfall_skirmisher', name: 'Crownfall Skirmisher', level: 51, zone: 11, damageType: 'kinetic', archetype: 'balanced' },
+    { id: 'cb_ashglass_stalker', name: 'Ashglass Stalker', level: 51, zone: 11, damageType: 'slashing', archetype: 'swarm' },
+    { id: 'cb_voltage_suppressor', name: 'Voltage Suppressor', level: 52, zone: 11, damageType: 'electric', archetype: 'shield' },
+    { id: 'cb_phase_marked_gunner', name: 'Phase-Marked Gunner', level: 52, zone: 11, damageType: 'radiation', archetype: 'sniper' },
+    { id: 'cb_perimeter_siege_frame', name: 'Perimeter Siege Frame', level: 53, zone: 11, damageType: 'kinetic', archetype: 'heavy' },
+    { id: 'cb_nullwire_reaper', name: 'Nullwire Reaper', level: 54, zone: 12, damageType: 'slashing', archetype: 'balanced' },
+    { id: 'cb_blackout_array', name: 'Blackout Array', level: 54, zone: 12, damageType: 'electric', archetype: 'shield' },
+    { id: 'cb_cryogenic_interdictor', name: 'Cryogenic Interdictor', level: 55, zone: 12, damageType: 'cryo', archetype: 'sniper' },
+    { id: 'cb_caustic_signal_eater', name: 'Caustic Signal Eater', level: 55, zone: 12, damageType: 'corrosive', archetype: 'heavy' },
+    { id: 'cb_bastion_silence_engine', name: 'Bastion Silence Engine', level: 56, zone: 12, damageType: 'radiation', archetype: 'heavyShield' },
+    { id: 'cb_sovereign_blade_assembly', name: 'Sovereign Blade Assembly', level: 57, zone: 13, damageType: 'slashing', archetype: 'swarm' },
+    { id: 'cb_crown_mass_driver', name: 'Crown Mass Driver', level: 58, zone: 13, damageType: 'kinetic', archetype: 'sniper' },
+    { id: 'cb_furnace_judgment_engine', name: 'Furnace Judgment Engine', level: 58, zone: 13, damageType: 'pyro', archetype: 'heavy' },
+    { id: 'cb_stormwall_custodian', name: 'Stormwall Custodian', level: 59, zone: 13, damageType: 'electric', archetype: 'shield' },
+    { id: 'cb_war_foundry_exarch', name: 'War Foundry Exarch', level: 60, zone: 13, damageType: 'corrosive', archetype: 'heavyShield' },
+    { id: 'cb_terminus_nullblade', name: 'Terminus Nullblade', level: 61, zone: 14, damageType: 'slashing', archetype: 'balanced' },
+    { id: 'cb_corebound_disassembler', name: 'Corebound Disassembler', level: 62, zone: 14, damageType: 'kinetic', archetype: 'heavy' },
+    { id: 'cb_eventide_arc_vessel', name: 'Eventide Arc Vessel', level: 63, zone: 14, damageType: 'electric', archetype: 'sniper' },
+    { id: 'cb_entropy_containment_choir', name: 'Entropy Containment Choir', level: 64, zone: 14, damageType: 'radiation', archetype: 'shield' },
+    { id: 'cb_dominion_finalizer', name: 'Dominion Finalizer', level: 65, zone: 14, damageType: 'pyro', archetype: 'heavyShield' }
 ];
 
 function getBaseHealth(level) {
@@ -193,8 +221,8 @@ function getLootConfig(zone, archetype) {
 
     return {
         baseDropChance,
-        minItems: zone >= 6 ? 2 : 1,
-        maxItems: isHeavy ? 3 : (zone >= 8 ? 3 : 2),
+        minItems: zone >= 11 ? 3 : (zone >= 6 ? 2 : 1),
+        maxItems: zone >= 11 ? (isHeavy ? 5 : 4) : (isHeavy ? 3 : (zone >= 8 ? 3 : 2)),
         poolsByTier
     };
 }
@@ -221,7 +249,7 @@ function getExperienceValue(zone, archetype) {
         heavy: 1.25,
         heavyShield: 1.35
     }[archetype] || 1;
-    return Math.round(perEnemyByZone[zone] * archetypeMultiplier);
+    return Math.round((perEnemyByZone[zone] || perEnemyByZone[10]) * archetypeMultiplier);
 }
 
 function toEnemy(blueprint) {
