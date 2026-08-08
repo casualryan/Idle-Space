@@ -228,17 +228,27 @@ test('radial passive tree is connected, stable, and honors allocation/refund rul
         validation,
         nodeCount: validation.nodeCount,
         edgeCount: validation.edgeCount,
+        clusterCount: validation.clusterCount,
+        notableCount: validation.notableCount,
         sectorCounts: PASSIVE_TREE_SECTOR_ORDER.map(sector => passives.filter(node => node.sector === sector).length),
+        lifeCounts: PASSIVE_TREE_SECTOR_ORDER.map(sector => passives.filter(node => node.sector === sector && (node.effects.flatHealth > 0 || node.effects.healthPercent > 0)).length),
+        shieldCounts: PASSIVE_TREE_SECTOR_ORDER.map(sector => passives.filter(node => node.sector === sector && (node.effects.flatEnergyShield > 0 || node.effects.energyShieldPercent > 0)).length),
         keystones: passives.filter(node => node.type === 'keystone').length,
+        jewels: passives.filter(node => node.type === 'jewel').length,
         before, blockedOuter, blockedRefund, leafRefund
       };
     })()`
   );
   assert.equal(result.validation.valid, true, result.validation.errors.join('; '));
-  assert.equal(result.nodeCount, 253);
-  assert.equal(result.edgeCount, 294);
-  assert.equal(result.keystones, 21);
-  assert.equal(result.sectorCounts.every(count => count === 25), true);
+  assert.equal(result.nodeCount, 1478);
+  assert.equal(result.edgeCount, 1806);
+  assert.equal(result.clusterCount, 147);
+  assert.equal(result.notableCount, 210);
+  assert.equal(result.keystones, 35);
+  assert.equal(result.jewels, 0);
+  assert.equal(result.sectorCounts.every(count => count === 193), true);
+  assert.equal(result.lifeCounts.every(count => count >= 20), true, 'life access is not distributed across every sector');
+  assert.equal(result.shieldCounts.every(count => count >= 15), true, 'Energy Shield access is not distributed across every sector');
   assert.equal(result.before.ok, true, 'an origin gateway was not allocatable');
   assert.equal(result.blockedOuter.ok, false, 'a disconnected outer node was allocatable');
   assert.equal(result.blockedRefund.ok, false, 'a connecting node could orphan an allocation');
@@ -251,9 +261,18 @@ test('passive tree uses immediate viewport tooltips instead of persistent node l
   assert.doesNotMatch(uiSource, /passive-node-label/, 'persistent node labels returned to the passive graph');
   assert.doesNotMatch(uiSource, /<title>/, 'native delayed SVG tooltips returned to passive nodes');
   assert.match(uiSource, /id="passive-node-tooltip"[^>]*role="tooltip"/, 'passive tooltip layer is missing');
-  assert.match(uiSource, /pointerenter[^\n]*showPassiveNodeTooltip/, 'passive tooltip is not shown immediately on hover');
-  assert.match(uiSource, /addEventListener\('focus'/, 'keyboard focus does not expose passive details');
+  assert.match(uiSource, /addEventListener\('pointerover'[\s\S]*?showPassiveNodeTooltip/, 'passive tooltip is not shown immediately on hover');
+  assert.match(uiSource, /addEventListener\('focusin'/, 'keyboard focus does not expose passive details');
+  assert.doesNotMatch(uiSource, /querySelectorAll\('\[data-node-id\]'\)/, 'thousands of passive nodes received individual event listeners');
   assert.match(styles, /\.passive-node-tooltip\s*\{[\s\S]*?pointer-events:\s*none/, 'tooltip can interfere with node hover');
+});
+
+test('level progression awards two passive points and starts level one with two', () => {
+  const globalSource = read('global.js');
+  const codexSource = read('codex.js');
+  assert.match(globalSource, /passivePoints:\s*2/, 'new characters do not begin with two passive points');
+  assert.match(globalSource, /passivePoints\s*=\s*\(player\.passivePoints\s*\|\|\s*0\)\s*\+\s*2/, 'level-up does not award two passive points');
+  assert.match(codexSource, /two passive points per level/, 'the Codex does not explain the two-point progression rate');
 });
 
 test('combat styles expose four attack patterns with three exclusive mastery tiers', () => {
@@ -686,8 +705,8 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   );
 
   assert.equal(result.beforeUnchanged, true, 'migration mutated the parsed legacy payload');
-  assert.equal(result.migrated.toVersion, 12);
-  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  assert.equal(result.migrated.toVersion, 13);
+  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
   assert.equal(result.migrated.state.inventory.length, 0, 'legacy material stacks still occupy ordinary slots');
   assert.equal(result.migrated.state.materialInventory['Scrap Metal'], 20);
   assert.equal(result.migrated.state.materialInventory['Wire Bundle'], 7);
@@ -703,8 +722,8 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   assert.equal(result.migrated.state.player.equipment.bionicSlots[0].defenseTypes.chemicalResistance, 3);
   assert.equal(result.migrated.state.player.equipment.bionicSlots.length, 4);
   assert.equal(result.migrated.state.player.passives.gearBonuses, undefined);
-  assert.equal(result.migrated.state.player.passives.treeVersion, 2);
-  assert.equal(result.migrated.state.player.passives.points, 7, 'retired passive ranks were not refunded');
+  assert.equal(result.migrated.state.player.passives.treeVersion, 3);
+  assert.equal(result.migrated.state.player.passives.points, 24, 'retired ranks and two-points-per-level catch-up were not applied');
   assert.equal(Object.keys(result.migrated.state.player.passives.allocations).length, 0);
   assert.equal(result.migrated.state.player.combatStyles.version, 2);
   assert.deepEqual(Object.keys(result.migrated.state.player.combatStyles.allocations), []);
@@ -716,6 +735,31 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
     /newer than supported version/,
     'a future-version save was accepted'
   );
+});
+
+test('v2 passive saves are refunded and caught up to two points per level', () => {
+  const result = evaluateClassic(
+    'saveSchema.js',
+    `(() => {
+      const migrated = migrateGameStateSnapshot({
+        player: {
+          level: 19,
+          passives: {
+            allocations: { 'kinetic-offense-1': 1, 'kinetic-offense-2': 1, 'kinetic-offense-3': 1 },
+            points: 4,
+            treeVersion: 2
+          }
+        },
+        meta: { version: 12 }
+      });
+      return migrated;
+    })()`
+  );
+
+  assert.deepEqual([...result.appliedVersions], [13]);
+  assert.equal(result.state.player.passives.treeVersion, 3);
+  assert.deepEqual(Object.keys(result.state.player.passives.allocations), []);
+  assert.equal(result.state.player.passives.points, 38);
 });
 
 test('material storage has deterministic slots, capped stacks, and actionable source tooltips', () => {

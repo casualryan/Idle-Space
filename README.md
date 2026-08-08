@@ -44,7 +44,7 @@ Bertha, test-only equipment and shops, and developer tools. Visit the URL with
   from authoritative player/equipment state after load.
 - `contentSchema.js` validates cross-registry references and authored stat keys at
   startup, so typos and disconnected content fail with a useful message.
-- `passives.js` generates the authoritative 253-node, seven-sector radial passive
+- `passives.js` generates the authoritative 1,478-node, seven-sector clustered passive
   network. `passivesUI.js` owns graph allocation/refunds, gear ranks, stat
   aggregation, migration fallback, and the interactive pan/zoom view.
 - `src/items/` contains one module per item and category index files.

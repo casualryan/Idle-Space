@@ -3039,6 +3039,21 @@ hr {
     filter: drop-shadow(0 0 6px rgba(0, 255, 204, 0.7));
 }
 
+.passive-tree-cluster {
+    fill: color-mix(in srgb, var(--sector-color) 4%, transparent);
+    stroke: color-mix(in srgb, var(--sector-color) 20%, transparent);
+    stroke-width: 2;
+    stroke-dasharray: 5 7;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+}
+
+.passive-tree-cluster.is-specialist {
+    fill: color-mix(in srgb, var(--sector-color) 7%, transparent);
+    stroke: color-mix(in srgb, var(--sector-color) 42%, transparent);
+    stroke-width: 3;
+}
+
 .passive-tree-node {
     --sector-color: #5d91ad;
     cursor: pointer;
@@ -3052,6 +3067,22 @@ hr {
     stroke: color-mix(in srgb, var(--sector-color) 62%, #496273);
     stroke-width: 3;
     vector-effect: non-scaling-stroke;
+}
+
+.passive-tree-node.node-travel circle,
+.passive-tree-node.node-bridge circle {
+    fill: #0b1c2b;
+    stroke-width: 2;
+}
+
+.passive-tree-node.node-notable circle {
+    fill: color-mix(in srgb, var(--sector-color) 14%, #07111f);
+    stroke-width: 4;
+}
+
+.passive-tree-node.node-keystone circle {
+    fill: color-mix(in srgb, var(--sector-color) 24%, #07111f);
+    stroke-width: 5;
 }
 
 .passive-tree-node path {

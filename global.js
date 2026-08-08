@@ -111,7 +111,7 @@ let player = {
     // This property holds the cumulative passive bonus (e.g., 0.30 for +30%)
     passiveAttackSpeedBonus: 0,
     passiveAllocations: {},
-    passivePoints: 1,
+    passivePoints: 2,
     passiveTreeVersion: PASSIVE_TREE_VERSION,
     gearPassiveBonuses: {},
     passiveBonuses: createEmptyPassiveBonuses(),
@@ -263,14 +263,14 @@ function checkLevelUp() {
     if (player.experience >= xpForNextLevel) {
         player.level++;
         player.experience -= xpForNextLevel;
-        player.passivePoints = (player.passivePoints||0) + 1;  // Award 1 passive point per level (changed from 2)
+        player.passivePoints = (player.passivePoints || 0) + 2;
         
         // Play level up sound
         if (window.playSound) {
             playSound('LEVEL_UP', 0.5);
         }
         
-        logMessage(`Congratulations! You've reached level ${player.level} and gained 1 passive point!`);
+        logMessage(`Congratulations! You've reached level ${player.level} and gained 2 passive points!`);
         
         // If we've reached max level, cap experience and show a message
         if (player.level >= MAX_PLAYER_LEVEL) {
@@ -776,7 +776,7 @@ function loadGame(slotIndex = null) {
             player.passiveTreeVersion = savedPlayer.passives.treeVersion || PASSIVE_TREE_VERSION;
         } else {
             player.passiveAllocations = {};
-            player.passivePoints = 1;
+            player.passivePoints = 2;
             player.passiveTreeVersion = PASSIVE_TREE_VERSION;
         }
 
@@ -1007,7 +1007,7 @@ function resetGame(slotIndex = null) {
 		player.maxInventorySlots = 30;
         
         // Reset passive system
-        player.passivePoints = 1; // Start with 1 point as a new player
+        player.passivePoints = 2; // Level 1 begins with the same two-point progression grant.
         player.passiveAllocations = {}; // Clear all allocations
         player.passiveTreeVersion = PASSIVE_TREE_VERSION;
         player.gearPassiveBonuses = {}; // Clear all gear bonuses

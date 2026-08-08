@@ -1,8 +1,8 @@
 // Ordered, non-destructive migrations and validation for persisted game snapshots.
 
-const COREBOUND_SAVE_VERSION = 12;
+const COREBOUND_SAVE_VERSION = 13;
 const SAVE_MATERIAL_STACK_CAP = 50000;
-const SAVE_PASSIVE_TREE_VERSION = 2;
+const SAVE_PASSIVE_TREE_VERSION = 3;
 const SAVE_COMBAT_STYLE_VERSION = 2;
 const SAVE_DAMAGE_TYPE_ALIASES = Object.freeze({
     mental: 'slashing',
@@ -231,7 +231,7 @@ const SAVE_MIGRATIONS = Object.freeze([
         mapPersistedItems(state, item => normalizeSavedItemData(item));
         state.player.passives = state.player.passives && typeof state.player.passives === 'object'
             ? state.player.passives
-            : { allocations: {}, points: 1 };
+            : { allocations: {}, points: 2 };
         // Gear passive bonuses are derived from equipped items and must never be authoritative save data.
         delete state.player.passives.gearBonuses;
         state.player.activeBuffs = Array.isArray(state.player.activeBuffs) ? state.player.activeBuffs : [];
@@ -245,13 +245,13 @@ const SAVE_MIGRATIONS = Object.freeze([
     function migrateToVersion9(state) {
         const passives = state.player.passives && typeof state.player.passives === 'object'
             ? state.player.passives
-            : { allocations: {}, points: 1 };
+            : { allocations: {}, points: 2 };
         const allocations = passives.allocations && typeof passives.allocations === 'object'
             ? passives.allocations
             : {};
         let points = Math.max(0, Math.floor(Number(passives.points) || 0));
 
-        // The v2 graph does not guess at mappings from the retired tier-card tree.
+        // The current graph does not guess at mappings from a retired tree.
         // Every legitimately spent rank is returned so an old character loses nothing.
         if (Number(passives.treeVersion) !== SAVE_PASSIVE_TREE_VERSION) {
             points += Object.values(allocations).reduce((total, rank) => {
@@ -309,6 +309,34 @@ const SAVE_MIGRATIONS = Object.freeze([
             container.items = container.items.map(item => convertRetiredMaterialItem(item));
         }
         state.componentDropCounts = convertRetiredMaterialMap(state.componentDropCounts);
+    },
+    function migrateToVersion13(state) {
+        const passives = state.player.passives && typeof state.player.passives === 'object'
+            ? state.player.passives
+            : { allocations: {}, points: 2 };
+        const allocations = passives.allocations && typeof passives.allocations === 'object'
+            ? passives.allocations
+            : {};
+        let points = Math.max(0, Math.floor(Number(passives.points) || 0));
+
+        if (Number(passives.treeVersion) !== SAVE_PASSIVE_TREE_VERSION) {
+            points += Object.values(allocations).reduce((total, rank) => {
+                const value = Math.floor(Number(rank));
+                return total + (Number.isFinite(value) && value > 0 ? value : 0);
+            }, 0);
+            passives.allocations = {};
+        } else {
+            passives.allocations = Object.fromEntries(Object.entries(allocations)
+                .filter(([, rank]) => Number(rank) > 0)
+                .map(([id]) => [id, 1]));
+        }
+
+        const allocatedPoints = Object.keys(passives.allocations).length;
+        const progressionTotal = Math.max(2, Math.floor(Number(state.player.level) || 1) * 2);
+        passives.points = Math.max(points, progressionTotal - allocatedPoints);
+        passives.treeVersion = SAVE_PASSIVE_TREE_VERSION;
+        delete passives.gearBonuses;
+        state.player.passives = passives;
     }
 ]);
 

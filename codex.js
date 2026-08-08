@@ -26,9 +26,9 @@
         'passives': {
             title: 'Passive Network',
             sections: [
-                ['Allocation', 'The network begins at the central Core Origin. Spend one point on a connected node to extend your route. You gain one passive point per level, including one at character creation.'],
-                ['Seven Sectors', 'Kinetic, Slashing, Corrosive, Radiation, Electric, Cryo, and Pyro each provide offense, defense, and utility routes. Border paths blend the identities of neighboring damage types.'],
-                ['Node Classes', 'Minor nodes provide efficient foundational stats. Notables define builds. Keystones create powerful tradeoffs. Masteries deepen a sector, while bridge nodes let a build cross between neighboring sectors.'],
+                ['Allocation', 'The network begins at the central Core Origin. Spend one point on a connected node to extend your route. You gain two passive points per level, including two at character creation.'],
+                ['Seven Sectors', 'Kinetic, Slashing, Corrosive, Radiation, Electric, Cryo, and Pyro each contain branching themed clusters and outer specialist wheels. Life and Energy Shield are distributed throughout every sector. Border paths blend neighboring identities.'],
+                ['Node Classes', 'Travel nodes connect compact clusters. Minor nodes build an idea, Notables reward focused investment, Keystones create powerful tradeoffs, and bridge nodes open cross-sector routes.'],
                 ['Refunds and Equipment', 'Allocation and refunding are currently free, but a refund cannot disconnect any allocated outer node. Some equipment grants ranks to named scalable nodes without allocating or connecting them.']
             ]
         },
