@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 import enemies from '../src/enemies/index.js';
@@ -7,7 +8,8 @@ import armor from '../src/items/armor/index.js';
 import bionics from '../src/items/bionics/index.js';
 import weapons from '../src/items/weapons/index.js';
 
-const root = path.resolve(import.meta.dirname, '..');
+const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(scriptDirectory, '..');
 const DAMAGE_GROUP = {
   kinetic: 'physicalResistance',
   slashing: 'physicalResistance',
