@@ -400,6 +400,145 @@ test('consumable combat debuffs carry the approved mechanics', () => {
   assert.equal(severTarget.totalStats.damageMultipliers.severedLimb, 0.75 ** 2);
 });
 
+test('incoming-hit debuffs consume on player, enemy, and combo hit paths', () => {
+  const combatSource = read('combat.js');
+  const incomingHookCalls = [...combatSource.matchAll(/runIncomingHitDebuffs\(/g)].length;
+  assert.ok(incomingHookCalls >= 4, 'incoming-hit hooks are not wired into every damage path');
+
+  const result = evaluateClassic(
+    'debuffs.js',
+    `(() => {
+      const target = { name: 'Target', activeDebuffs: [], totalStats: { defenseTypes: {} } };
+      applyDebuff(target, 'exposed');
+      target.activeDebuffs[0].onReceiveHit(target, { total: 10 });
+      target.activeDebuffs[0].onReceiveHit(target, { total: 10 });
+      applyDebuff(target, 'exposed');
+      const refreshedCharges = target.activeDebuffs[0].hitsRemaining;
+      target.activeDebuffs[0].onReceiveHit(target, { total: 10 });
+      target.activeDebuffs[0].onReceiveHit(target, { total: 10 });
+      target.activeDebuffs[0].onReceiveHit(target, { total: 10 });
+      return { refreshedCharges, remaining: target.activeDebuffs.length };
+    })()`,
+    { applyEffectDamage: () => {} }
+  );
+
+  assert.equal(result.refreshedCharges, 3);
+  assert.equal(result.remaining, 0);
+});
+
+test('timed damage debuffs deliver their final scheduled tick before expiring', () => {
+  let now = 0;
+  const clock = { now: () => now, set: value => { now = value; } };
+  const damageCalls = [];
+  const result = evaluateClassic(
+    'debuffs.js',
+    `(() => {
+      Date.set(0);
+      const target = { name: 'Target', activeDebuffs: [], totalStats: { defenseTypes: {} } };
+      applyDebuff(target, 'ablaze', null, 50);
+      Date.set(5000);
+      processDebuffs(target, 5);
+      return { remaining: target.activeDebuffs.length };
+    })()`,
+    {
+      Date: clock,
+      player: {},
+      enemy: {},
+      applyEffectDamage: (...args) => damageCalls.push(args)
+    }
+  );
+
+  assert.equal(result.remaining, 0);
+  assert.equal(damageCalls.length, 5);
+  assert.equal(damageCalls.reduce((sum, call) => sum + call[1], 0), 100);
+});
+
+test('indefinite debuffs declare whether they are permanent or consumed', () => {
+  const definitions = evaluateClassic('debuffs.js', 'debuffs', { applyEffectDamage: () => {} });
+  const ambiguous = Object.entries(definitions)
+    .filter(([, definition]) => definition.duration === -1)
+    .filter(([, definition]) => !definition.permanent && !definition.consumesOn)
+    .map(([id]) => id);
+  assert.deepEqual(ambiguous, []);
+});
+
+test('overlapping timed stat debuffs restore without erasing one another', () => {
+  const result = evaluateClassic(
+    'debuffs.js',
+    `(() => {
+      const target = {
+        name: 'Target',
+        activeDebuffs: [],
+        totalStats: {
+          attackSpeed: 2,
+          defenseTypes: { physicalResistance: 40, elementalResistance: 20, chemicalResistance: 10 }
+        }
+      };
+      const source = { totalStats: { debuffBonus: 0 } };
+      applyDebuff(target, 'scorched', source);
+      applyDebuff(target, 'crushed', source);
+      applyDebuff(target, 'frigid', source);
+      applyDebuff(target, 'rusted', source);
+      removeDebuff(target, 'scorched');
+      removeDebuff(target, 'frigid');
+      removeDebuff(target, 'crushed');
+      removeDebuff(target, 'rusted');
+      return target.totalStats;
+    })()`,
+    { player: {}, enemy: {}, applyEffectDamage: () => {} }
+  );
+
+  assert.ok(Math.abs(result.attackSpeed - 2) < 1e-9);
+  assert.ok(Math.abs(result.defenseTypes.physicalResistance - 40) < 1e-9);
+  assert.ok(Math.abs(result.defenseTypes.elementalResistance - 20) < 1e-9);
+  assert.ok(Math.abs(result.defenseTypes.chemicalResistance - 10) < 1e-9);
+});
+
+test('Marty unlocks only common enemy components after five drops', () => {
+  const lootPools = evaluateClassic('lootPools.js', 'LOOT_POOLS');
+  const commonNames = new Set(Object.values(lootPools)
+    .filter(pool => pool.tier === 1)
+    .flatMap(pool => pool.items.map(entry => entry.itemName)));
+  const shopWindow = {
+    coreboundConfig: { developerMode: false },
+    componentDropCounts: {},
+    registerCoreboundInitializer: () => {}
+  };
+  const shop = evaluateClassic(
+    'npcshops.js',
+    '({ npcs, MARTY_COMMON_COMPONENTS, isShopItemVisible })',
+    { window: shopWindow }
+  );
+
+  assert.deepEqual(Array.from(shop.npcs, npc => npc.name), ['Marty', 'Clarissa', 'Zara']);
+  assert.ok(shop.MARTY_COMMON_COMPONENTS.every(entry => commonNames.has(entry.itemName)));
+  assert.ok(shop.MARTY_COMMON_COMPONENTS.every(entry => !shop.isShopItemVisible(entry)));
+  shopWindow.componentDropCounts['Scrap Metal'] = 5;
+  assert.equal(shop.isShopItemVisible(shop.MARTY_COMMON_COMPONENTS[0]), true);
+  assert.equal(shop.npcs.find(npc => npc.name === 'Clarissa').inventory.some(item => item.itemName === 'Minor Electronic Circuit'), false);
+});
+
+test('area XP rewards advance each five-level band in a reasonable number of clears', () => {
+  const areas = evaluateClassic('locations.js', 'locations');
+  const enemyByName = new Map(enemies.map(entry => [entry.name, entry]));
+  const xpForLevel = level => level <= 1 ? 100 : Math.round((xpForLevel(level - 1) + 15) * 1.15);
+
+  for (const area of areas.filter(entry => !entry.developerOnly)) {
+    const totalWeight = area.enemies.reduce((sum, entry) => sum + entry.spawnRate, 0);
+    const xpPerFight = area.enemies.reduce((sum, entry) => {
+      return sum + (entry.spawnRate / totalWeight) * enemyByName.get(entry.name).experienceValue;
+    }, 0);
+    const xpPerClear = xpPerFight * area.numFights;
+    const bandStart = area.recommendedLevel;
+    const bandXp = Array.from({ length: Math.min(5, 50 - bandStart) }, (_, offset) => xpForLevel(bandStart + offset))
+      .reduce((sum, value) => sum + value, 0);
+    const expectedClears = bandXp / xpPerClear;
+
+    assert.ok(expectedClears >= 7 && expectedClears <= 13,
+      `${area.name} requires about ${expectedClears.toFixed(1)} clears for its level band`);
+  }
+});
+
 test('new-character, fabrication, empowered reward, and claim-cache rules remain wired', () => {
   assert.match(read('global.js'), /const STARTING_CREDITS = 1000/);
   assert.match(read('fabrication.js'), /Object\.keys\(ongoingFabrications\)\.length > 0/);

@@ -17,6 +17,7 @@ const debuffs = {
         icon: "icons/debuff-staggered.png",
         damageType: "kinetic",
         duration: -1, // Until the affected entity attempts an attack
+        consumesOn: "next attack",
         stackable: false,
         onApply: function(target) {
             console.log(`${target.name} is staggered and will miss their next attack!`);
@@ -37,24 +38,19 @@ const debuffs = {
         stackable: false,
         resistanceReduction: 10, // Base value, can be modified by stat bonuses
         onApply: function(target, applier) {
-            const statBonus = applier.totalStats.debuffBonus || 0;
+            const statBonus = applier?.totalStats?.debuffBonus || 0;
             this.resistanceReduction = 10 * (1 + statBonus);
             console.log(`${target.name} is crushed! Physical resistance reduced by ${this.resistanceReduction}%`);
             
-            // Store original resistances to restore them later
-            this.originalResistances = {};
+            this.resistanceMultiplier = 1 - (this.resistanceReduction / 100);
             if (target.totalStats.defenseTypes) {
                 const physicalResistance = target.totalStats.defenseTypes.physicalResistance || 0;
-                this.originalResistances.physicalResistance = physicalResistance;
-                target.totalStats.defenseTypes.physicalResistance = physicalResistance - (physicalResistance * (this.resistanceReduction / 100));
+                target.totalStats.defenseTypes.physicalResistance = physicalResistance * this.resistanceMultiplier;
             }
         },
         onRemove: function(target) {
-            // Restore original resistances
-            if (this.originalResistances && target.totalStats.defenseTypes) {
-                for (const type in this.originalResistances) {
-                    target.totalStats.defenseTypes[type] = this.originalResistances[type];
-                }
+            if (this.resistanceMultiplier > 0 && target.totalStats.defenseTypes) {
+                target.totalStats.defenseTypes.physicalResistance /= this.resistanceMultiplier;
             }
             console.log(`${target.name} is no longer crushed.`);
         }
@@ -67,11 +63,16 @@ const debuffs = {
         icon: "icons/debuff-exposed.png",
         damageType: "slashing",
         duration: -1, // Until three incoming hits are consumed
+        consumesOn: "next three incoming hits",
         stackable: false,
         hitsRemaining: 3,
         onApply: function(target) {
             this.hitsRemaining = 3; // Reset counter on apply
             console.log(`${target.name} is exposed! Next ${this.hitsRemaining} hits will deal maximum damage!`);
+        },
+        onRefresh: function(target) {
+            this.hitsRemaining = 3;
+            console.log(`${target.name}'s Exposed charges were refreshed to ${this.hitsRemaining}.`);
         },
         onReceiveHit: function(target, damage) {
             if (this.hitsRemaining > 0) {
@@ -91,6 +92,7 @@ const debuffs = {
         icon: "icons/debuff-severed-limb.png",
         damageType: "slashing",
         duration: -1, // Permanent (-1)
+        permanent: true,
         stackable: true,
         stacks: 1,
         maxStacks: 1,
@@ -134,20 +136,17 @@ const debuffs = {
             this.resistanceReduction = 15 * (1 + statBonus);
             console.log(`${target.name} is scorched! All resistances reduced by ${this.resistanceReduction}%`);
             
-            // Store original resistances
-            this.originalResistances = {};
+            this.resistanceMultiplier = 1 - (this.resistanceReduction / 100);
             if (target.totalStats.defenseTypes) {
                 for (const type in target.totalStats.defenseTypes) {
-                    this.originalResistances[type] = target.totalStats.defenseTypes[type];
-                    target.totalStats.defenseTypes[type] -= target.totalStats.defenseTypes[type] * (this.resistanceReduction / 100);
+                    target.totalStats.defenseTypes[type] *= this.resistanceMultiplier;
                 }
             }
         },
         onRemove: function(target) {
-            // Restore original resistances
-            if (this.originalResistances && target.totalStats.defenseTypes) {
-                for (const type in this.originalResistances) {
-                    target.totalStats.defenseTypes[type] = this.originalResistances[type];
+            if (this.resistanceMultiplier > 0 && target.totalStats.defenseTypes) {
+                for (const type in target.totalStats.defenseTypes) {
+                    target.totalStats.defenseTypes[type] /= this.resistanceMultiplier;
                 }
             }
             console.log(`${target.name} is no longer scorched.`);
@@ -163,14 +162,10 @@ const debuffs = {
         resistanceReduction: 30, // Flat reduction amount
         onApply: function(target) {
             console.log(`${target.name} has Exposed Weakness! All resistances reduced by ${this.resistanceReduction}!`);
-            // Store original resistances
-            this.originalResistances = {};
             if (target.totalStats && target.totalStats.defenseTypes) {
                 // Define the defense types to affect
                 const defenseTypesToReduce = ['physicalResistance', 'elementalResistance', 'chemicalResistance'];
                 for (const type of defenseTypesToReduce) {
-                    this.originalResistances[type] = target.totalStats.defenseTypes[type] || 0;
-                    // Apply flat reduction
                     target.totalStats.defenseTypes[type] = (target.totalStats.defenseTypes[type] || 0) - this.resistanceReduction;
                 }
             }
@@ -179,14 +174,10 @@ const debuffs = {
             else if (target === enemy && typeof updateEnemyStatsDisplay === 'function') updateEnemyStatsDisplay();
         },
         onRemove: function(target) {
-            // Restore original resistances
-            if (this.originalResistances && target.totalStats && target.totalStats.defenseTypes) {
+            if (target.totalStats && target.totalStats.defenseTypes) {
                  const defenseTypesToRestore = ['physicalResistance', 'elementalResistance', 'chemicalResistance'];
                  for (const type of defenseTypesToRestore) {
-                    // Restore only if we have a stored original value
-                    if (this.originalResistances.hasOwnProperty(type)) {
-                         target.totalStats.defenseTypes[type] = this.originalResistances[type];
-                    }
+                    target.totalStats.defenseTypes[type] = (target.totalStats.defenseTypes[type] || 0) + this.resistanceReduction;
                  }
             }
             console.log(`${target.name} no longer has Exposed Weakness.`);
@@ -222,15 +213,15 @@ const debuffs = {
                 addToCombatLog(message, "#FF4500", true);
             }
         },
+        onRefresh: function(target, applier, damage) {
+            this.lastTickTime = Date.now();
+            this.totalDamageAmount = damage ? damage * 2 : 10;
+            this.damagePerTick = this.totalDamageAmount / this.duration;
+        },
         onTick: function(target, deltaTime) {
-            const now = Date.now();
-            if (now - this.lastTickTime >= this.tickInterval * 1000) {
-                // Apply the per-tick damage
-                const dotDamage = this.damagePerTick;
-                applyEffectDamage(target, dotDamage, "pyro", false, "Ablaze debuff");
-                this.lastTickTime = now;
-                console.log(`${target.name} took ${dotDamage} pyro damage from being ablaze!`);
-            }
+            const dotDamage = this.damagePerTick;
+            applyEffectDamage(target, dotDamage, "pyro", false, "Ablaze debuff");
+            console.log(`${target.name} took ${dotDamage} pyro damage from being ablaze!`);
         }
     },
 
@@ -248,7 +239,7 @@ const debuffs = {
         onReceiveHit: function(target, damage, attacker) {
             const bonusDamage = Math.round(damage.total * 0.5);
             console.log(`${target.name} took ${bonusDamage} bonus cryo damage from being brittle!`);
-            applyEffectDamage(target, bonusDamage, "cryo", false, true); // Apply damage without triggering on-hit effects
+            applyEffectDamage(target, bonusDamage, "cryo", false, "Brittle");
         }
     },
     "frigid": {
@@ -260,15 +251,10 @@ const debuffs = {
         stackable: false,
         onApply: function(target) {
             console.log(`${target.name} is frigid! Attack speed halved for ${this.duration} seconds!`);
-            // Store original attack speed
-            this.originalAttackSpeed = target.totalStats.attackSpeed;
             target.totalStats.attackSpeed *= 0.5;
         },
         onRemove: function(target) {
-            // Restore original attack speed
-            if (this.originalAttackSpeed) {
-                target.totalStats.attackSpeed = this.originalAttackSpeed;
-            }
+            target.totalStats.attackSpeed /= 0.5;
             console.log(`${target.name} is no longer frigid.`);
         }
     },
@@ -279,13 +265,18 @@ const debuffs = {
         description: "The next incoming hit is guaranteed to critically hit with +50% critical damage",
         icon: "icons/debuff-zapped.png",
         damageType: "electric",
-        duration: -1, // Until next attack
+        duration: -1, // Until the next incoming hit
+        consumesOn: "next incoming hit",
         stackable: false,
         critDamageBonus: 0.5,
         onApply: function(target, applier) {
-            const statBonus = applier ? (applier.totalStats.debuffBonus || 0) : 0;
+            const statBonus = applier?.totalStats?.debuffBonus || 0;
             this.critDamageBonus = 0.5 * (1 + statBonus);
             console.log(`${target.name} is zapped! The next incoming hit is guaranteed to critically hit.`);
+        },
+        onRefresh: function(target, applier) {
+            const statBonus = applier?.totalStats?.debuffBonus || 0;
+            this.critDamageBonus = 0.5 * (1 + statBonus);
         }
     },
     "shocked": {
@@ -294,6 +285,7 @@ const debuffs = {
         icon: "icons/debuff-shocked.png",
         damageType: "electric",
         duration: -1, // Until next hit
+        consumesOn: "next incoming hit",
         stackable: false,
         onApply: function(target) {
             console.log(`${target.name} is shocked! The next incoming hit will discharge for equal electric damage.`);
@@ -319,13 +311,6 @@ const debuffs = {
         onApply: function(target) {
             console.log(`${target.name} is rusted! Attack speed, damage, and resistances reduced to 3/4!`);
             
-            // Store original values
-            this.originalStats = {
-                attackSpeed: target.totalStats.attackSpeed,
-                damageMultiplier: target.totalStats.damageMultiplier || 1,
-                defenseTypes: {}
-            };
-            
             // Modify attack speed
             target.totalStats.attackSpeed *= 0.75;
             
@@ -338,24 +323,20 @@ const debuffs = {
             // Modify resistances
             if (target.totalStats.defenseTypes) {
                 for (const type in target.totalStats.defenseTypes) {
-                    this.originalStats.defenseTypes[type] = target.totalStats.defenseTypes[type];
                     target.totalStats.defenseTypes[type] *= 0.75;
                 }
             }
         },
         onRemove: function(target) {
-            // Restore original values
-            if (this.originalStats) {
-                target.totalStats.attackSpeed = this.originalStats.attackSpeed;
-                
-                if (target.totalStats.damageMultipliers) {
-                    delete target.totalStats.damageMultipliers.rusted;
-                }
-                
-                if (target.totalStats.defenseTypes && this.originalStats.defenseTypes) {
-                    for (const type in this.originalStats.defenseTypes) {
-                        target.totalStats.defenseTypes[type] = this.originalStats.defenseTypes[type];
-                    }
+            target.totalStats.attackSpeed /= 0.75;
+
+            if (target.totalStats.damageMultipliers) {
+                delete target.totalStats.damageMultipliers.rusted;
+            }
+
+            if (target.totalStats.defenseTypes) {
+                for (const type in target.totalStats.defenseTypes) {
+                    target.totalStats.defenseTypes[type] /= 0.75;
                 }
             }
             console.log(`${target.name} is no longer rusted.`);
@@ -372,17 +353,19 @@ const debuffs = {
         lastTickTime: 0,
         onApply: function(target, applier) {
             this.lastTickTime = Date.now();
-            this.baseDamage = applier ? (applier.totalStats.damageTypes.corrosive * 0.15) : 8;
+            const sourceCorrosiveDamage = Number(applier?.totalStats?.damageTypes?.corrosive || 0);
+            this.baseDamage = sourceCorrosiveDamage > 0 ? sourceCorrosiveDamage * 0.15 : 8;
             console.log(`${target.name} is coated in acid! Taking ${this.baseDamage} corrosive damage per second for ${this.duration} seconds!`);
         },
+        onRefresh: function(target, applier) {
+            this.lastTickTime = Date.now();
+            const sourceCorrosiveDamage = Number(applier?.totalStats?.damageTypes?.corrosive || 0);
+            this.baseDamage = sourceCorrosiveDamage > 0 ? sourceCorrosiveDamage * 0.15 : 8;
+        },
         onTick: function(target, deltaTime) {
-            const now = Date.now();
-            if (now - this.lastTickTime >= this.tickInterval * 1000) {
-                const dotDamage = this.baseDamage;
-                applyEffectDamage(target, dotDamage, "corrosive");
-                this.lastTickTime = now;
-                console.log(`${target.name} took ${dotDamage} corrosive damage from acid!`);
-            }
+            const dotDamage = this.baseDamage;
+            applyEffectDamage(target, dotDamage, "corrosive", false, "Coated in Acid");
+            console.log(`${target.name} took ${dotDamage} corrosive damage from acid!`);
         }
     },
 
@@ -393,6 +376,7 @@ const debuffs = {
         icon: "icons/debuff-unstable.png",
         damageType: "radiation",
         duration: -1, // Until next attack
+        consumesOn: "next attack",
         stackable: false,
         onApply: function(target) {
             console.log(`${target.name} is unstable! Their next attack will reflect its damage back as radiation.`);
@@ -412,6 +396,7 @@ const debuffs = {
         icon: "icons/debuff-rad-poisoning.png",
         damageType: "radiation",
         duration: -1, // Permanent (-1)
+        permanent: true,
         stackable: true,
         stacks: 1,
         maxStacks: 10,
@@ -432,14 +417,9 @@ const debuffs = {
             }
         },
         onTick: function(target, deltaTime) {
-            const now = Date.now();
-            if (now - this.lastTickTime >= this.tickInterval * 1000) {
-                // Damage scales with stacks
-                const dotDamage = 2 * this.stacks;
-                applyEffectDamage(target, dotDamage, "radiation");
-                this.lastTickTime = now;
-                console.log(`${target.name} took ${dotDamage} radiation damage from rad poisoning (${this.stacks} stacks)!`);
-            }
+            const dotDamage = 2 * this.stacks;
+            applyEffectDamage(target, dotDamage, "radiation", false, "Rad Poisoning");
+            console.log(`${target.name} took ${dotDamage} radiation damage from rad poisoning (${this.stacks} stacks)!`);
         }
     },
     "seepingWound": {
@@ -491,19 +471,13 @@ const debuffs = {
             }
         },
         onTick: function(target, deltaTime) {
-            const now = Date.now();
-            if (now - this.lastTickTime >= this.tickInterval * 1000) {
-                // Damage is 10% of source damage per stack
-                const tickDamage = Math.round((this.sourceDamage * this.baseDamagePercent) * this.stacks);
-                applyEffectDamage(target, tickDamage, "slashing");
-                this.lastTickTime = now;
-                
-                console.log(`${target.name} took ${tickDamage} slashing damage from seeping wound (${this.stacks} stacks)!`);
-                
-                // Add to combat log
-                if (typeof addToCombatLog === 'function') {
-                    addToCombatLog(`${target.name} bleeds for ${tickDamage} damage from Seeping Wound`, '#ff6666', false);
-                }
+            const tickDamage = Math.round((this.sourceDamage * this.baseDamagePercent) * this.stacks);
+            applyEffectDamage(target, tickDamage, "slashing", false, "Seeping Wound");
+
+            console.log(`${target.name} took ${tickDamage} slashing damage from seeping wound (${this.stacks} stacks)!`);
+
+            if (typeof addToCombatLog === 'function') {
+                addToCombatLog(`${target.name} bleeds for ${tickDamage} damage from Seeping Wound`, '#ff6666', false);
             }
         }
     }
@@ -553,6 +527,7 @@ function applyDebuff(target, debuffName, source = null, damage = null) {
         if (debuffs[debuffName].stackable) {
             // Clone the debuff to keep the prototype methods
             const newDebuff = Object.assign({}, debuffs[debuffName]);
+            newDebuff.id = debuffName;
             // Apply the debuff, which will update stacks if applicable
             if (newDebuff.onApply && newDebuff.onApply(target, source, damage) === false) {
                 // Just update duration if onApply returns false (meaning no new instance)
@@ -580,6 +555,9 @@ function applyDebuff(target, debuffName, source = null, damage = null) {
         } else {
             // Just refresh the duration
             existingDebuff.appliedTime = Date.now();
+            if (typeof existingDebuff.onRefresh === 'function') {
+                existingDebuff.onRefresh(target, source, damage);
+            }
             
             // Display refreshed message
             displayDebuffMessage(target, `${existingDebuff.name} (refreshed)`, true);
@@ -588,6 +566,7 @@ function applyDebuff(target, debuffName, source = null, damage = null) {
     } else {
         // Clone the debuff to create a new instance
         const newDebuff = Object.assign({}, debuffs[debuffName]);
+        newDebuff.id = debuffName;
         newDebuff.appliedTime = Date.now();
         
         // Call onApply if it exists
@@ -660,12 +639,6 @@ function processDebuffs(entity, deltaTime) {
         // Calculate elapsed time
         const elapsedTime = (now - debuff.appliedTime) / 1000;
         
-        // Check if expired
-        if (debuff.duration > 0 && elapsedTime >= debuff.duration) {
-            debuffsToRemove.push(i);
-            continue;
-        }
-        
         // Process tick for time-based effects
         if (debuff.tickInterval && typeof debuff.onTick === 'function') {
             // Initialize or update lastTickTime
@@ -673,22 +646,31 @@ function processDebuffs(entity, deltaTime) {
                 debuff.lastTickTime = debuff.appliedTime;
             }
             
-            const tickElapsedTime = (now - debuff.lastTickTime) / 1000;
-            if (tickElapsedTime >= debuff.tickInterval) {
-                // Call the onTick method
+            const intervalMs = debuff.tickInterval * 1000;
+            const expiresAt = debuff.duration > 0
+                ? debuff.appliedTime + debuff.duration * 1000
+                : now;
+            const tickThrough = Math.min(now, expiresAt);
+            let ticksProcessed = 0;
+
+            // Catch up scheduled ticks, including one due exactly when the
+            // effect expires. The cap prevents an unbounded offline burst.
+            while (debuff.lastTickTime + intervalMs <= tickThrough && ticksProcessed < 100) {
+                debuff.lastTickTime += intervalMs;
                 try {
                     debuff.onTick(entity, elapsedTime, deltaTime);
-                    // Show tick effect in the combat log
-                    if (typeof window.addToCombatLog === 'function') {
-                        window.addToCombatLog(`${debuff.name} ticks on ${entity.name || "entity"}`, '#ff9966', false);
-                    }
                 } catch (error) {
                     console.error(`Error processing tick for debuff ${debuff.name}:`, error);
+                    break;
                 }
-                
-                // Update last tick time
-                debuff.lastTickTime = now;
+                ticksProcessed++;
+                if (entity.currentHealth <= 0 || !entity.activeDebuffs.includes(debuff)) break;
             }
+        }
+
+        // Expire after processing any final scheduled tick.
+        if (debuff.duration > 0 && elapsedTime >= debuff.duration) {
+            debuffsToRemove.push(i);
         }
     }
     

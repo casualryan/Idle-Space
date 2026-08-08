@@ -11,6 +11,22 @@ const ZONE_POOL_CONFIG = {
     10: { primary: 'z10Titan', secondary: 'z10Core', maxTier: 6 }
 };
 
+// Area-level pacing correction after simulating both entry-level and
+// end-of-band crafted loadouts through complete delves. These multipliers
+// smooth abrupt gear breakpoints without flattening enemy archetypes.
+const ZONE_COMBAT_TUNING = {
+    1: { health: 1, damage: 1 },
+    2: { health: 1, damage: 1 },
+    3: { health: 1, damage: 1 },
+    4: { health: 0.85, damage: 0.85 },
+    5: { health: 1, damage: 1.15 },
+    6: { health: 1, damage: 1.05 },
+    7: { health: 1, damage: 1.25 },
+    8: { health: 0.7, damage: 0.85 },
+    9: { health: 0.8, damage: 1.35 },
+    10: { health: 0.65, damage: 0.85 }
+};
+
 const BLUEPRINTS = [
     { id: 'cb_scrapmite_drone', name: 'Scrapmite Drone', level: 1, zone: 1, damageType: 'kinetic', archetype: 'swarm' },
     { id: 'cb_bent_service_crawler', name: 'Bent Service Crawler', level: 2, zone: 1, damageType: 'slashing', archetype: 'balanced' },
@@ -66,29 +82,29 @@ const BLUEPRINTS = [
 
 function getBaseHealth(level) {
     if (level <= 5) return 40 + (level - 1) * 30;
-    if (level <= 10) return 170 + (level - 6) * 80;
-    if (level <= 20) return 550 + (level - 11) * 120;
-    if (level <= 30) return 1650 + (level - 21) * 280;
-    if (level <= 40) return 4300 + (level - 31) * 700;
-    return 11000 + (level - 41) * 1900;
+    if (level <= 10) return 190 + (level - 6) * 52;
+    if (level <= 20) return 460 + (level - 11) * 82;
+    if (level <= 30) return 1000 + (level - 21) * 115;
+    if (level <= 40) return 2200 + (level - 31) * 145;
+    return 3800 + (level - 41) * 190;
 }
 
 function getBaseShield(level) {
     if (level <= 5) return Math.max(0, (level - 2) * 8);
-    if (level <= 10) return 20 + (level - 6) * 18;
-    if (level <= 20) return 90 + (level - 11) * 35;
-    if (level <= 30) return 260 + (level - 21) * 95;
-    if (level <= 40) return 900 + (level - 31) * 240;
-    return 2800 + (level - 41) * 520;
+    if (level <= 10) return 28 + (level - 6) * 13;
+    if (level <= 20) return 90 + (level - 11) * 18;
+    if (level <= 30) return 220 + (level - 21) * 25;
+    if (level <= 40) return 480 + (level - 31) * 35;
+    return 850 + (level - 41) * 60;
 }
 
 function getBaseDamage(level) {
-    if (level <= 5) return 5 + level * 2;
-    if (level <= 10) return 15 + (level - 6) * 5;
-    if (level <= 20) return 38 + (level - 11) * 8;
-    if (level <= 30) return 120 + (level - 21) * 18;
-    if (level <= 40) return 320 + (level - 31) * 45;
-    return 900 + (level - 41) * 115;
+    if (level <= 5) return 4 + level * 2;
+    if (level <= 10) return 15 + (level - 6) * 1;
+    if (level <= 20) return 20 + (level - 11) * 1.1;
+    if (level <= 30) return 25 + (level - 21) * 0.8;
+    if (level <= 40) return 34 + (level - 31) * 1.2;
+    return 47 + (level - 41) * 1.45;
 }
 
 function getResistanceBand(level) {
@@ -193,6 +209,21 @@ function getCurrencyDrop(zone, level) {
     };
 }
 
+function getExperienceValue(zone, archetype) {
+    // Roughly ten successful delves advance a character through each
+    // five-level area band under the live compounded XP requirement curve.
+    const perEnemyByZone = [0, 22, 50, 110, 230, 390, 790, 1600, 2750, 5550, 7250];
+    const archetypeMultiplier = {
+        swarm: 0.9,
+        balanced: 1,
+        shield: 1.1,
+        sniper: 1.1,
+        heavy: 1.25,
+        heavyShield: 1.35
+    }[archetype] || 1;
+    return Math.round(perEnemyByZone[zone] * archetypeMultiplier);
+}
+
 function toEnemy(blueprint) {
     const baseHealth = getBaseHealth(blueprint.level);
     const baseShield = getBaseShield(blueprint.level);
@@ -204,23 +235,24 @@ function toEnemy(blueprint) {
         baseShield,
         baseDamage
     );
+    const zoneTuning = ZONE_COMBAT_TUNING[blueprint.zone] || { health: 1, damage: 1 };
 
     return {
         id: blueprint.id,
         name: blueprint.name,
         level: blueprint.level,
-        health: tunedStats.health,
-        energyShield: tunedStats.energyShield,
+        health: Math.round(tunedStats.health * zoneTuning.health),
+        energyShield: Math.round(tunedStats.energyShield * zoneTuning.health),
         attackSpeed: tunedStats.attackSpeed,
         criticalChance: blueprint.archetype === 'sniper' ? 0.14 : 0.08,
         criticalMultiplier: blueprint.archetype === 'sniper' ? 2.1 : 1.8,
         damageTypes: {
-            [blueprint.damageType]: tunedStats.damage
+            [blueprint.damageType]: Math.max(1, Math.round(tunedStats.damage * zoneTuning.damage))
         },
         defenseTypes: getDefenses(blueprint.level, blueprint.damageType),
         lootConfig: getLootConfig(blueprint.zone, blueprint.archetype),
         currencyDrop: getCurrencyDrop(blueprint.zone, blueprint.level),
-        experienceValue: Math.round(blueprint.level * 4.5 + (blueprint.archetype.includes('heavy') ? 30 : 12)),
+        experienceValue: getExperienceValue(blueprint.zone, blueprint.archetype),
         statusEffects: [],
         description: `Corebound progression enemy for zone ${blueprint.zone}, focused on ${blueprint.damageType} damage.`
     };

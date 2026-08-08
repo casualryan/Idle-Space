@@ -1,5 +1,26 @@
 // lootHandler.js - Handles the loot dropping logic
 
+window.componentDropCounts = window.componentDropCounts || {};
+
+function getCommonEnemyComponentNames() {
+    return new Set(Object.values(LOOT_POOLS)
+        .filter(pool => Number(pool?.tier) === 1)
+        .flatMap(pool => (pool.items || []).map(entry => entry.itemName)));
+}
+
+function recordEnemyComponentDrop(item) {
+    if (!item?.name || !getCommonEnemyComponentNames().has(item.name)) return;
+
+    const quantity = Math.max(1, Number(item.quantity) || 1);
+    const previous = Math.max(0, Number(window.componentDropCounts[item.name] || 0));
+    const next = previous + quantity;
+    window.componentDropCounts[item.name] = next;
+
+    if (previous < 5 && next >= 5 && typeof logMessage === 'function') {
+        logMessage(`${item.name} is now stocked by Marty.`);
+    }
+}
+
 /**
  * Determines if loot should drop based on enemy and player stats
  * @param {Object} enemy - The enemy that was defeated
@@ -220,6 +241,7 @@ function generateLoot(enemy, player) {
         
         // Add the generated item to the loot list
         lootItems.push(itemInstance);
+        recordEnemyComponentDrop(itemInstance);
     }
     
     return lootItems;
@@ -295,3 +317,6 @@ if (typeof module !== 'undefined' && module.exports) {
     // For browser environment
     // These will be globally accessible
 }
+
+window.getCommonEnemyComponentNames = getCommonEnemyComponentNames;
+window.recordEnemyComponentDrop = recordEnemyComponentDrop;

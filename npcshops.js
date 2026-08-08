@@ -3,27 +3,43 @@ console.log('npcshops.js loaded');
 
 // Stock/restock mechanics removed per design
 
+const MARTY_COMPONENT_UNLOCK_COUNT = 5;
+const MARTY_COMMON_COMPONENTS = [
+    { itemName: "Scrap Metal", price: 15, levelReq: 1 },
+    { itemName: "Wire Bundle", price: 30, levelReq: 1 },
+    { itemName: "Metal Fasteners", price: 25, levelReq: 1 },
+    { itemName: "Minor Electronic Circuit", price: 250, levelReq: 2 },
+    { itemName: "Synthetic Poison Gland", price: 60, levelReq: 2 },
+    { itemName: "Spider Leg Segment", price: 40, levelReq: 2 },
+    { itemName: "Iron Ore", price: 45, levelReq: 6 },
+    { itemName: "Copper Ore", price: 55, levelReq: 6 }
+].map(item => ({
+    ...item,
+    stock: 999,
+    defaultStock: 999,
+    martyDropUnlock: MARTY_COMPONENT_UNLOCK_COUNT
+}));
+
+function getComponentDropCount(itemName) {
+    return Math.max(0, Number(window.componentDropCounts?.[itemName] || 0));
+}
+
+function isShopItemVisible(invItem) {
+    if (invItem.developerOnly && !window.coreboundConfig?.developerMode) return false;
+    if (invItem.martyDropUnlock) {
+        return getComponentDropCount(invItem.itemName) >= invItem.martyDropUnlock;
+    }
+    return true;
+}
+
 // Example NPC array with new properties:
 // - defaultStock: resets to this after timer
 // - levelReq: The player's level must be >= this to buy (but we still show it locked)
 const npcs = [
     {
-        name: "Mech Marty",
+        name: "Marty",
         inventory: [
-            {
-                itemName: "Scrap Metal",
-                price: 5000,
-                stock: 999,
-                defaultStock: 999,
-                levelReq: 1
-            },
-            {
-                itemName: "Minor Electronic Circuit",
-                price: 25,
-                stock: 20,
-                defaultStock: 20,
-                levelReq: 2
-            },
+            ...MARTY_COMMON_COMPONENTS,
             {
                 itemName: "Reaction Enhancer",
                 price: 1,
@@ -40,18 +56,9 @@ const npcs = [
             { itemName: "Pyro Booster", price: 1, stock: 999, defaultStock: 999, levelReq: 1, developerOnly: true }
         ]
     },
-    {
-        name: "Nurse Jen",
-        inventory: [
-            {
-                itemName: "Unstable Photon",
-                price: 100,
-                stock: 10,
-                defaultStock: 10,
-                levelReq: 3
-            }
-        ]
-    },
+    // Nurse Jen's med-tech inventory was retired with the med-tech system.
+    // Keep her character available for a future authored role rather than
+    // exposing an unrelated placeholder shop.
     {
         name: "Clarissa",
         inventory: [
@@ -70,13 +77,6 @@ const npcs = [
                 defaultStock: 5,
                 levelReq: 1,
                 developerOnly: true
-            },
-            {
-                itemName: "Minor Electronic Circuit",
-                price: 20,
-                stock: 10,
-                defaultStock: 10,
-                levelReq: 1
             },
             {
                 itemName: "Combo Test Sword",
@@ -119,7 +119,7 @@ const npcs = [
         ]
     },
     {
-        name: "Account Manager Zara",
+        name: "Zara",
         inventory: [
             {
                 itemName: "Inventory Slot Expansion",
@@ -188,8 +188,8 @@ function displayNPCShop(npc) {
     shopContainer.appendChild(grid);
 
     // List items for sale
-    npc.inventory.forEach((invItem, index) => {
-        if (invItem.developerOnly && !window.coreboundConfig?.developerMode) return;
+    const visibleInventory = npc.inventory.filter(isShopItemVisible);
+    visibleInventory.forEach((invItem) => {
         const itemTemplate = items.find(i => i.name === invItem.itemName);
         const itemName = itemTemplate ? itemTemplate.name : invItem.itemName;
         const itemPrice = invItem.price;
@@ -274,7 +274,7 @@ function displayNPCShop(npc) {
             buyButton.addEventListener('click', () => {
                 const cost = itemPrice * 1; // quantity 1
                 const threshold = (window.gameSettings && window.gameSettings.purchaseConfirmThresholdCredits) || 500;
-                const doBuy = () => buyItemFromNPC(npc, index, 1);
+                const doBuy = () => buyItemFromNPC(npc, invItem, 1);
 
                 // Only block on inventory space for non-service items
                 if (!isService) {
@@ -319,11 +319,22 @@ function displayNPCShop(npc) {
 
         grid.appendChild(itemDiv);
     });
+
+    if (visibleInventory.length === 0) {
+        const emptyMessage = document.createElement('p');
+        emptyMessage.className = 'shop-empty-message';
+        emptyMessage.textContent = npc.name === 'Marty'
+            ? `Marty stocks a common component after enemies have dropped 5 of it.`
+            : 'Nothing is currently available.';
+        grid.appendChild(emptyMessage);
+    }
 }
 
 // Handle purchasing an item from an NPC
-function buyItemFromNPC(npc, itemIndex, quantity) {
-    const invItem = npc.inventory[itemIndex];
+function buyItemFromNPC(npc, itemOrIndex, quantity) {
+    const invItem = typeof itemOrIndex === 'number'
+        ? npc.inventory[itemOrIndex]
+        : itemOrIndex;
     if (!invItem) {
         console.error("Item not found in NPC inventory.");
         return;

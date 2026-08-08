@@ -514,6 +514,7 @@ function buildGameStateSnapshot() {
             }
         },
         inventory: window.inventory,
+        componentDropCounts: window.componentDropCounts || {},
         isDelveInProgress: (typeof isDelveInProgress !== 'undefined') ? isDelveInProgress : false,
         currentDelveLocation: (typeof currentDelveLocation !== 'undefined') ? currentDelveLocation : null,
         currentMonsterIndex: (typeof currentMonsterIndex !== 'undefined') ? currentMonsterIndex : 0,
@@ -528,7 +529,7 @@ function buildGameStateSnapshot() {
             : [],
         meta: {
             savedAt: Date.now(),
-            version: 5
+            version: 6
         }
     };
 }
@@ -718,6 +719,9 @@ function loadGame(slotIndex = null) {
         }
 
         window.inventory = restoredInventory;
+        window.componentDropCounts = gameState.componentDropCounts && typeof gameState.componentDropCounts === 'object'
+            ? { ...gameState.componentDropCounts }
+            : {};
 
         if (typeof isDelveInProgress !== 'undefined') {
             isDelveInProgress = Boolean(gameState.isDelveInProgress);
@@ -1021,6 +1025,7 @@ function resetGame(slotIndex = null) {
 
         // Clear inventory
         window.inventory = []; // Start with an empty inventory
+        window.componentDropCounts = {};
 
         if (typeof delveClaimCache !== 'undefined') {
             delveClaimCache = { items: [], credits: 0 };

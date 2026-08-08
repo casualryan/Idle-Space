@@ -778,11 +778,21 @@ function runSkillHitProcs(attacker, defender, damageResult, profile, hitIndex) {
         processEffects(defender, 'whenHit', attacker);
     }
 
-    if (defender.activeDebuffs && Array.isArray(defender.activeDebuffs)) {
-        for (const debuff of defender.activeDebuffs) {
-            if (debuff && debuff.onReceiveHit) {
-                debuff.onReceiveHit(defender, { total: damageResult.total, ...damageResult.damageBreakdown }, attacker);
-            }
+}
+
+function runIncomingHitDebuffs(attacker, defender, damageResult) {
+    if (!Array.isArray(defender?.activeDebuffs)) return;
+
+    const hit = {
+        ...(damageResult?.damageBreakdown || {}),
+        total: Math.max(0, Number(damageResult?.total || 0))
+    };
+
+    // Hooks may remove themselves. Iterate a snapshot so one consumed debuff
+    // cannot cause the next debuff in the live array to be skipped.
+    for (const debuff of [...defender.activeDebuffs]) {
+        if (typeof debuff?.onReceiveHit === 'function') {
+            debuff.onReceiveHit(defender, hit, attacker);
         }
     }
 }
@@ -887,6 +897,9 @@ function executeEquippedSkill(attacker, defender) {
 
             if (!attacker || !defender) break;
 
+            runIncomingHitDebuffs(attacker, defender, damageResult);
+            if (!isCombatActive || !attacker || !defender) break;
+
             runSkillHitProcs(attacker, defender, damageResult, profile, hit);
             lastDamageResult = damageResult;
             attackDamageResult.total += damageResult.total;
@@ -964,6 +977,8 @@ function enemyAttack() {
         }
 
         applyDamage(player, damageResult.total, "Player", damageResult.damageBreakdown);
+        runIncomingHitDebuffs(enemy, player, damageResult);
+        if (!isCombatActive || !player || !enemy) return;
         if (damageResult.isCritical) tryApplySeveredLimbFromCritical(enemy, player);
         runPostAttackDebuffs(enemy, player, damageResult);
 
@@ -1072,6 +1087,13 @@ function processComboAttacks(attacker, defender, originalDamageResult, skillProf
             }
             
             applyDamage(defender, totalComboDamage, defenderName, comboDamageBreakdown);
+            runIncomingHitDebuffs(attacker, defender, {
+                total: totalComboDamage,
+                damageBreakdown: comboDamageBreakdown,
+                isCritical: false
+            });
+
+            if (!isCombatActive || !attacker || !defender) break;
 
             const comboProcStrength = skillProfile?.comboProcStrength || 0;
             if (comboProcStrength > 0 && attacker.effects && attacker.effects.length > 0) {
@@ -1110,6 +1132,7 @@ function processComboHitProcs(attacker, defender, procStrength) {
 
 window.refreshPlayerAttackInterval = refreshPlayerAttackInterval;
 window.executeEquippedSkill = executeEquippedSkill;
+window.runIncomingHitDebuffs = runIncomingHitDebuffs;
 
 // ============================================================================
 // 5. DELVE SYSTEM
