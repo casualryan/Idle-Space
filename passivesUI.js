@@ -240,6 +240,74 @@ function getPassiveNodeClasses(node, state) {
     return classes.join(' ');
 }
 
+function getPassiveTooltipStatus(node, state) {
+    if (node.id === PASSIVE_TREE_ORIGIN_ID) return 'Starting point';
+    if (state.effective > 0) {
+        return `Rank ${state.effective}${state.gear > 0 ? ` (+${state.gear} gear)` : ''}`;
+    }
+    if (state.available) return 'Available to allocate';
+    return state.allocationReason || 'Not connected';
+}
+
+function renderPassiveNodeTooltipContent(node) {
+    const state = getPassiveNodeState(node);
+    const sector = PASSIVE_SECTOR_DEFINITIONS[node.sector];
+    const effects = getPassiveEffectLines(node, Math.max(1, state.effective));
+    return `
+        <div class="passive-tooltip-heading">
+            <div class="passive-tooltip-type">${escapePassiveHTML(node.type)}${sector ? ` · ${escapePassiveHTML(sector.label)}` : ''}</div>
+            <div class="passive-tooltip-status">${escapePassiveHTML(getPassiveTooltipStatus(node, state))}</div>
+        </div>
+        <h4>${escapePassiveHTML(node.name)}</h4>
+        <p>${escapePassiveHTML(node.description)}</p>
+        <div class="passive-tooltip-effects">
+            ${effects.length
+                ? effects.map(line => `<div>${escapePassiveHTML(line)}</div>`).join('')
+                : '<div>Starting point — no statistical bonus.</div>'}
+        </div>`;
+}
+
+function hidePassiveNodeTooltip() {
+    const tooltip = document.getElementById('passive-node-tooltip');
+    if (!tooltip) return;
+    tooltip.hidden = true;
+    tooltip.removeAttribute('data-node-id');
+}
+
+function positionPassiveNodeTooltip(clientX, clientY) {
+    const tooltip = document.getElementById('passive-node-tooltip');
+    const viewport = tooltip?.closest('.passive-tree-viewport');
+    if (!tooltip || !viewport || tooltip.hidden) return;
+    const viewportRect = viewport.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const gap = 14;
+    const margin = 8;
+    const pointerX = clientX - viewportRect.left;
+    const pointerY = clientY - viewportRect.top;
+    let left = pointerX + gap;
+    let top = pointerY + gap;
+    if (left + tooltipRect.width > viewportRect.width - margin) left = pointerX - tooltipRect.width - gap;
+    if (top + tooltipRect.height > viewportRect.height - margin) top = pointerY - tooltipRect.height - gap;
+    tooltip.style.left = `${Math.max(margin, Math.min(left, viewportRect.width - tooltipRect.width - margin))}px`;
+    tooltip.style.top = `${Math.max(margin, Math.min(top, viewportRect.height - tooltipRect.height - margin))}px`;
+}
+
+function showPassiveNodeTooltip(nodeId, clientX, clientY) {
+    const tooltip = document.getElementById('passive-node-tooltip');
+    const node = getPassiveNode(nodeId);
+    if (!tooltip || !node) return;
+    tooltip.className = `passive-node-tooltip sector-${node.sector}`;
+    tooltip.dataset.nodeId = node.id;
+    tooltip.innerHTML = renderPassiveNodeTooltipContent(node);
+    tooltip.hidden = false;
+    positionPassiveNodeTooltip(clientX, clientY);
+}
+
+function showPassiveNodeTooltipAtElement(nodeId, element) {
+    const rect = element.getBoundingClientRect();
+    showPassiveNodeTooltip(nodeId, rect.right, rect.top + rect.height / 2);
+}
+
 function renderPassiveTreeGraph() {
     const svg = document.getElementById('passive-tree-svg');
     if (!svg) return;
@@ -262,17 +330,11 @@ function renderPassiveTreeGraph() {
     const nodesMarkup = passives.map(node => {
         const state = getPassiveNodeState(node);
         const radius = node.type === 'origin' ? 34 : node.type === 'keystone' ? 28 : node.type === 'notable' ? 22 : node.type === 'gateway' ? 20 : 13;
-        const showLabel = ['origin', 'gateway', 'notable', 'keystone'].includes(node.type);
-        const label = showLabel
-            ? `<text class="passive-node-label" x="0" y="${radius + 18}">${escapePassiveHTML(node.name)}</text>`
-            : '';
         return `
             <g class="${getPassiveNodeClasses(node, state)}" data-node-id="${node.id}" transform="translate(${node.x} ${node.y})" role="button" tabindex="0" aria-label="${escapePassiveHTML(node.name)}">
                 <circle r="${radius}"></circle>
                 ${node.type === 'keystone' ? `<path d="M -13 0 L 0 -13 L 13 0 L 0 13 Z"></path>` : ''}
                 ${state.gear > 0 ? `<text class="passive-node-gear" x="${radius - 3}" y="${-radius + 7}">+${state.gear}</text>` : ''}
-                ${label}
-                <title>${escapePassiveHTML(node.name)} — ${escapePassiveHTML(node.description)}</title>
             </g>`;
     }).join('');
 
@@ -283,9 +345,18 @@ function renderPassiveTreeGraph() {
         const nodeId = element.dataset.nodeId;
         const select = () => {
             selectedPassiveNodeId = nodeId;
+            hidePassiveNodeTooltip();
             renderPassiveTreeGraph();
             renderPassiveNodeDetails();
         };
+        element.addEventListener('pointerenter', event => showPassiveNodeTooltip(nodeId, event.clientX, event.clientY));
+        element.addEventListener('pointermove', event => positionPassiveNodeTooltip(event.clientX, event.clientY));
+        element.addEventListener('pointerleave', hidePassiveNodeTooltip);
+        element.addEventListener('pointerdown', event => {
+            if (event.pointerType !== 'mouse') showPassiveNodeTooltipAtElement(nodeId, element);
+        });
+        element.addEventListener('focus', () => showPassiveNodeTooltipAtElement(nodeId, element));
+        element.addEventListener('blur', hidePassiveNodeTooltip);
         element.addEventListener('click', event => { event.stopPropagation(); select(); });
         element.addEventListener('dblclick', event => { event.preventDefault(); event.stopPropagation(); investPassiveNode(nodeId); });
         element.addEventListener('contextmenu', event => { event.preventDefault(); event.stopPropagation(); refundPassiveNode(nodeId); });
@@ -423,6 +494,7 @@ function displayPassivesScreen() {
         <div class="passive-tree-layout">
             <div class="passive-tree-viewport">
                 <svg id="passive-tree-svg" xmlns="http://www.w3.org/2000/svg" aria-label="Seven-sector passive tree"></svg>
+                <div id="passive-node-tooltip" class="passive-node-tooltip" role="tooltip" hidden></div>
             </div>
             <aside id="passive-node-details" class="passive-node-details"></aside>
         </div>`;

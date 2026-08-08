@@ -2656,6 +2656,7 @@ hr {
     --sector-color: #5d91ad;
     cursor: pointer;
     color: var(--sector-color);
+    outline: none;
     transition: opacity 0.16s ease;
 }
 
@@ -2705,7 +2706,6 @@ hr {
     stroke-width: 6;
 }
 
-.passive-node-label,
 .passive-sector-label,
 .passive-node-gear {
     fill: #dff8ff;
@@ -2715,10 +2715,6 @@ hr {
     stroke-linejoin: round;
     text-anchor: middle;
     pointer-events: none;
-}
-
-.passive-node-label {
-    font-size: 20px;
 }
 
 .passive-sector-label {
@@ -2733,6 +2729,72 @@ hr {
     fill: #ffd166;
     font-size: 15px;
     font-weight: bold;
+}
+
+.passive-node-tooltip {
+    --sector-color: #5d91ad;
+    position: absolute;
+    z-index: 8;
+    width: min(310px, calc(100% - 16px));
+    padding: 12px 13px;
+    pointer-events: none;
+    border: 1px solid color-mix(in srgb, var(--sector-color) 68%, #5f7b8d);
+    border-radius: 7px;
+    background: linear-gradient(160deg, rgba(5, 24, 43, 0.99), rgba(2, 9, 19, 0.99));
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55), 0 0 14px color-mix(in srgb, var(--sector-color) 28%, transparent);
+    color: #dff8ff;
+}
+
+.passive-node-tooltip[hidden] {
+    display: none;
+}
+
+.passive-tooltip-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    color: var(--sector-color);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+}
+
+.passive-tooltip-status {
+    color: #9fb6c4;
+    letter-spacing: 0.04em;
+    text-align: right;
+    text-transform: none;
+}
+
+.passive-node-tooltip h4 {
+    margin: 5px 0 6px;
+    color: #f4fdff;
+    font-size: 15px;
+    line-height: 1.2;
+}
+
+.passive-node-tooltip p {
+    margin: 0;
+    color: #a9c1cf;
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.passive-tooltip-effects {
+    display: grid;
+    gap: 4px;
+    margin-top: 9px;
+}
+
+.passive-tooltip-effects > div {
+    padding: 4px 6px;
+    border-left: 2px solid var(--sector-color);
+    background: color-mix(in srgb, var(--sector-color) 10%, rgba(3, 17, 30, 0.82));
+    color: #e5f9ff;
+    font-size: 10px;
+    line-height: 1.3;
 }
 
 .passive-node-details {

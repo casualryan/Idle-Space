@@ -221,6 +221,17 @@ test('radial passive tree is connected, stable, and honors allocation/refund rul
   assert.equal(result.leafRefund.ok, true, 'an outer leaf could not be refunded');
 });
 
+test('passive tree uses immediate viewport tooltips instead of persistent node labels', () => {
+  const uiSource = read('passivesUI.js');
+  const styles = read('style.css');
+  assert.doesNotMatch(uiSource, /passive-node-label/, 'persistent node labels returned to the passive graph');
+  assert.doesNotMatch(uiSource, /<title>/, 'native delayed SVG tooltips returned to passive nodes');
+  assert.match(uiSource, /id="passive-node-tooltip"[^>]*role="tooltip"/, 'passive tooltip layer is missing');
+  assert.match(uiSource, /pointerenter[^\n]*showPassiveNodeTooltip/, 'passive tooltip is not shown immediately on hover');
+  assert.match(uiSource, /addEventListener\('focus'/, 'keyboard focus does not expose passive details');
+  assert.match(styles, /\.passive-node-tooltip\s*\{[\s\S]*?pointer-events:\s*none/, 'tooltip can interfere with node hover');
+});
+
 test('only the authored Balanced combat style is player-facing', () => {
   const styles = evaluateClassic('skills.js', 'combatStyles');
   assert.deepEqual(Array.from(styles, style => style.id), ['balancedStyle']);
