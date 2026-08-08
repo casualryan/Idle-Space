@@ -520,6 +520,7 @@ function buildGameStateSnapshot() {
         currentMonsterIndex: (typeof currentMonsterIndex !== 'undefined') ? currentMonsterIndex : 0,
         delveBag: (typeof delveBag !== 'undefined') ? delveBag : { items: [], credits: 0 },
         delveClaimCache: (typeof delveClaimCache !== 'undefined') ? delveClaimCache : { items: [], credits: 0 },
+        completedDelveLocations: (typeof completedDelveLocations !== 'undefined') ? completedDelveLocations : {},
         activityState: {
             active: Boolean(managerState.active),
             currentActivity: managerState.currentActivity || null
@@ -529,7 +530,7 @@ function buildGameStateSnapshot() {
             : [],
         meta: {
             savedAt: Date.now(),
-            version: 6
+            version: 7
         }
     };
 }
@@ -743,6 +744,12 @@ function loadGame(slotIndex = null) {
                     : [],
                 credits: Math.max(0, Number(savedCache.credits) || 0)
             };
+        }
+        if (typeof completedDelveLocations !== 'undefined') {
+            completedDelveLocations = gameState.completedDelveLocations && typeof gameState.completedDelveLocations === 'object'
+                ? Object.fromEntries(Object.entries(gameState.completedDelveLocations)
+                    .map(([name, count]) => [name, Math.max(0, Math.floor(Number(count) || 0))]))
+                : {};
         }
 
         if (typeof window.restoreFabricationState === 'function') {
@@ -1030,6 +1037,7 @@ function resetGame(slotIndex = null) {
         if (typeof delveClaimCache !== 'undefined') {
             delveClaimCache = { items: [], credits: 0 };
         }
+        if (typeof completedDelveLocations !== 'undefined') completedDelveLocations = {};
         if (typeof isDelveInProgress !== 'undefined') isDelveInProgress = false;
         if (typeof currentDelveLocation !== 'undefined') currentDelveLocation = null;
         if (typeof currentMonsterIndex !== 'undefined') currentMonsterIndex = 0;

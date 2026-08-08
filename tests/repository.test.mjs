@@ -356,6 +356,32 @@ test('Codex sources live enemy, loot, and debuff registries', () => {
   assert.match(source, /window\.debuffBaseChance/);
 });
 
+test('enemy Codex presents interpreted combat and loot information', () => {
+  const source = read('codex.js');
+  assert.match(source, /calculateItemRollOdds/);
+  assert.match(source, /Base loot chance/);
+  assert.match(source, /Items on success/);
+  assert.match(source, /Chance for each generated item/);
+  assert.match(source, /LEVEL_BANDS/);
+  assert.match(source, /DAMAGE_COLORS/);
+  assert.doesNotMatch(source, /\(weight \$\{/);
+  assert.ok(enemies.every(enemy => !/Corebound progression enemy for zone/i.test(enemy.description || '')));
+});
+
+test('delve dashboard keeps primary stats visible and advanced telemetry collapsible', () => {
+  const html = read('index.html');
+  const requiredIds = [
+    'player-hp-bar', 'player-total-dps', 'player-damage-types', 'player-defense-types',
+    'enemy-hp-bar', 'enemy-total-dps', 'enemy-damage-types', 'enemy-defense-types',
+    'delve-bag-container', 'log-messages'
+  ];
+  for (const id of requiredIds) {
+    assert.equal((html.match(new RegExp(`id=["']${id}["']`, 'g')) || []).length, 1, `${id} must appear exactly once`);
+  }
+  assert.match(html, /<details class="advanced-telemetry">/);
+  assert.match(html, /class="container combat-dashboard"/);
+});
+
 test('consumable combat debuffs carry the approved mechanics', () => {
   const damageCalls = [];
   const definitions = evaluateClassic('debuffs.js', 'debuffs', {
@@ -555,6 +581,20 @@ test('max-level areas form four ordered endgame tiers', () => {
     assert.ok(areas[index].numFights >= areas[index - 1].numFights);
     assert.ok(areas[index].enemies[0].empoweredChance >= areas[index - 1].enemies[0].empoweredChance);
   }
+});
+
+test('delve visibility and endgame clears are persistent progression', () => {
+  const combat = read('combat.js');
+  const global = read('global.js');
+
+  assert.match(combat, /function getVisibleDelveLocations/);
+  assert.match(combat, /recommendedLevel \|\| 1\) <= playerLevel \+ 2/);
+  assert.match(combat, /Number\(candidate\.endgameTier\) === tier - 1/);
+  assert.match(combat, /completed\[previousTier\.name\] > 0/);
+  assert.match(combat, /recordDelveCompletion\(currentDelveLocation\);\s*finalizeDelveLoot\(\);/);
+  assert.match(global, /completedDelveLocations:/);
+  assert.match(global, /completedDelveLocations = gameState\.completedDelveLocations/);
+  assert.match(global, /completedDelveLocations = \{\}/);
 });
 
 test('balance simulation preserves the authored difficulty curve', () => {

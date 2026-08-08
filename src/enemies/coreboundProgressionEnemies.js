@@ -252,6 +252,25 @@ function getExperienceValue(zone, archetype) {
     return Math.round((perEnemyByZone[zone] || perEnemyByZone[10]) * archetypeMultiplier);
 }
 
+const ARCHETYPE_DESCRIPTIONS = {
+    swarm: 'A rapid pressure unit with low durability and an aggressive attack cycle.',
+    balanced: 'A general-purpose combat frame with no obvious statistical weakness.',
+    shield: 'A shield-heavy defender built to absorb opening damage and prolong the encounter.',
+    sniper: 'A fragile precision attacker whose slower strikes carry elevated critical threat.',
+    heavy: 'A slow assault platform with reinforced integrity and punishing individual hits.',
+    heavyShield: 'A siege-class target combining reinforced integrity, dense shielding, and heavy damage.'
+};
+
+const DAMAGE_DESCRIPTIONS = {
+    kinetic: 'Its kinetic weaponry is checked by Physical Resistance.',
+    slashing: 'Its cutting attacks are checked by Physical Resistance.',
+    pyro: 'Its thermal attacks are checked by Elemental Resistance.',
+    cryo: 'Its cryogenic attacks are checked by Elemental Resistance.',
+    electric: 'Its electrical attacks are checked by Elemental Resistance.',
+    corrosive: 'Its corrosive attacks are checked by Chemical Resistance.',
+    radiation: 'Its radiation attacks are checked by Chemical Resistance.'
+};
+
 function toEnemy(blueprint) {
     const baseHealth = getBaseHealth(blueprint.level);
     const baseShield = getBaseShield(blueprint.level);
@@ -269,6 +288,8 @@ function toEnemy(blueprint) {
         id: blueprint.id,
         name: blueprint.name,
         level: blueprint.level,
+        zone: blueprint.zone,
+        archetype: blueprint.archetype,
         health: Math.round(tunedStats.health * zoneTuning.health),
         energyShield: Math.round(tunedStats.energyShield * zoneTuning.health),
         attackSpeed: tunedStats.attackSpeed,
@@ -282,7 +303,7 @@ function toEnemy(blueprint) {
         currencyDrop: getCurrencyDrop(blueprint.zone, blueprint.level),
         experienceValue: getExperienceValue(blueprint.zone, blueprint.archetype),
         statusEffects: [],
-        description: `Corebound progression enemy for zone ${blueprint.zone}, focused on ${blueprint.damageType} damage.`
+        description: `${ARCHETYPE_DESCRIPTIONS[blueprint.archetype] || ARCHETYPE_DESCRIPTIONS.balanced} ${DAMAGE_DESCRIPTIONS[blueprint.damageType] || ''}`.trim()
     };
 }
 

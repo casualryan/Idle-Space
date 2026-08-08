@@ -186,112 +186,103 @@
             <div id="delve-controls"></div>
             <h3>Delve Locations</h3>
             <div id="adventure-locations"></div>
-            <div class="container">
-                <!-- Player Stats -->
-                <div class="stats" id="player-stats">
-                    <h2>Player Stats</h2>
-                    <p>Name: <span id="player-name">Player</span></p>
-                    <p>Level: <span id="player-level">1</span></p>
-                    <p>Experience: <span id="player-experience">0</span></p>
+            <div class="container combat-dashboard">
+                <section class="stats combatant-panel player-panel" id="player-stats">
+                    <header class="combat-panel-header">
+                        <div>
+                            <span class="combat-panel-kicker">Operator</span>
+                            <h2 id="player-name">Player</h2>
+                        </div>
+                        <div class="combat-identity-meta">
+                            <span>LV <strong id="player-level">1</strong></span>
+                            <span id="player-experience">0 / 0</span>
+                        </div>
+                    </header>
 
-                    <!-- Active Effects (Buffs & Debuffs) Icons -->
+                    <div class="resource-stack">
+                        <div class="resource-label"><span>Integrity</span><span class="hp-text" id="player-hp-text">0 / 0</span></div>
+                        <div class="hp-bar-container"><div id="player-hp-bar" class="hp-bar"></div></div>
+                        <div class="resource-label"><span>Energy Shield</span><span class="es-text" id="player-es-text">0 / 0</span></div>
+                        <div class="es-bar-container"><div id="player-es-bar" class="es-bar"></div></div>
+                    </div>
+
                     <div id="player-effects-bar" class="effects-bar"></div>
 
-                    <!-- Player HP Bar Container -->
-                    <div class="hp-bar-container">
-                        <div id="player-hp-bar" class="hp-bar"></div>
-                    </div>
-                    <div class="hp-text" id="player-hp-text">0 / 0</div>
-
-                    <!-- Player Energy Shield Bar Container -->
-                    <div class="es-bar-container">
-                        <div id="player-es-bar" class="es-bar"></div>
-                    </div>
-                    <div class="es-text" id="player-es-text">0 / 0</div>
-
-                    <!-- Attack Progress Bar -->
-                    <h3>Attack Progress</h3>
-                    <div class="progress-container">
-                        <div id="player-attack-progress-bar" class="progress-bar attack-bar"></div>
+                    <div class="attack-cycle">
+                        <span>Attack Cycle</span>
+                        <div class="progress-container"><div id="player-attack-progress-bar" class="progress-bar attack-bar"></div></div>
                     </div>
 
-                    <p>Attack Speed: <span id="player-attack-speed">0</span></p>
-                    <p>Critical Chance: <span id="player-crit-chance">0%</span></p>
-                    <p>Critical Multiplier: <span id="player-crit-multiplier">0</span></p>
-                    <h3>Damage Types</h3>
-                    <ul id="player-damage-types" class="stat-list"></ul>
-                    <div id="player-damage-type-modifiers" style="list-style-type: none;"></div>
-                    <h3>Resistance Types</h3>
-                    <ul id="player-defense-types" class="stat-list"></ul>
-                    <h3>Other Stats</h3>
-                    <div>Precision: <span id="player-precision"></span></div>
-                    <div>Deflection: <span id="player-deflection"></span></div>
-                    <div>Health Regeneration: <span id="player-health-regen"></span> / Second</div>
-                    <h3>Efficiency Stats</h3>
-                    <div>Armor Efficiency: <span id="player-armor-efficiency"></span>%</div>
-                    <div>Weapon Efficiency: <span id="player-weapon-efficiency"></span>%</div>
-                    <div>Bionic Efficiency: <span id="player-bionic-efficiency"></span>%</div>
-                    <h3>Bionic Enhancement</h3>
-                    <div>Bionic Sync: <span id="player-bionic-sync"></span>%</div>
-                    <h3>Combo System</h3>
-                    <div>Combo Attack: <span id="player-combo-attack"></span>%</div>
-                    <div>Combo Effectiveness: <span id="player-combo-effectiveness"></span>%</div>
-                    <div>Additional Combo Attacks: <span id="player-additional-combo-attacks"></span></div>
-                    <h3>Mastery System</h3>
-                    <div>Kinetic Mastery: <span id="player-kinetic-mastery"></span></div>
-                    <div>Slashing Mastery: <span id="player-slashing-mastery"></span></div>
-                    <h3>Combat Mechanics</h3>
-                    <div>Severed Limb Chance: <span id="player-severed-limb-chance"></span>%</div>
-                    <div>Max Severed Limbs: <span id="player-max-severed-limbs"></span></div>
-                    
-                    
-
-                </div>
-                <!-- Enemy Stats -->
-                <div class="stats" id="enemy-stats">
-                    <h2>Enemy Stats</h2>
-                    <p>Name: <span id="enemy-name">Unknown</span></p>
-                    <div id="next-enemy-timer" style="display: none;">
-                        Next enemy in <span id="next-enemy-countdown">2</span> seconds...
+                    <div class="combat-metric-grid">
+                        <div id="player-total-dps" class="combat-dps-card"></div>
+                        <div class="combat-metric"><span>Speed</span><strong id="player-attack-speed">0</strong></div>
+                        <div class="combat-metric"><span>Crit</span><strong id="player-crit-chance">0%</strong></div>
+                        <div class="combat-metric"><span>Crit Power</span><strong id="player-crit-multiplier">0</strong></div>
                     </div>
 
-                    <!-- Active Effects (Buffs & Debuffs) Icons -->
+                    <div class="combat-readout-grid">
+                        <section><h3>Damage Output</h3><ul id="player-damage-types" class="stat-list"></ul><div id="player-damage-type-modifiers"></div></section>
+                        <section><h3>Resistances</h3><ul id="player-defense-types" class="stat-list"></ul></section>
+                    </div>
+
+                    <details class="advanced-telemetry">
+                        <summary>Advanced Telemetry</summary>
+                        <div class="telemetry-grid">
+                            <section><h3>Combat</h3><div>Precision <span id="player-precision"></span></div><div>Deflection <span id="player-deflection"></span></div><div>Health Regen <span id="player-health-regen"></span>/s</div></section>
+                            <section><h3>Efficiency</h3><div>Armor <span id="player-armor-efficiency"></span>%</div><div>Weapon <span id="player-weapon-efficiency"></span>%</div><div>Bionic <span id="player-bionic-efficiency"></span>%</div><div>Bionic Sync <span id="player-bionic-sync"></span>%</div></section>
+                            <section><h3>Combo</h3><div>Chance <span id="player-combo-attack"></span>%</div><div>Effectiveness <span id="player-combo-effectiveness"></span>%</div><div>Extra Attacks <span id="player-additional-combo-attacks"></span></div></section>
+                            <section><h3>Mastery</h3><div>Kinetic <span id="player-kinetic-mastery"></span></div><div>Slashing <span id="player-slashing-mastery"></span></div><div>Sever Chance <span id="player-severed-limb-chance"></span>%</div><div>Sever Cap <span id="player-max-severed-limbs"></span></div></section>
+                        </div>
+                    </details>
+                </section>
+
+                <section class="stats combatant-panel enemy-panel" id="enemy-stats">
+                    <header class="combat-panel-header">
+                        <div>
+                            <span class="combat-panel-kicker">Hostile Contact</span>
+                            <h2 id="enemy-name">No Enemy</h2>
+                        </div>
+                        <div id="next-enemy-timer" class="next-enemy-timer" style="display: none;">Next signal <strong id="next-enemy-countdown">2</strong>s</div>
+                    </header>
+
+                    <div class="resource-stack">
+                        <div class="resource-label"><span>Integrity</span><span class="hp-text" id="enemy-hp-text">0 / 0</span></div>
+                        <div class="hp-bar-container"><div id="enemy-hp-bar" class="hp-bar"></div></div>
+                        <div class="resource-label"><span>Energy Shield</span><span class="es-text" id="enemy-es-text">0 / 0</span></div>
+                        <div class="es-bar-container"><div id="enemy-es-bar" class="es-bar"></div></div>
+                    </div>
+
                     <div id="enemy-effects-bar" class="effects-bar"></div>
 
-                    <!-- Enemy HP Bar Container -->
-                    <div class="hp-bar-container">
-                        <div id="enemy-hp-bar" class="hp-bar"></div>
+                    <div class="attack-cycle">
+                        <span>Attack Cycle</span>
+                        <div class="progress-container"><div id="enemy-attack-progress-bar" class="progress-bar attack-bar"></div></div>
                     </div>
-                    <div class="hp-text" id="enemy-hp-text">0 / 0</div>
 
-                    <!-- Enemy Energy Shield Bar Container -->
-                    <div class="es-bar-container">
-                        <div id="enemy-es-bar" class="es-bar"></div>
+                    <div class="combat-metric-grid">
+                        <div id="enemy-total-dps" class="combat-dps-card"></div>
+                        <div class="combat-metric"><span>Speed</span><strong id="enemy-attack-speed">—</strong></div>
+                        <div class="combat-metric"><span>Crit</span><strong id="enemy-crit-chance">—</strong></div>
+                        <div class="combat-metric"><span>Crit Power</span><strong id="enemy-crit-multiplier">—</strong></div>
                     </div>
-                    <div class="es-text" id="enemy-es-text">0 / 0</div>
 
-                    <!-- Attack Progress Bar -->
-                    <h3>Attack Progress</h3>
-                    <div class="progress-container">
-                        <div id="enemy-attack-progress-bar" class="progress-bar attack-bar"></div>
+                    <div class="combat-readout-grid">
+                        <section><h3>Damage Output</h3><ul id="enemy-damage-types" class="stat-list"></ul></section>
+                        <section><h3>Resistances</h3><ul id="enemy-defense-types" class="stat-list"></ul></section>
                     </div>
-                    <p>Attack Speed: <span id="enemy-attack-speed">0</span></p>
-                    <p>Critical Chance: <span id="enemy-crit-chance">0%</span></p>
-                    <p>Critical Multiplier: <span id="enemy-crit-multiplier">0</span></p>
-                    <h3>Damage Types</h3>
-                    <ul id="enemy-damage-types" class="stat-list"></ul>
-                    <h3>Resistance Types</h3>
-                    <ul id="enemy-defense-types" class="stat-list"></ul>
-                    
-                    
+                </section>
 
-                </div>
-                <!-- Combat Log -->
-                <div class="combat-log" style="position:relative;">
-                    <h2>Combat Log</h2>
+                <section id="delve-bag-container" class="delve-bag operations-panel">
+                    <header class="operations-panel-header"><span>Field Recovery</span><h2>Delve Bag</h2></header>
+                    <div id="delve-bag-credits" class="delve-bag-credits">Credits: 0</div>
+                    <ul id="delve-bag-items"><li class="delve-bag-empty">No recovered items</li></ul>
+                </section>
+
+                <section class="combat-log operations-panel">
+                    <header class="operations-panel-header"><span>Live Feed</span><h2>Combat Log</h2></header>
                     <div id="log-messages"></div>
-                    <button id="combat-log-popout" style="position:absolute; top:8px; right:8px; background:linear-gradient(to bottom,#003366,#001133); color:#00ffcc; border:1px solid #00ffcc; border-radius:4px; padding:4px 8px; cursor:pointer; font-size:12px;">Pop Out</button>
-                </div>
+                    <button id="combat-log-popout" type="button">Pop Out</button>
+                </section>
             </div>
         </div>
 

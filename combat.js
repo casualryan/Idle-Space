@@ -25,6 +25,7 @@ let currentMonsterIndex = 0; // which monster in the sequence
 let interFightPauseTimer = null;
 let delveBag = { items: [], credits: 0 };
 let delveClaimCache = { items: [], credits: 0 };
+let completedDelveLocations = {};
 
 window.registerCoreboundInitializer(() => {
     updatePlayerStatsDisplay();
@@ -1327,6 +1328,33 @@ function startAdventure(location) {
     beginNextMonsterInSequence();
 }
 
+function getVisibleDelveLocations() {
+    const playerLevel = Math.max(1, Number(player?.level) || 1);
+    const completed = completedDelveLocations || {};
+
+    return locations.filter(location => {
+        if (location.developerOnly) return true;
+
+        if (location.locationCategory === 'endgame') {
+            if (playerLevel < 48) return false;
+            const tier = Math.max(1, Number(location.endgameTier) || 1);
+            if (tier === 1) return true;
+            const previousTier = locations.find(candidate =>
+                candidate.locationCategory === 'endgame' && Number(candidate.endgameTier) === tier - 1
+            );
+            return Boolean(previousTier && completed[previousTier.name] > 0);
+        }
+
+        return Number(location.recommendedLevel || 1) <= playerLevel + 2;
+    });
+}
+
+function recordDelveCompletion(location) {
+    if (!location?.name) return;
+    const previous = Math.max(0, Number(completedDelveLocations[location.name]) || 0);
+    completedDelveLocations[location.name] = previous + 1;
+}
+
 function displayAdventureLocations() {
     const delveControlsDiv = document.getElementById('delve-controls');
     const adventureDiv = document.getElementById('adventure-locations');
@@ -1547,9 +1575,33 @@ function displayAdventureLocations() {
         filterSelect.style.fontFamily = '"Rajdhani", "Courier New", monospace';
         filterSelect.style.appearance = 'none';
         
-        // Get unique categories from all locations
+        const visibleLocations = getVisibleDelveLocations();
+        const playerLevel = Math.max(1, Number(player?.level) || 1);
+        const nextLevelLocation = locations
+            .filter(location => location.locationCategory !== 'endgame' && Number(location.recommendedLevel || 1) > playerLevel + 2)
+            .sort((a, b) => a.recommendedLevel - b.recommendedLevel)[0];
+        const nextEndgameLocation = locations
+            .filter(location => location.locationCategory === 'endgame' && !visibleLocations.includes(location))
+            .sort((a, b) => a.endgameTier - b.endgameTier)[0];
+        const progressionNotice = document.createElement('div');
+        progressionNotice.className = 'location-progression-notice';
+        if (nextLevelLocation) {
+            progressionNotice.textContent = `NEXT SECTOR SIGNAL · LEVEL ${Math.max(1, nextLevelLocation.recommendedLevel - 2)}`;
+        } else if (nextEndgameLocation) {
+            const previousTier = locations.find(location =>
+                location.locationCategory === 'endgame' && Number(location.endgameTier) === Number(nextEndgameLocation.endgameTier) - 1
+            );
+            progressionNotice.textContent = previousTier
+                ? `NEXT ENDGAME SIGNAL · CLEAR ${previousTier.name.toUpperCase()}`
+                : 'ENDGAME SIGNALS DETECTED AT LEVEL 48';
+        } else {
+            progressionNotice.textContent = 'ALL KNOWN SECTOR SIGNALS ACQUIRED';
+        }
+        interfaceContainer.insertBefore(progressionNotice, controlsRow);
+
+        // Get unique categories from currently visible locations
         const uniqueCategories = ['all sectors'];
-        locations.forEach(loc => {
+        visibleLocations.forEach(loc => {
             if (loc.locationCategory && !uniqueCategories.includes(loc.locationCategory.toLowerCase())) {
                 uniqueCategories.push(loc.locationCategory.toLowerCase());
             }
@@ -1641,7 +1693,7 @@ function displayAdventureLocations() {
         locationScrollContainer.appendChild(locationGrid);
         
         // Create location cards for each location
-        locations.forEach(loc => {
+        visibleLocations.forEach(loc => {
             // Get the category from the locationCategory property, with a fallback to "industrial"
             const category = loc.locationCategory || "industrial";
             
@@ -1717,6 +1769,13 @@ function displayAdventureLocations() {
             }
             
             locationCard.appendChild(categoryTag);
+
+            if (completedDelveLocations[loc.name] > 0) {
+                const clearedTag = document.createElement('div');
+                clearedTag.className = 'location-cleared-tag';
+                clearedTag.textContent = `CLEARED ×${completedDelveLocations[loc.name]}`;
+                locationCard.appendChild(clearedTag);
+            }
             
             // Location name
             const locationName = document.createElement('h4');
@@ -1888,6 +1947,7 @@ function beginNextMonsterInSequence() {
     // If we've completed all fights for this location, the delve is complete
     if (currentMonsterIndex >= currentDelveLocation.numFights) {
         console.log("Delve complete - before finalizeDelveLoot - isDelveInProgress:", isDelveInProgress);
+        recordDelveCompletion(currentDelveLocation);
         finalizeDelveLoot();
         logMessage(`You have cleared all monsters in ${currentDelveLocation.name}!`);
 
@@ -2118,8 +2178,8 @@ function updateDelveBagUI() {
         // Show "empty" message if no items
         if (delveBag.items.length === 0) {
             const emptyMessage = document.createElement('li');
-            emptyMessage.textContent = 'Empty';
-            emptyMessage.className = 'empty-bag';
+            emptyMessage.textContent = 'No recovered items';
+            emptyMessage.className = 'delve-bag-empty';
             itemsList.appendChild(emptyMessage);
         }
     }
@@ -2713,6 +2773,8 @@ function initializeEnemyStatsDisplay() {
     document.getElementById('enemy-hp-text').textContent = '0 / 0';
     document.getElementById('enemy-es-bar').style.width = '0%';
     document.getElementById('enemy-es-text').textContent = '0 / 0';
+    const dps = document.getElementById('enemy-total-dps');
+    if (dps) dps.innerHTML = '<div>Total DPS</div><div>—</div>';
 
     // Clear damage and defense types (guard if elements exist)
     const ed = document.getElementById('enemy-damage-types'); if (ed) ed.innerHTML = '';

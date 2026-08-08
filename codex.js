@@ -142,43 +142,202 @@
         return Array.isArray(LOOT_POOLS[poolName]?.items) ? LOOT_POOLS[poolName].items : [];
     }
 
+    const DAMAGE_COLORS = {
+        kinetic: '#f2b84b',
+        slashing: '#ff667d',
+        pyro: '#ff7a3d',
+        cryo: '#62d9ff',
+        electric: '#ffe169',
+        corrosive: '#72e58a',
+        radiation: '#c982ff'
+    };
+
+    const LEVEL_BANDS = [
+        { id: 'early', label: 'Early Game', range: 'Levels 1–10', matches: level => level <= 10 },
+        { id: 'mid', label: 'Midgame', range: 'Levels 11–30', matches: level => level >= 11 && level <= 30 },
+        { id: 'late', label: 'Late Game', range: 'Levels 31–50', matches: level => level >= 31 && level <= 50 },
+        { id: 'endgame', label: 'Endgame', range: 'Levels 51+', matches: level => level >= 51 }
+    ];
+
+    function getLevelBand(level) {
+        return LEVEL_BANDS.find(band => band.matches(Number(level) || 1)) || LEVEL_BANDS[0];
+    }
+
+    function formatRange(value) {
+        if (value && typeof value === 'object') return `${value.min ?? 0}–${value.max ?? value.min ?? 0}`;
+        return String(value ?? 0);
+    }
+
+    function getEnemyAreas(enemyName) {
+        if (typeof locations === 'undefined') return [];
+        return locations
+            .filter(location => location.enemies?.some(entry => entry.name === enemyName))
+            .map(location => location.name);
+    }
+
+    function getLootTierDefinition(tierId) {
+        if (typeof LOOT_TIERS === 'undefined') return null;
+        return Object.values(LOOT_TIERS).find(tier => Number(tier.id) === Number(tierId)) || null;
+    }
+
+    function calculateItemRollOdds(config) {
+        const viableTiers = Object.entries(config?.poolsByTier || {}).map(([tierId, poolNames]) => {
+            const pools = (poolNames || [])
+                .map(name => ({ name, items: getPoolItems(name) }))
+                .filter(pool => pool.items.length > 0);
+            const tier = getLootTierDefinition(tierId);
+            return { tierId: Number(tierId), tier, pools, weight: Number(tier?.chance) || 0 };
+        }).filter(entry => entry.pools.length > 0);
+
+        const totalTierWeight = viableTiers.reduce((sum, entry) => sum + entry.weight, 0) || viableTiers.length || 1;
+        const odds = new Map();
+
+        viableTiers.forEach(entry => {
+            const tierChance = (entry.weight || 1) / totalTierWeight;
+            const poolChance = 1 / entry.pools.length;
+            entry.pools.forEach(pool => {
+                const totalItemWeight = pool.items.reduce((sum, item) => sum + (Number(item.weight) || 1), 0) || 1;
+                pool.items.forEach(item => {
+                    const itemChance = tierChance * poolChance * ((Number(item.weight) || 1) / totalItemWeight);
+                    const previous = odds.get(item.itemName) || { name: item.itemName, chance: 0, tiers: new Set() };
+                    previous.chance += itemChance;
+                    previous.tiers.add(entry.tier?.name || `Tier ${entry.tierId}`);
+                    odds.set(item.itemName, previous);
+                });
+            });
+        });
+
+        return [...odds.values()]
+            .map(entry => ({ ...entry, tiers: [...entry.tiers] }))
+            .sort((a, b) => b.chance - a.chance || a.name.localeCompare(b.name));
+    }
+
+    function appendReadout(container, label, value, accent = '') {
+        const row = document.createElement('div');
+        row.className = 'enemy-readout';
+        if (accent) row.style.setProperty('--readout-accent', accent);
+        const name = document.createElement('span');
+        name.textContent = label;
+        const amount = document.createElement('strong');
+        amount.textContent = value;
+        row.append(name, amount);
+        container.appendChild(row);
+    }
+
     function renderEnemyCard(enemy) {
         const card = document.createElement('details');
         card.className = 'codex-enemy';
+        const primaryDamageType = Object.keys(enemy.damageTypes || {})[0] || 'kinetic';
+        const accent = DAMAGE_COLORS[primaryDamageType] || '#00ffcc';
+        card.dataset.damage = primaryDamageType;
+        card.style.setProperty('--enemy-accent', accent);
+
         const summary = document.createElement('summary');
         summary.className = 'codex-enemy-header';
-        summary.textContent = `${enemy.name} · Level ${enemy.level || 1}`;
+        const heading = document.createElement('div');
+        heading.className = 'enemy-summary-heading';
+        const name = document.createElement('strong');
+        name.textContent = enemy.name;
+        const chips = document.createElement('div');
+        chips.className = 'enemy-summary-chips';
+        [
+            `LV ${enemy.level || 1}`,
+            titleCase(enemy.archetype || 'standard'),
+            titleCase(primaryDamageType)
+        ].forEach((label, index) => {
+            const chip = document.createElement('span');
+            chip.textContent = label;
+            if (index === 2) chip.className = 'damage-chip';
+            chips.appendChild(chip);
+        });
+        heading.append(name, chips);
+
+        const preview = document.createElement('div');
+        preview.className = 'enemy-summary-preview';
+        const totalDamage = Object.values(enemy.damageTypes || {}).reduce((sum, value) => {
+            if (value && typeof value === 'object') return sum + ((Number(value.min) || 0) + (Number(value.max) || 0)) / 2;
+            return sum + (Number(value) || 0);
+        }, 0);
+        preview.innerHTML = `<span><b>${enemy.health || 0}</b> HP</span><span><b>${totalDamage.toFixed(totalDamage % 1 ? 1 : 0)}</b> HIT</span><span><b>${Math.round((enemy.lootConfig?.baseDropChance || 0) * 100)}%</b> LOOT</span>`;
+        summary.append(heading, preview);
         card.appendChild(summary);
 
         const stats = document.createElement('div');
         stats.className = 'codex-enemy-details';
-        appendTextSection(stats, 'Core Stats', `Health ${enemy.health || 0} · Energy Shield ${enemy.energyShield || 0} · Attack Speed ${enemy.attackSpeed || 0} · Critical Chance ${Math.round((enemy.criticalChance || 0) * 100)}% · Critical Multiplier ${enemy.criticalMultiplier || 1}x · Experience ${enemy.experienceValue || 0}`);
-        if (enemy.description) appendTextSection(stats, 'Description', enemy.description);
+        const areas = getEnemyAreas(enemy.name);
+        const overview = document.createElement('div');
+        overview.className = 'enemy-overview';
+        const description = document.createElement('p');
+        description.textContent = enemy.description || 'No field notes recorded.';
+        const sector = document.createElement('span');
+        sector.textContent = areas.length ? `Encountered in ${areas.join(', ')}` : 'No known deployment sector';
+        overview.append(description, sector);
+        stats.appendChild(overview);
 
-        const damage = Object.entries(enemy.damageTypes || {})
-            .map(([type, value]) => `${titleCase(type)} ${typeof value === 'object' ? `${value.min}-${value.max}` : value}`)
-            .join(' · ') || 'None';
-        appendTextSection(stats, 'Damage', damage);
+        const columns = document.createElement('div');
+        columns.className = 'enemy-data-columns';
+        const corePanel = document.createElement('section');
+        corePanel.innerHTML = '<h4>Combat Profile</h4>';
+        appendReadout(corePanel, 'Integrity', String(enemy.health || 0), '#48bf91');
+        appendReadout(corePanel, 'Energy Shield', String(enemy.energyShield || 0), '#788bff');
+        appendReadout(corePanel, 'Attack Speed', `${Number(enemy.attackSpeed || 0).toFixed(2)}/s`, '#ffd166');
+        appendReadout(corePanel, 'Critical Chance', `${Math.round((enemy.criticalChance || 0) * 100)}%`, '#ff667d');
+        appendReadout(corePanel, 'Critical Power', `${enemy.criticalMultiplier || 1}×`, '#ff667d');
+        appendReadout(corePanel, 'Experience', String(enemy.experienceValue || 0), '#00ffcc');
 
-        const defenses = Object.entries(enemy.defenseTypes || {})
-            .map(([type, value]) => `${titleCase(type)} ${typeof value === 'object' ? `${value.min}-${value.max}` : value}%`)
-            .join(' · ') || 'None';
-        appendTextSection(stats, 'Resistances', defenses);
+        const offensePanel = document.createElement('section');
+        offensePanel.innerHTML = '<h4>Damage Output</h4>';
+        Object.entries(enemy.damageTypes || {}).forEach(([type, value]) => {
+            appendReadout(offensePanel, titleCase(type), formatRange(value), DAMAGE_COLORS[type] || '#fff');
+        });
+
+        const defensePanel = document.createElement('section');
+        defensePanel.innerHTML = '<h4>Resistance Matrix</h4>';
+        Object.entries(enemy.defenseTypes || {}).forEach(([type, value]) => {
+            appendReadout(defensePanel, titleCase(type).replace(' Resistance', ''), `${formatRange(value)}%`);
+        });
+        columns.append(corePanel, offensePanel, defensePanel);
+        stats.appendChild(columns);
 
         const config = enemy.lootConfig;
         if (config) {
-            const poolNames = [...new Set(Object.values(config.poolsByTier || {}).flat())];
-            const lootLines = poolNames.map(poolName => {
-                const entries = getPoolItems(poolName)
-                    .map(item => `${item.itemName} (weight ${item.weight || 1})`)
-                    .join(', ');
-                return `${poolName}: ${entries || 'No entries'}`;
+            const loot = document.createElement('section');
+            loot.className = 'enemy-loot-panel';
+            const lootHeader = document.createElement('div');
+            lootHeader.className = 'enemy-loot-header';
+            lootHeader.innerHTML = '<div><span>Recovery Analysis</span><h4>Possible Drops</h4></div>';
+            const lootFacts = document.createElement('div');
+            lootFacts.className = 'enemy-loot-facts';
+            const currency = enemy.currencyDrop || {};
+            [
+                [`${Math.round((config.baseDropChance || 0) * 100)}%`, 'Base loot chance'],
+                [`${config.minItems || 0}–${config.maxItems || 0}`, 'Items on success'],
+                [currency.max > 0 ? `${currency.min || 0}–${currency.max}` : '—', 'Credits per kill']
+            ].forEach(([value, label]) => {
+                const fact = document.createElement('div');
+                fact.innerHTML = `<strong>${value}</strong><span>${label}</span>`;
+                lootFacts.appendChild(fact);
             });
-            appendTextSection(
-                stats,
-                'Loot Tables',
-                `Drop chance ${Math.round((config.baseDropChance || 0) * 100)}% · ${config.minItems || 0}-${config.maxItems || 0} item(s). ${lootLines.join(' | ') || 'No item pools.'}`
-            );
+            lootHeader.appendChild(lootFacts);
+            loot.appendChild(lootHeader);
+
+            const oddsGrid = document.createElement('div');
+            oddsGrid.className = 'enemy-loot-grid';
+            calculateItemRollOdds(config).forEach(item => {
+                const row = document.createElement('div');
+                row.className = 'enemy-loot-item';
+                const chance = item.chance * 100;
+                const chanceLabel = chance < 1 ? chance.toFixed(1) : chance.toFixed(0);
+                row.innerHTML = `<div><strong>${item.name}</strong><span>${item.tiers.join(' / ')}</span></div><b>${chanceLabel}%</b>`;
+                row.title = 'Chance for each generated item after this enemy succeeds on its base loot roll.';
+                oddsGrid.appendChild(row);
+            });
+            loot.appendChild(oddsGrid);
+            const note = document.createElement('p');
+            note.className = 'enemy-loot-note';
+            note.textContent = 'Percentages are per generated item. Empowered enemies increase the base loot chance by 50%, up to 100%.';
+            loot.appendChild(note);
+            stats.appendChild(loot);
         }
 
         card.appendChild(stats);
@@ -192,18 +351,62 @@
         search.id = 'enemy-search';
         search.placeholder = 'Search enemies…';
         search.className = 'codex-filter';
+        const bandFilter = document.createElement('select');
+        bandFilter.className = 'codex-filter';
+        bandFilter.innerHTML = '<option value="all">All level bands</option>' + LEVEL_BANDS.map(band => `<option value="${band.id}">${band.label}</option>`).join('');
+        const damageFilter = document.createElement('select');
+        damageFilter.className = 'codex-filter';
+        damageFilter.innerHTML = '<option value="all">All damage types</option>' + Object.keys(DAMAGE_COLORS).map(type => `<option value="${type}">${titleCase(type)}</option>`).join('');
+        const resultCount = document.createElement('span');
+        resultCount.className = 'codex-result-count';
+        const toolbar = document.createElement('div');
+        toolbar.className = 'codex-enemy-toolbar';
+        toolbar.append(search, bandFilter, damageFilter, resultCount);
         const list = document.createElement('div');
         list.id = 'codex-enemy-list';
-        container.append(search, list);
+        container.append(toolbar, list);
 
         const draw = () => {
             const query = search.value.trim().toLowerCase();
-            list.replaceChildren(...(window.enemies || [])
-                .filter(enemy => !query || enemy.name.toLowerCase().includes(query))
-                .sort((a, b) => (a.level || 1) - (b.level || 1) || a.name.localeCompare(b.name))
-                .map(renderEnemyCard));
+            const selectedBand = bandFilter.value;
+            const selectedDamage = damageFilter.value;
+            const matches = (window.enemies || [])
+                .filter(enemy => {
+                    const band = getLevelBand(enemy.level);
+                    const damageTypes = Object.keys(enemy.damageTypes || {});
+                    const searchable = `${enemy.name} ${enemy.description || ''} ${getEnemyAreas(enemy.name).join(' ')}`.toLowerCase();
+                    return (!query || searchable.includes(query))
+                        && (selectedBand === 'all' || band.id === selectedBand)
+                        && (selectedDamage === 'all' || damageTypes.includes(selectedDamage));
+                })
+                .sort((a, b) => (a.level || 1) - (b.level || 1) || a.name.localeCompare(b.name));
+
+            resultCount.textContent = `${matches.length} ${matches.length === 1 ? 'entry' : 'entries'}`;
+            const groups = LEVEL_BANDS.map(band => ({ band, enemies: matches.filter(enemy => band.matches(enemy.level)) }))
+                .filter(group => group.enemies.length > 0)
+                .map(group => {
+                    const section = document.createElement('section');
+                    section.className = 'codex-enemy-band';
+                    const heading = document.createElement('header');
+                    heading.innerHTML = `<div><span>Threat Archive</span><h3>${group.band.label}</h3></div><strong>${group.band.range} · ${group.enemies.length} entries</strong>`;
+                    const grid = document.createElement('div');
+                    grid.className = 'codex-enemy-grid';
+                    grid.append(...group.enemies.map(renderEnemyCard));
+                    section.append(heading, grid);
+                    return section;
+                });
+
+            if (groups.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'codex-empty-state';
+                empty.textContent = 'No enemy records match the selected filters.';
+                groups.push(empty);
+            }
+            list.replaceChildren(...groups);
         };
         search.addEventListener('input', draw);
+        bandFilter.addEventListener('change', draw);
+        damageFilter.addEventListener('change', draw);
         draw();
     }
 
