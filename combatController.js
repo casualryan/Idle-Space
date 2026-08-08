@@ -29,6 +29,7 @@ function startCombat() {
     // Recalculate combat stats without healing between delve encounters.
     console.log("Starting combat - preparing player stats");
     preparePlayerForCombat();
+    if (typeof resetCombatStyleState === 'function') resetCombatStyleState(player);
 
     isCombatActive = true;
 
@@ -206,6 +207,7 @@ function stopCombat(reason) {
     enemyAttackTimer = 0;
     playerNextAttackTime = 0;  // Reset playerNextAttackTime
     enemyNextAttackTime = 0;   // Reset enemyNextAttackTime
+    if (typeof resetCombatStyleState === 'function') resetCombatStyleState(player);
     resetAttackProgressBars();
     setFleeControlState({ visible: false, enabled: true });
 

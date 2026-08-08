@@ -232,9 +232,136 @@ test('passive tree uses immediate viewport tooltips instead of persistent node l
   assert.match(styles, /\.passive-node-tooltip\s*\{[\s\S]*?pointer-events:\s*none/, 'tooltip can interfere with node hover');
 });
 
-test('only the authored Balanced combat style is player-facing', () => {
+test('combat styles expose four attack patterns with three exclusive mastery tiers', () => {
   const styles = evaluateClassic('skills.js', 'combatStyles');
-  assert.deepEqual(Array.from(styles, style => style.id), ['balancedStyle']);
+  assert.deepEqual(Array.from(styles, style => style.id), ['balancedStyle', 'heavyStyle', 'twinStyle', 'counterStyle']);
+  assert.equal(styles.every(style => style.masteries.length === 3), true);
+  assert.equal(styles.every(style => style.masteries.every(mastery => mastery.choices.length === 3)), true);
+  const choiceIds = Array.from(styles, style => style.masteries.flatMap(mastery => mastery.choices.map(choice => choice.id))).flat();
+  assert.equal(new Set(choiceIds).size, 36, 'combat mastery choice IDs are not unique');
+});
+
+test('combat mastery choices replace tier siblings and alter live style profiles', () => {
+  const testPlayer = {
+    level: 10,
+    equippedSkillId: 'heavyStyle',
+    unlockedSkillIds: [],
+    combatStyleAllocations: {},
+    combatStyleVersion: 2,
+    totalStats: { attackSpeed: 1, energyShield: 100 },
+    currentShield: 20
+  };
+  const result = evaluateClassic(
+    ['skills.js', 'skillResolver.js'],
+    `(() => {
+      normalizeCombatStylesState(player);
+      const locked = canAllocateStyleNode(player, 'heavyStyle', 'heavy-patient-aim');
+      player.level = 41;
+      const first = allocateStyleNode(player, 'heavyStyle', 'heavy-patient-aim');
+      const replacement = allocateStyleNode(player, 'heavyStyle', 'heavy-overpower');
+      const heavy = resolveSkillProfile(player);
+
+      player.equippedSkillId = 'twinStyle';
+      allocateStyleNode(player, 'twinStyle', 'twin-opening-feint');
+      const twin = prepareCombatStyleAttack(player, { currentHealth: 100, totalStats: { health: 100 } });
+      const twinFirst = buildHitContext(twin, 0);
+      const twinSecond = buildHitContext(twin, 1);
+
+      player.equippedSkillId = 'counterStyle';
+      resetCombatStyleState(player);
+      recordCombatStyleIncomingHit(player);
+      const counter = prepareCombatStyleAttack(player, { currentHealth: 100, totalStats: { health: 100 } });
+      return {
+        locked, first, replacement,
+        heavy,
+        heavyNodes: player.combatStyleAllocations.heavyStyle.nodes,
+        twin, twinFirst, twinSecond,
+        counter,
+        unlocked: player.unlockedSkillIds
+      };
+    })()`,
+    { player: testPlayer }
+  );
+
+  assert.equal(result.locked.ok, false, 'tier one unlocked before level 11');
+  assert.equal(result.first.ok, true);
+  assert.equal(result.replacement.replaced, 'heavy-patient-aim');
+  assert.deepEqual(Object.keys(result.heavyNodes), ['heavy-overpower']);
+  assert.equal(result.heavy.damageMultiplier, 1.85);
+  assert.equal(result.heavy.criticalDamageBonus, 0.35);
+  assert.equal(result.twin.hitCount, 2);
+  assert.equal(result.twinFirst.skipCrit, true);
+  assert.equal(result.twinSecond.critChanceBonus, 0.25);
+  assert.equal(result.counter.isCounterAttack, true);
+  assert.equal(result.counter.damageMultiplier, 1.65);
+  assert.deepEqual([...result.unlocked], ['balancedStyle', 'heavyStyle', 'twinStyle', 'counterStyle']);
+});
+
+test('style cadence state drives Heavy, Balanced, Twin, and Counter attack behavior', () => {
+  const testPlayer = {
+    level: 51,
+    equippedSkillId: 'balancedStyle',
+    unlockedSkillIds: [],
+    combatStyleAllocations: {},
+    combatStyleVersion: 2,
+    totalStats: { attackSpeed: 1, energyShield: 100 },
+    currentShield: 20
+  };
+  const result = evaluateClassic(
+    ['skills.js', 'skillResolver.js'],
+    `(() => {
+      normalizeCombatStylesState(player);
+      allocateStyleNode(player, 'balancedStyle', 'balanced-perfect-form');
+      const target = { currentHealth: 100, totalStats: { health: 100 } };
+      const balancedOne = prepareCombatStyleAttack(player, target);
+      finishCombatStyleAttack(player, target, balancedOne);
+      const balancedTwo = prepareCombatStyleAttack(player, target);
+      finishCombatStyleAttack(player, target, balancedTwo);
+      const balancedThree = prepareCombatStyleAttack(player, target);
+
+      player.equippedSkillId = 'heavyStyle';
+      resetCombatStyleState(player);
+      allocateStyleNode(player, 'heavyStyle', 'heavy-aftershock');
+      const heavy = prepareCombatStyleAttack(player, target);
+      const heavyHits = [buildHitContext(heavy, 0), buildHitContext(heavy, 1)];
+
+      player.equippedSkillId = 'twinStyle';
+      resetCombatStyleState(player);
+      allocateStyleNode(player, 'twinStyle', 'twin-threefold-pattern');
+      const twin = prepareCombatStyleAttack(player, target);
+
+      player.equippedSkillId = 'counterStyle';
+      resetCombatStyleState(player);
+      allocateStyleNode(player, 'counterStyle', 'counter-braced-guard');
+      allocateStyleNode(player, 'counterStyle', 'counter-quick-riposte');
+      allocateStyleNode(player, 'counterStyle', 'counter-perfect-parry');
+      const incoming = () => ({ total: 100, damage: { kinetic: 100 }, damageBreakdown: { kinetic: 100 }, isCritical: false });
+      const firstIncoming = modifyIncomingDamageForCombatStyle(player, target, incoming());
+      recordCombatStyleIncomingHit(player);
+      const secondIncoming = modifyIncomingDamageForCombatStyle(player, target, incoming());
+      recordCombatStyleIncomingHit(player);
+      const thirdIncoming = modifyIncomingDamageForCombatStyle(player, target, incoming());
+      recordCombatStyleIncomingHit(player);
+      const counter = prepareCombatStyleAttack(player, target);
+      const counterInterval = getPlayerAttackInterval(player);
+      return { balancedOne, balancedTwo, balancedThree, heavy, heavyHits, twin, firstIncoming, secondIncoming, thirdIncoming, counter, counterInterval };
+    })()`,
+    { player: testPlayer }
+  );
+
+  assert.equal(result.balancedOne.forceMaxDamageRoll, undefined);
+  assert.equal(result.balancedTwo.forceMaxDamageRoll, undefined);
+  assert.equal(result.balancedThree.forceMaxDamageRoll, true);
+  assert.equal(result.heavy.hitCount, 2);
+  assert.equal(result.heavyHits[0].damageMultiplier, 1.85);
+  assert.equal(result.heavyHits[1].damageMultiplier, 1.85 * 0.25);
+  assert.equal(result.twin.hitCount, 3);
+  assert.deepEqual([...result.twin.hitDamageMultipliers], [0.46, 0.46, 0.46]);
+  assert.equal(result.firstIncoming.total, 90, 'Braced Guard did not reduce the arming hit');
+  assert.equal(result.secondIncoming.total, 100);
+  assert.equal(result.thirdIncoming.total, 60, 'Perfect Parry did not reduce every third hit');
+  assert.equal(result.counter.forceMaxDamageRoll, true);
+  assert.equal(result.counterInterval, 1.05 * 0.75, 'Quick Riposte did not accelerate the armed counter');
 });
 
 test('loot tier rolls are restricted to tiers populated by the defeated enemy', () => {
@@ -524,8 +651,8 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   );
 
   assert.equal(result.beforeUnchanged, true, 'migration mutated the parsed legacy payload');
-  assert.equal(result.migrated.toVersion, 9);
-  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.equal(result.migrated.toVersion, 10);
+  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   assert.equal(result.migrated.state.player.equipment.mainHand.weaponBaseDamage.slashing, 17);
   assert.equal(result.migrated.state.player.equipment.mainHand.rolledModifiers[0].value, 17);
   assert.equal(result.migrated.state.player.equipment.mainHand.levelRequirement, 9);
@@ -537,6 +664,8 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   assert.equal(result.migrated.state.player.passives.treeVersion, 2);
   assert.equal(result.migrated.state.player.passives.points, 7, 'retired passive ranks were not refunded');
   assert.equal(Object.keys(result.migrated.state.player.passives.allocations).length, 0);
+  assert.equal(result.migrated.state.player.combatStyles.version, 2);
+  assert.deepEqual(Object.keys(result.migrated.state.player.combatStyles.allocations), []);
   assert.equal(result.validation.valid, true);
   assert.equal(result.repeatUnchanged, true, 'current save migration was not idempotent');
 
@@ -570,7 +699,7 @@ test('content validation rejects unsupported item stats and roll paths', () => {
 
 test('all authored registries satisfy the unified content contract', () => {
   const validateRegistries = (developerMode) => evaluateClassic(
-    ['combatSchema.js', 'stats.js', 'recipes.js', 'npcshops.js', 'passives.js', 'lootPools.js', 'locations.js', 'contentSchema.js'],
+    ['combatSchema.js', 'stats.js', 'recipes.js', 'npcshops.js', 'passives.js', 'skills.js', 'lootPools.js', 'locations.js', 'contentSchema.js'],
     `validateCoreboundContent({
       items: testItems,
       enemies: testEnemies,
@@ -578,6 +707,7 @@ test('all authored registries satisfy the unified content contract', () => {
       shops: npcs,
       locations,
       passives,
+      combatStyles,
       lootPools: LOOT_POOLS,
       lootTiers: LOOT_TIERS,
       developerMode: ${developerMode}

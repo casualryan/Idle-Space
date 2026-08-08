@@ -752,8 +752,9 @@ function calculateDamage(attacker, defender, attackContext = null) {
     const rollFloor = Math.min(0.85, Math.max(0.1,
         0.35 + ((attackerPrecision - defenderDeflection) * 0.015)
         + Number(attacker.totalStats.damageRollFloorBonus || 0)
+        + Number(ctx.damageRollFloorBonus || 0)
     ));
-    let damagePercentage = isExposed ? 1 : rollFloor + (Math.random() * (1 - rollFloor));
+    let damagePercentage = (isExposed || ctx.forceMaxDamageRoll) ? 1 : rollFloor + (Math.random() * (1 - rollFloor));
     let rolledDamage = totalPotentialDamage * damagePercentage;
 
     // Strict cap: ensure rolled damage doesn't exceed total potential damage
@@ -788,7 +789,7 @@ function calculateDamage(attacker, defender, attackContext = null) {
     }
 
     if (isCriticalHit) {
-        critMultiplier = attacker.totalStats.criticalMultiplier || 1.5;
+        critMultiplier = (attacker.totalStats.criticalMultiplier || 1.5) + Number(ctx.criticalDamageBonus || 0);
         if (zapped) {
             critMultiplier += Number(zapped.critDamageBonus || 0.5);
             if (typeof removeDebuff === 'function') removeDebuff(defender, 'Zapped');

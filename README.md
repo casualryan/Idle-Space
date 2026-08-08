@@ -78,8 +78,9 @@ facts in UI copy.
 ## Current gameplay contracts
 
 - New characters receive a Broken Phase Sword and 1,000 credits.
-- Only Balanced Style is exposed until additional combat styles have distinct,
-  authored trees.
+- Balanced, Heavy, Twin, and Counter Styles are available. Each changes the
+  automatic attack pattern and has one exclusive choice in each mastery tier,
+  unlocked at levels 11, 26, and 41.
 - Fabrication reserves materials immediately, takes five seconds, allows one
   active job, and refunds the reservation when cancelled.
 - Successful delve rewards enter a persistent claim cache. Starting another

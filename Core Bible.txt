@@ -248,7 +248,7 @@ Debuff attach point:
 - After applyDamage, dominant damage type is evaluated for debuff roll.
 
 ================================================================================
-7. COMBAT STYLES SYSTEM [IMPLEMENTED + PROTOTYPE]
+7. COMBAT STYLES SYSTEM [IMPLEMENTED]
 ================================================================================
 
 System replacement:
@@ -257,27 +257,30 @@ System replacement:
 
 Active style behavior:
 - Exactly one equipped style controls attack execution.
-- Style base profile fields:
-  attackTimeMultiplier, damageMultiplier, hitCount,
-  procOnHit, procOnCritical, comboAfterSkill, comboProcStrength,
-  critChanceMultiplier, critChanceBonus, debuffApplyBonus.
+- Styles change how the automatic attack delivers the damage, debuffs, passives,
+  and item effects authored elsewhere; they do not own damage-type specialization.
+- Live profile fields include attack interval, hit count/per-hit multipliers, proc
+  ownership/coefficient, combo behavior, critical context, debuff application,
+  and damage-roll control.
 
 Current base styles:
 - balancedStyle
-- twinStyle
 - heavyStyle
-- rapidStyle
-- focusedStyle
-- guardedStyle
+- twinStyle
+- counterStyle
 
-Style points:
-- Thresholds: levels 6,11,16,21,26,31,36,41,46,51.
-- skillPoints legacy field is kept at 0; style points are the live system.
-
-[PROTOTYPE] style tree effects:
-- Node trees are authored, allocatable, persisted, and validated.
-- Resolver explicitly defers node stat effects in combat profile output.
-- Practical meaning: base style profile affects combat; node bonuses do not yet.
+Mastery choices:
+- Tiers unlock at levels 11, 26, and 41.
+- Each style has Technique, Rhythm, and Doctrine tiers with three authored choices.
+- Exactly one choice may be selected per unlocked tier; selecting a sibling
+  replaces the previous choice. Each style remembers its own configuration.
+- Choices alter attack behavior rather than supplying generic travel stats.
+- Balanced owns consistency/adaptation; Heavy owns committed impact/momentum;
+  Twin owns linked multi-hit opportunities; Counter owns armed retaliation.
+- Style version 2 retires the old point tree. Save schema v10 clears old style
+  allocations because they cannot honestly map to the exclusive mastery choices.
+- Runtime and repository validation reject malformed tiers, duplicate choice IDs,
+  unknown profile modifiers, and unknown mastery mechanics.
 
 ================================================================================
 8. PASSIVE SYSTEM [IMPLEMENTED]
@@ -304,7 +307,7 @@ Application model:
 - applyAllPassivesToPlayer() rebuilds passiveBonuses object from allocations and
   gear bonuses.
 - Recalculated on allocation changes and equip/unequip operations.
-- Save schema v9 refunds every retired-tree rank, clears obsolete allocations,
+- Save schema v10 refunds every retired passive-tree rank, clears obsolete allocations,
   and records passive tree version 2. It never guesses at an old build mapping.
 - The interactive SVG view supports pan, zoom, search, inspection, allocation,
   refund, and sector summaries.
@@ -481,12 +484,10 @@ Persistence:
 - Passive allocation and application.
 - Typed debuff and status systems.
 - Wires/chips socketing and black-chip uniqueness.
-- Save v8 snapshot, ordered migrations, and pre-load validation.
+- Save v10 snapshot, ordered migrations, and pre-load validation.
 - Activity manager plus mining integration.
 
 [PROTOTYPE]
-- Combat style node trees: allocatable/persistent UI data, not yet applied to
-  combat resolver math.
 - Some schema-declared fields exist in content but are not active in final combat
   formulas (for example armorPenetration in damage math).
 

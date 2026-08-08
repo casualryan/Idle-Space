@@ -1,7 +1,8 @@
 // Ordered, non-destructive migrations and validation for persisted game snapshots.
 
-const COREBOUND_SAVE_VERSION = 9;
+const COREBOUND_SAVE_VERSION = 10;
 const SAVE_PASSIVE_TREE_VERSION = 2;
+const SAVE_COMBAT_STYLE_VERSION = 2;
 const SAVE_DAMAGE_TYPE_ALIASES = Object.freeze({
     mental: 'slashing',
     magnetic: 'electric',
@@ -221,6 +222,20 @@ const SAVE_MIGRATIONS = Object.freeze([
         passives.treeVersion = SAVE_PASSIVE_TREE_VERSION;
         delete passives.gearBonuses;
         state.player.passives = passives;
+    },
+    function migrateToVersion10(state) {
+        const combatStyles = state.player.combatStyles && typeof state.player.combatStyles === 'object'
+            ? state.player.combatStyles
+            : {};
+        combatStyles.equipped = typeof combatStyles.equipped === 'string'
+            ? combatStyles.equipped
+            : 'balancedStyle';
+        // The retired point tree cannot express one-choice mastery intent. Its
+        // allocations are discarded; mastery availability is derived from level.
+        combatStyles.allocations = {};
+        combatStyles.unlocked = [];
+        combatStyles.version = SAVE_COMBAT_STYLE_VERSION;
+        state.player.combatStyles = combatStyles;
     }
 ]);
 
@@ -290,6 +305,19 @@ function validateGameStateSnapshot(state, options = {}) {
                 if (Number(rank) !== 1) errors.push(`passive allocation ${nodeId} must have rank one`);
             }
         }
+    }
+
+    const combatStyles = state.player?.combatStyles;
+    if (!combatStyles || typeof combatStyles !== 'object' || Array.isArray(combatStyles)) {
+        errors.push('player combat styles are required');
+    } else {
+        if (Number(combatStyles.version) !== SAVE_COMBAT_STYLE_VERSION) {
+            errors.push(`combat style version must be ${SAVE_COMBAT_STYLE_VERSION}`);
+        }
+        if (!combatStyles.allocations || typeof combatStyles.allocations !== 'object' || Array.isArray(combatStyles.allocations)) {
+            errors.push('combat style allocations must be an object');
+        }
+        if (!Array.isArray(combatStyles.unlocked)) errors.push('unlocked combat styles must be an array');
     }
 
     const knownItemNames = options.knownItemNames instanceof Set ? options.knownItemNames : null;

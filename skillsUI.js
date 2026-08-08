@@ -1,357 +1,204 @@
-// skillsUI.js — Combat Styles tree prototype UI
+// Compact Combat Style selector and three-tier mastery interface.
 
 let selectedCombatStyleId = null;
-let hoveredNodeRef = null;
-const STYLE_TREE_PADDING = 20;
-const STYLE_TREE_X_STEP = 88;
-const STYLE_TREE_Y_STEP = 34;
-
-function getNodeSize(nodeType) {
-    if (nodeType === 'keystone') return 76;
-    if (nodeType === 'major') return 64;
-    return 56;
-}
-
-function getNodeLayout(node) {
-    const size = getNodeSize(node.type);
-    const left = STYLE_TREE_PADDING + (node.x - 1) * STYLE_TREE_X_STEP;
-    const top = STYLE_TREE_PADDING + (node.y - 1) * STYLE_TREE_Y_STEP;
-    return {
-        left,
-        top,
-        size,
-        centerX: left + (size / 2),
-        centerY: top + (size / 2),
-    };
-}
-
-function getTreeViewBox(nodes) {
-    if (!nodes.length) return { width: 760, height: 430 };
-    let maxRight = 0;
-    let maxBottom = 0;
-    for (const node of nodes) {
-        const layout = getNodeLayout(node);
-        maxRight = Math.max(maxRight, layout.left + layout.size);
-        maxBottom = Math.max(maxBottom, layout.top + layout.size);
-    }
-    return {
-        width: maxRight + STYLE_TREE_PADDING,
-        height: maxBottom + STYLE_TREE_PADDING,
-    };
-}
 
 function getCombatStylesUiData() {
     return window.combatStyles || [];
 }
 
 function getSkillsGatingMessage() {
-    if (typeof canChangeSkills === 'function' && !canChangeSkills()) {
-        return 'Cannot change combat styles during combat or an active delve.';
-    }
-    return null;
+    return typeof canChangeSkills === 'function' && !canChangeSkills()
+        ? 'Combat Styles cannot be changed during combat or an active delve.'
+        : null;
 }
 
 function ensureSelectedCombatStyle() {
     const styles = getCombatStylesUiData();
     if (!styles.length) return null;
-    if (typeof normalizeCombatStylesState === 'function') {
-        normalizeCombatStylesState(player);
-    }
-    if (!selectedCombatStyleId || !styles.some((s) => s.id === selectedCombatStyleId)) {
+    if (typeof normalizeCombatStylesState === 'function') normalizeCombatStylesState(player);
+    if (!selectedCombatStyleId || !styles.some(style => style.id === selectedCombatStyleId)) {
         selectedCombatStyleId = player.equippedSkillId || styles[0].id;
     }
     return selectedCombatStyleId;
 }
 
 function escapeHtml(value) {
-    return String(value || '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
 }
 
-function getNodeIconGlyph(iconId) {
+function getStyleIconGlyph(iconId) {
     const glyphs = {
-        precision: '⌖',
-        shield: '⬡',
-        chain: '⛓',
-        blade: '✦',
-        target: '◉',
-        barrier: '⬢',
-        impact: '✹',
-        weakspot: '◎',
-        split: '⑂',
-        focus: '◆',
-        fortress: '▦',
-        speed: '»',
-        cycle: '↻',
-        crit: '✺',
-        debuff: '⊗',
-        pulse: '❤',
-        analysis: '◌',
-        momentum: '➤',
-        chainplus: '⛓',
-        armor: '⛨',
-        star: '✶',
-        balance: '☯',
-        motion: '➣',
-        core: '⬢',
-        fallback: '◈',
+        balance: '◈', impact: '✹', split: '⑂', shield: '⬡', target: '⌖', debuff: '⊗',
+        crit: '✺', cycle: '↻', chain: '⛓', star: '✶', speed: '»', weakspot: '◎',
+        chainplus: '⛓', blade: '✦', motion: '➣', barrier: '⬢', momentum: '➤',
+        focus: '◆', fortress: '▦', fallback: '◇'
     };
     return glyphs[iconId] || glyphs.fallback;
 }
 
-function getNodeIconSvg(iconId) {
-    const glyph = getNodeIconGlyph(iconId);
-    return `
-        <svg class="combat-style-node-icon-svg" viewBox="0 0 512 512" role="img" aria-hidden="true">
-            <defs>
-                <radialGradient id="nodeCore" cx="50%" cy="50%" r="60%">
-                    <stop offset="0%" stop-color="#0c3f52"></stop>
-                    <stop offset="75%" stop-color="#071620"></stop>
-                    <stop offset="100%" stop-color="#02060c"></stop>
-                </radialGradient>
-            </defs>
-            <circle cx="256" cy="256" r="222" fill="url(#nodeCore)" stroke="#00d9ff" stroke-width="20"></circle>
-            <circle cx="256" cy="256" r="180" fill="none" stroke="#1effb5" stroke-opacity="0.5" stroke-width="8"></circle>
-            <text x="256" y="292" text-anchor="middle" font-size="180" font-weight="700" fill="#c6fff2">${glyph}</text>
-        </svg>
-    `;
-}
-
-function buildNodeDetailsPanel(node, styleId) {
-    if (!node) {
+function buildStyleCards(styles, selectedStyleId, equippedStyleId, gatingMessage) {
+    return styles.map(style => {
+        const selected = style.id === selectedStyleId;
+        const equipped = style.id === equippedStyleId;
+        const configured = typeof getStylePointSummary === 'function'
+            ? getStylePointSummary(player, style.id).configured
+            : 0;
         return `
-            <h3>Node Details</h3>
-            <div class="combat-style-empty-text">Hover a node to inspect requirements and status.</div>
-        `;
-    }
-
-    const points = typeof getStyleNodePoints === 'function' ? getStyleNodePoints(player, styleId, node.id) : 0;
-    const statusInfo = typeof getStyleNodeStatus === 'function'
-        ? getStyleNodeStatus(player, styleId, node.id)
-        : { status: 'locked', reason: 'Unavailable' };
-    const requires = (node.requires || []).length ? node.requires.join(', ') : 'None';
-    const mutual = (node.mutuallyExclusiveWith || []).length ? node.mutuallyExclusiveWith.join(', ') : 'None';
-
-    return `
-        <h3>${escapeHtml(node.name)}</h3>
-        <div class="combat-style-node-type">${escapeHtml((node.type || 'minor').toUpperCase())}</div>
-        <div class="combat-style-node-detail-row"><span>Points:</span><span>${points}/${Math.max(1, node.maxPoints || 1)}</span></div>
-        <div class="combat-style-node-detail-row"><span>Cost:</span><span>${Math.max(1, node.cost || 1)}</span></div>
-        <div class="combat-style-node-detail-row"><span>Status:</span><span>${escapeHtml(statusInfo.reason || statusInfo.status)}</span></div>
-        <div class="combat-style-node-detail-block"><strong>Requires:</strong> ${escapeHtml(requires)}</div>
-        <div class="combat-style-node-detail-block"><strong>Exclusive With:</strong> ${escapeHtml(mutual)}</div>
-        <div class="combat-style-node-detail-block"><strong>Effect:</strong> ${escapeHtml(node.description || 'No description.')}</div>
-        <div class="combat-style-node-detail-help">
-            Left-click: spend point<br>
-            Right-click: refund point
-        </div>
-    `;
+            <article class="combat-style-card${selected ? ' selected' : ''}${equipped ? ' equipped' : ''}" data-style-select="${style.id}" tabindex="0" role="button" aria-label="Inspect ${escapeHtml(style.name)}">
+                <div class="combat-style-card-icon" aria-hidden="true">${getStyleIconGlyph(style.icon)}</div>
+                <div class="combat-style-card-body">
+                    <div class="combat-style-card-name">${escapeHtml(style.shortName || style.name)}</div>
+                    <div class="combat-style-card-desc">${escapeHtml(style.description)}</div>
+                    <div class="combat-style-card-preview">${escapeHtml(style.attackPreview)}</div>
+                    <div class="combat-style-card-progress">${configured}/3 masteries configured</div>
+                </div>
+                <button type="button" class="combat-style-equip-btn" data-style-equip="${style.id}" ${equipped || gatingMessage ? 'disabled' : ''}>
+                    ${equipped ? 'Active' : 'Equip'}
+                </button>
+            </article>`;
+    }).join('');
 }
 
-function buildNodeConnections(styleId, style) {
-    const nodes = style.tree?.nodes || [];
-    const nodeById = new Map(nodes.map((n) => [n.id, n]));
-    let lines = '';
+function buildMasteryChoice(style, mastery, choice, gatingMessage) {
+    const status = typeof getStyleNodeStatus === 'function'
+        ? getStyleNodeStatus(player, style.id, choice.id)
+        : { status: 'locked', reason: 'Unavailable' };
+    const disabled = Boolean(gatingMessage) || status.status === 'locked';
+    return `
+        <button type="button" class="combat-mastery-choice ${status.status}" data-style-choice="${choice.id}" ${disabled ? 'disabled' : ''} aria-pressed="${status.status === 'selected'}">
+            <span class="combat-mastery-choice-icon" aria-hidden="true">${getStyleIconGlyph(choice.icon)}</span>
+            <span class="combat-mastery-choice-copy">
+                <strong>${escapeHtml(choice.name)}</strong>
+                <span>${escapeHtml(choice.description)}</span>
+            </span>
+            <span class="combat-mastery-choice-status">${escapeHtml(status.reason)}</span>
+        </button>`;
+}
 
-    for (const node of nodes) {
-        const reqs = node.requires || [];
-        const targetLayout = getNodeLayout(node);
-        for (const reqId of reqs) {
-            const reqNode = nodeById.get(reqId);
-            if (!reqNode) continue;
-            const reqLayout = getNodeLayout(reqNode);
-            const active = typeof getStyleNodePoints === 'function' && getStyleNodePoints(player, styleId, reqId) > 0;
-            lines += `<line class="combat-style-connection ${active ? 'active' : ''}" x1="${reqLayout.centerX}" y1="${reqLayout.centerY}" x2="${targetLayout.centerX}" y2="${targetLayout.centerY}"></line>`;
-        }
-    }
-    return lines;
+function buildMasteryTiers(style, gatingMessage) {
+    return (style.masteries || []).map(mastery => {
+        const unlocked = Number(player.level || 1) >= mastery.unlockLevel;
+        const selected = typeof getSelectedStyleChoice === 'function'
+            ? getSelectedStyleChoice(player, style.id, mastery.tier)
+            : null;
+        return `
+            <section class="combat-mastery-tier${unlocked ? '' : ' locked'}">
+                <header class="combat-mastery-tier-header">
+                    <div class="combat-mastery-tier-number">${mastery.tier}</div>
+                    <div>
+                        <div class="combat-mastery-tier-label">${escapeHtml(mastery.name)}</div>
+                        <div class="combat-mastery-tier-purpose">${escapeHtml(mastery.purpose)}</div>
+                    </div>
+                    <div class="combat-mastery-tier-unlock">${unlocked ? (selected ? 'Configured' : 'Choose one') : `Unlocks at level ${mastery.unlockLevel}`}</div>
+                    ${selected && !gatingMessage ? `<button type="button" class="combat-mastery-clear" data-clear-tier="${mastery.tier}">Clear</button>` : ''}
+                </header>
+                <div class="combat-mastery-choice-grid">
+                    ${mastery.choices.map(choice => buildMasteryChoice(style, mastery, choice, gatingMessage)).join('')}
+                </div>
+            </section>`;
+    }).join('');
 }
 
 function renderCombatStylesScreen() {
     const screen = document.getElementById('skills-screen');
     if (!screen) return;
-
     const styles = getCombatStylesUiData();
     if (!styles.length) {
         screen.innerHTML = '<h2>Combat Styles</h2><p class="skills-gating-notice">No combat style data loaded.</p>';
         return;
     }
 
-    if (typeof normalizeCombatStylesState === 'function') {
-        normalizeCombatStylesState(player);
-    }
+    normalizeCombatStylesState(player);
     const selectedStyleId = ensureSelectedCombatStyle();
-    const selectedStyle = styles.find((s) => s.id === selectedStyleId) || styles[0];
+    const selectedStyle = styles.find(style => style.id === selectedStyleId) || styles[0];
     const equippedStyleId = player.equippedSkillId || selectedStyle.id;
-    const pointSummary = typeof getStylePointSummary === 'function'
-        ? getStylePointSummary(player, selectedStyle.id)
-        : { earned: 0, spent: 0, available: 0, max: 10, nextPointLevel: null };
-    const gatingMsg = getSkillsGatingMessage();
-
-    const styleCardsMarkup = styles.map((style) => {
-        const selected = style.id === selectedStyle.id;
-        const equipped = style.id === equippedStyleId;
-        return `
-            <div class="combat-style-card ${selected ? 'selected' : ''} ${equipped ? 'equipped' : ''}" data-style-select="${style.id}" role="button" tabindex="0" aria-label="Select ${escapeHtml(style.name)}">
-                <div class="combat-style-card-icon">${getNodeIconSvg('core')}</div>
-                <div class="combat-style-card-body">
-                    <div class="combat-style-card-name">${escapeHtml(style.name)}${equipped ? ' <span class="combat-style-badge">ACTIVE</span>' : ''}</div>
-                    <div class="combat-style-card-desc">${escapeHtml(style.description)}</div>
-                    <div class="combat-style-card-preview">${escapeHtml(style.attackPreview || '')}</div>
-                </div>
-                <div class="combat-style-card-actions">
-                    <button type="button" class="combat-style-equip-btn" data-style-equip="${style.id}" ${equipped || gatingMsg ? 'disabled' : ''}>Equip</button>
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    const nodes = selectedStyle.tree?.nodes || [];
-    const viewBox = getTreeViewBox(nodes);
-    const nodesMarkup = nodes.map((node) => {
-        const statusInfo = typeof getStyleNodeStatus === 'function'
-            ? getStyleNodeStatus(player, selectedStyle.id, node.id)
-            : { status: 'locked', reason: 'Locked' };
-        const points = typeof getStyleNodePoints === 'function' ? getStyleNodePoints(player, selectedStyle.id, node.id) : 0;
-        const layout = getNodeLayout(node);
-        return `
-            <button
-                type="button"
-                class="combat-style-node ${statusInfo.status} ${node.type || 'minor'}"
-                data-style-node="${node.id}"
-                style="left:${layout.left}px;top:${layout.top}px;width:${layout.size}px;height:${layout.size}px;"
-                title="${escapeHtml(node.name)}"
-                aria-label="${escapeHtml(node.name)}"
-            >
-                ${getNodeIconSvg(node.icon || 'fallback')}
-                ${points > 0 ? `<span class="combat-style-node-points">${points}</span>` : ''}
-            </button>
-        `;
-    }).join('');
-
-    const detailsHtml = buildNodeDetailsPanel(hoveredNodeRef, selectedStyle.id);
-    const nextPointText = pointSummary.nextPointLevel ? `Next point at level ${pointSummary.nextPointLevel}` : 'All style points unlocked';
+    const pointSummary = getStylePointSummary(player, selectedStyle.id);
+    const gatingMessage = getSkillsGatingMessage();
+    const nextTier = pointSummary.nextPointLevel
+        ? `Next mastery tier unlocks at level ${pointSummary.nextPointLevel}.`
+        : 'All three mastery tiers are unlocked.';
 
     screen.innerHTML = `
         <div class="combat-styles-screen">
-            <div class="combat-styles-header">
+            <header class="combat-styles-header">
                 <div>
-                    <h2>COMBAT STYLES</h2>
-                    <div class="combat-style-active-line">Active Style: ${escapeHtml(styles.find((s) => s.id === equippedStyleId)?.name || selectedStyle.name)}</div>
-                    <div class="combat-style-help-bar">
-                        Left-click nodes to spend points. Right-click purchased nodes to refund. Only the active Combat Style affects combat.
-                    </div>
+                    <div class="combat-styles-kicker">Automatic Attack Programming</div>
+                    <h2>Combat Styles</h2>
+                    <div class="combat-style-active-line">Active: <strong>${escapeHtml(styles.find(style => style.id === equippedStyleId)?.name || selectedStyle.name)}</strong></div>
+                    <div class="combat-style-help-bar">Choose how every auto-attack is delivered. Each unlocked tier allows one choice; selecting another choice in that tier replaces the current one.</div>
                 </div>
                 <div class="combat-style-point-summary">
-                    <div>Available: ${pointSummary.available}</div>
-                    <div>Spent: ${pointSummary.spent}</div>
-                    <div>Earned: ${pointSummary.earned} / ${pointSummary.max}</div>
-                    <div class="combat-style-next-point">${escapeHtml(nextPointText)}</div>
+                    <span>Unlocked tiers</span><strong>${pointSummary.earned}/3</strong>
+                    <span>Configured here</span><strong>${pointSummary.configured}/3</strong>
+                    <div class="combat-style-next-point">${escapeHtml(nextTier)}</div>
                 </div>
-            </div>
-            ${gatingMsg ? `<div class="skills-gating-notice">${escapeHtml(gatingMsg)}</div>` : ''}
+            </header>
+            ${gatingMessage ? `<div class="skills-gating-notice">${escapeHtml(gatingMessage)}</div>` : ''}
             <div class="combat-styles-layout">
-                <aside class="combat-style-list">${styleCardsMarkup}</aside>
-                <main class="combat-style-tree-panel">
-                    <div class="combat-style-tree-toolbar">
-                        <div class="combat-style-tree-title">${escapeHtml(selectedStyle.name)} Tree</div>
-                        <button type="button" class="combat-style-refund-btn" id="refund-selected-style" ${gatingMsg ? 'disabled' : ''}>Refund Selected Style</button>
-                    </div>
-                    <div class="combat-style-tree-wrapper">
-                        <svg class="combat-style-connections" width="${viewBox.width}" height="${viewBox.height}" viewBox="0 0 ${viewBox.width} ${viewBox.height}">
-                            ${buildNodeConnections(selectedStyle.id, selectedStyle)}
-                        </svg>
-                        <div class="combat-style-node-grid">
-                            ${nodesMarkup}
+                <aside class="combat-style-list">${buildStyleCards(styles, selectedStyle.id, equippedStyleId, gatingMessage)}</aside>
+                <main class="combat-style-mastery-panel">
+                    <div class="combat-style-mastery-heading">
+                        <div class="combat-style-mastery-icon" aria-hidden="true">${getStyleIconGlyph(selectedStyle.icon)}</div>
+                        <div>
+                            <h3>${escapeHtml(selectedStyle.name)}</h3>
+                            <p>${escapeHtml(selectedStyle.description)}</p>
+                            <div class="combat-style-base-pattern">Base pattern: ${escapeHtml(selectedStyle.attackPreview)}</div>
                         </div>
                     </div>
+                    <div class="combat-mastery-tiers">${buildMasteryTiers(selectedStyle, gatingMessage)}</div>
                 </main>
-                <aside class="combat-style-details-panel" id="combat-style-details-panel">
-                    ${detailsHtml}
-                </aside>
             </div>
-        </div>
-    `;
+        </div>`;
 
-    screen.querySelectorAll('[data-style-select]').forEach((button) => {
-        button.addEventListener('click', (event) => {
-            const styleId = event.currentTarget.getAttribute('data-style-select');
-            selectedCombatStyleId = styleId;
-            hoveredNodeRef = null;
+    screen.querySelectorAll('[data-style-select]').forEach(card => {
+        const select = () => {
+            selectedCombatStyleId = card.dataset.styleSelect;
             renderCombatStylesScreen();
+        };
+        card.addEventListener('click', event => {
+            if (event.target.closest('[data-style-equip]')) return;
+            select();
         });
-        button.addEventListener('keydown', (event) => {
+        card.addEventListener('keydown', event => {
             if (event.key !== 'Enter' && event.key !== ' ') return;
             event.preventDefault();
-            const styleId = event.currentTarget.getAttribute('data-style-select');
-            selectedCombatStyleId = styleId;
-            hoveredNodeRef = null;
-            renderCombatStylesScreen();
+            select();
         });
     });
 
-    screen.querySelectorAll('[data-style-equip]').forEach((button) => {
-        button.addEventListener('click', (event) => {
+    screen.querySelectorAll('[data-style-equip]').forEach(button => {
+        button.addEventListener('click', event => {
             event.stopPropagation();
-            const styleId = event.currentTarget.getAttribute('data-style-equip');
+            const styleId = button.dataset.styleEquip;
             const result = equipCombatSkill(player, styleId);
-            if (!result.ok) {
-                logMessage(result.reason || 'Could not equip combat style.');
-                return;
-            }
-            logMessage(`Active combat style set to ${styles.find((s) => s.id === styleId)?.name || styleId}.`);
+            if (!result.ok) logMessage(result.reason || 'Could not equip combat style.');
+            else logMessage(`Active Combat Style set to ${styles.find(style => style.id === styleId)?.name || styleId}.`);
             renderCombatStylesScreen();
         });
     });
 
-    screen.querySelectorAll('[data-style-node]').forEach((button) => {
-        const nodeId = button.getAttribute('data-style-node');
-        const node = nodes.find((n) => n.id === nodeId);
-        button.addEventListener('mouseenter', () => {
-            hoveredNodeRef = node || null;
-            const detailsPanel = document.getElementById('combat-style-details-panel');
-            if (detailsPanel) detailsPanel.innerHTML = buildNodeDetailsPanel(hoveredNodeRef, selectedStyle.id);
-        });
-        button.addEventListener('focus', () => {
-            hoveredNodeRef = node || null;
-            const detailsPanel = document.getElementById('combat-style-details-panel');
-            if (detailsPanel) detailsPanel.innerHTML = buildNodeDetailsPanel(hoveredNodeRef, selectedStyle.id);
-        });
-        button.addEventListener('click', (event) => {
-            event.preventDefault();
-            const result = allocateStyleNode(player, selectedStyle.id, nodeId);
-            if (!result.ok) {
-                logMessage(result.reason || 'Cannot spend point on this node.');
-                return;
-            }
-            hoveredNodeRef = node || null;
-            renderCombatStylesScreen();
-        });
-        button.addEventListener('contextmenu', (event) => {
-            event.preventDefault();
-            const result = refundStyleNode(player, selectedStyle.id, nodeId);
-            if (!result.ok) {
-                logMessage(result.reason || 'Cannot refund this node.');
-                return;
-            }
-            hoveredNodeRef = node || null;
+    screen.querySelectorAll('[data-style-choice]').forEach(button => {
+        button.addEventListener('click', () => {
+            const result = allocateStyleNode(player, selectedStyle.id, button.dataset.styleChoice);
+            if (!result.ok) logMessage(result.reason || 'Could not select that mastery.');
+            else logMessage(result.replaced ? 'Mastery choice replaced.' : 'Mastery choice selected.');
             renderCombatStylesScreen();
         });
     });
 
-    document.getElementById('refund-selected-style')?.addEventListener('click', () => {
-        const result = refundAllStyleNodes(player, selectedStyle.id);
-        if (!result.ok) {
-            logMessage(result.reason || 'Cannot refund selected style.');
-            return;
-        }
-        hoveredNodeRef = null;
-        logMessage(`${selectedStyle.name} nodes refunded.`);
-        renderCombatStylesScreen();
+    screen.querySelectorAll('[data-clear-tier]').forEach(button => {
+        button.addEventListener('click', () => {
+            const selected = getSelectedStyleChoice(player, selectedStyle.id, Number(button.dataset.clearTier));
+            if (!selected) return;
+            const result = refundStyleNode(player, selectedStyle.id, selected.id);
+            if (!result.ok) logMessage(result.reason || 'Could not clear that mastery tier.');
+            renderCombatStylesScreen();
+        });
     });
 }
 

@@ -116,6 +116,7 @@ let player = {
     equippedSkillId: window.DEFAULT_COMBAT_STYLE_ID || 'balancedStyle',
     unlockedSkillIds: (window.combatStyles || []).map(style => style.id),
     combatStyleAllocations: {},
+    combatStyleVersion: window.COMBAT_STYLE_VERSION || 2,
     // Legacy skill fields kept inert for backward compatibility with old saves.
     skillPoints: 0,
     skillModAllocations: {},
@@ -488,7 +489,8 @@ function buildGameStateSnapshot() {
             combatStyles: {
                 equipped: player.equippedSkillId,
                 unlocked: player.unlockedSkillIds,
-                allocations: player.combatStyleAllocations || {}
+                allocations: player.combatStyleAllocations || {},
+                version: player.combatStyleVersion || window.COMBAT_STYLE_VERSION || 2
             }
         },
         inventory: window.inventory,
@@ -590,6 +592,7 @@ function loadGame(slotIndex = null) {
         let restoredEquippedStyle = defaultStyleId;
         let restoredUnlockedStyles = defaultUnlockedStyles;
         let restoredAllocations = {};
+        let restoredCombatStyleVersion = window.COMBAT_STYLE_VERSION || 2;
 
         if (savedPlayer.combatStyles && typeof savedPlayer.combatStyles === 'object') {
             restoredEquippedStyle = savedPlayer.combatStyles.equipped || defaultStyleId;
@@ -597,6 +600,7 @@ function loadGame(slotIndex = null) {
                 ? savedPlayer.combatStyles.unlocked
                 : defaultUnlockedStyles;
             restoredAllocations = savedPlayer.combatStyles.allocations || {};
+            restoredCombatStyleVersion = savedPlayer.combatStyles.version || restoredCombatStyleVersion;
         } else if (savedPlayer.skills && typeof savedPlayer.skills === 'object') {
             // Legacy saves are tolerated; deprecated IDs are remapped to default style.
             const legacyEquipped = savedPlayer.skills.equipped;
@@ -634,6 +638,7 @@ function loadGame(slotIndex = null) {
         player.equippedSkillId = restoredEquippedStyle;
         player.unlockedSkillIds = restoredUnlockedStyles;
         player.combatStyleAllocations = restoredAllocations;
+        player.combatStyleVersion = restoredCombatStyleVersion;
         player.skillPoints = 0;
         player.skillModAllocations = {};
         if (typeof normalizeCombatStylesState === 'function') {
@@ -860,6 +865,7 @@ function resetGame(slotIndex = null) {
         player.equippedSkillId = window.DEFAULT_COMBAT_STYLE_ID || 'balancedStyle';
         player.unlockedSkillIds = (window.combatStyles || []).map(style => style.id);
         player.combatStyleAllocations = {};
+        player.combatStyleVersion = window.COMBAT_STYLE_VERSION || 2;
         player.skillPoints = 0;
         player.skillModAllocations = {};
         if (typeof normalizeCombatStylesState === 'function') {

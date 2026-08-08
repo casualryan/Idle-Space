@@ -55,7 +55,10 @@ function processEffects(entity, trigger, target, sourceDamage = 0) {
 
             // Apply efficiency bonus (additive percentage)
             const modifiedChance = baseChance + (baseChance * efficiencyBonus / 100);
-            const finalChance = Math.min(modifiedChance, 1.0); // Cap at 100%
+            const skillCoefficient = (trigger === 'onHit' || trigger === 'onCritical')
+                ? Math.max(0, Number(entity._activeSkillProcCoefficient ?? 1))
+                : 1;
+            const finalChance = Math.min(modifiedChance * skillCoefficient, 1.0); // Cap at 100%
 
             try {
                 // Check if the effect activates based on modified chance

@@ -12,6 +12,19 @@ const CONTENT_PASSIVE_STAT_KEYS = new Set([
     'damageRollFloorBonus', 'debuffChanceBonus', 'debuffDurationBonus', 'directDamageMultiplier',
     'dotDamageMultiplier', 'damageVsDebuffed', 'damageTakenReduction'
 ]);
+const CONTENT_STYLE_PROFILE_KEYS = new Set([
+    'attackTimeMultiplier', 'damageMultiplier', 'hitCount', 'hitDamageMultipliers',
+    'procOnHit', 'procOnCritical', 'procCoefficient', 'comboAfterSkill', 'comboFromAggregate',
+    'comboProcStrength', 'critChanceMultiplier', 'critChanceBonus', 'criticalDamageBonus',
+    'debuffApplyBonus', 'damageRollFloorBonus', 'mechanics'
+]);
+const CONTENT_STYLE_MECHANICS = new Set([
+    'adaptiveCrit', 'alternatingShield', 'perfectThird', 'alternatingPurpose',
+    'critHaste20', 'aftershock', 'gatheringForce', 'critHaste25', 'siegeRhythm',
+    'executionStroke', 'openingFeint', 'secondHitFloor', 'mirrorFinish',
+    'convergingBlows', 'counterCrit', 'counterDebuff', 'bracedGuard', 'storedForce',
+    'quickRiposte', 'shieldReprisal', 'perfectParry', 'vengefulLoop', 'unbrokenForm'
+]);
 const CONTENT_ITEM_TEMPLATE_KEYS = new Set([
     'name', 'description', 'icon', 'color', 'type', 'slot', 'weaponType', 'levelRequirement',
     'developerOnly', 'stackable', 'quantity', 'salePrice', 'sellValue', 'isDisassembleable',
@@ -135,6 +148,7 @@ function validateCoreboundContent(registries = {}) {
     const shops = Array.isArray(registries.shops) ? registries.shops : [];
     const locations = Array.isArray(registries.locations) ? registries.locations : [];
     const passives = Array.isArray(registries.passives) ? registries.passives : [];
+    const combatStyles = Array.isArray(registries.combatStyles) ? registries.combatStyles : [];
     const lootPools = registries.lootPools && typeof registries.lootPools === 'object' ? registries.lootPools : {};
     const lootTiers = registries.lootTiers && typeof registries.lootTiers === 'object' ? registries.lootTiers : {};
     const itemNames = new Set(items.map(item => item?.name).filter(Boolean));
@@ -162,6 +176,7 @@ function validateCoreboundContent(registries = {}) {
     findDuplicates(shops.map(shop => shop?.name).filter(Boolean), 'shop');
     findDuplicates(locations.map(location => location?.name).filter(Boolean), 'location');
     findDuplicates(passives.map(passive => passive?.id).filter(Boolean), 'passive ID');
+    findDuplicates(combatStyles.map(style => style?.id).filter(Boolean), 'combat style ID');
 
     for (const item of items) {
         const validation = validateItemContent(item);
@@ -298,6 +313,45 @@ function validateCoreboundContent(registries = {}) {
         }
     }
 
+    const styleChoiceIds = new Set();
+    for (const style of combatStyles) {
+        const name = style?.name || 'Unnamed combat style';
+        if (!style?.id) report('combat style', name, 'id is required');
+        if (!style?.description) report('combat style', name, 'description is required');
+        if (!style?.base || typeof style.base !== 'object') report('combat style', name, 'base profile is required');
+        for (const key of Object.keys(style?.base || {})) {
+            if (!CONTENT_STYLE_PROFILE_KEYS.has(key)) report('combat style', name, `unknown base profile key: ${key}`);
+        }
+        if (!Array.isArray(style?.masteries) || style.masteries.length !== 3) {
+            report('combat style', name, 'exactly three mastery tiers are required');
+            continue;
+        }
+        for (const [index, mastery] of style.masteries.entries()) {
+            if (Number(mastery?.tier) !== index + 1) report('combat style', name, `mastery tier ${index + 1} is out of order`);
+            if (!(Number(mastery?.unlockLevel) >= 1)) report('combat style', name, `mastery tier ${index + 1} has an invalid unlock level`);
+            if (!Array.isArray(mastery?.choices) || mastery.choices.length !== 3) {
+                report('combat style', name, `mastery tier ${index + 1} requires exactly three choices`);
+                continue;
+            }
+            for (const choice of mastery.choices) {
+                const choiceName = choice?.name || 'Unnamed choice';
+                if (!choice?.id) report('combat style', name, `${choiceName} requires an ID`);
+                else if (styleChoiceIds.has(choice.id)) report('combat style', name, `duplicate mastery choice ID: ${choice.id}`);
+                else styleChoiceIds.add(choice.id);
+                if (!choice?.description) report('combat style', name, `${choiceName} requires a description`);
+                for (const group of ['add', 'multiply', 'set']) {
+                    const entries = choice?.modifiers?.[group] || {};
+                    for (const key of Object.keys(entries)) {
+                        if (!CONTENT_STYLE_PROFILE_KEYS.has(key)) report('combat style', name, `${choiceName} has unknown modifier: ${key}`);
+                    }
+                }
+                for (const mechanic of choice?.mechanics || []) {
+                    if (!CONTENT_STYLE_MECHANICS.has(mechanic)) report('combat style', name, `${choiceName} has unknown mechanic: ${mechanic}`);
+                }
+            }
+        }
+    }
+
     return { valid: errors.length === 0, errors, warnings };
 }
 
@@ -319,6 +373,7 @@ if (typeof window.registerCoreboundInitializer === 'function') {
             shops: typeof npcs !== 'undefined' ? npcs : [],
             locations: typeof locations !== 'undefined' ? locations : [],
             passives: typeof passives !== 'undefined' ? passives : [],
+            combatStyles: window.combatStyles || [],
             lootPools: typeof LOOT_POOLS !== 'undefined' ? LOOT_POOLS : {},
             lootTiers: typeof LOOT_TIERS !== 'undefined' ? LOOT_TIERS : {},
             developerMode: Boolean(window.coreboundConfig?.developerMode)

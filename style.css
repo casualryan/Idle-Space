@@ -4650,6 +4650,15 @@ hr {
     letter-spacing: 0.03em;
 }
 
+.combat-styles-kicker {
+    margin-bottom: 3px;
+    color: #4e91ad;
+    font-size: 0.7em;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
 .combat-style-active-line {
     margin-top: 6px;
     color: #d7efff;
@@ -4657,6 +4666,9 @@ hr {
 }
 
 .combat-style-point-summary {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 4px 14px;
     background: rgba(0, 22, 40, 0.85);
     border: 1px solid rgba(0, 255, 204, 0.35);
     border-radius: 8px;
@@ -4667,14 +4679,20 @@ hr {
     box-shadow: 0 0 10px rgba(0, 255, 204, 0.1);
 }
 
+.combat-style-point-summary strong {
+    color: #efffff;
+    text-align: right;
+}
+
 .combat-style-next-point {
+    grid-column: 1 / -1;
     margin-top: 6px;
     color: #85ffc8;
 }
 
 .combat-styles-layout {
     display: grid;
-    grid-template-columns: minmax(200px, 280px) minmax(0, 1fr) minmax(200px, 280px);
+    grid-template-columns: minmax(230px, 310px) minmax(0, 1fr);
     gap: 14px;
     align-items: stretch;
     flex: 1 1 auto;
@@ -4684,7 +4702,8 @@ hr {
 
 .combat-style-list,
 .combat-style-tree-panel,
-.combat-style-details-panel {
+.combat-style-details-panel,
+.combat-style-mastery-panel {
     background: linear-gradient(to bottom, rgba(2, 14, 30, 0.95), rgba(0, 8, 20, 0.9));
     border: 1px solid rgba(0, 255, 204, 0.24);
     border-radius: 10px;
@@ -4695,6 +4714,8 @@ hr {
     padding: 10px;
     display: grid;
     gap: 10px;
+    align-content: start;
+    overflow-y: auto;
 }
 
 .combat-style-card {
@@ -4708,6 +4729,7 @@ hr {
     padding: 8px;
     background: rgba(0, 18, 38, 0.75);
     cursor: pointer;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
 }
 
 .combat-style-card:hover {
@@ -4721,11 +4743,19 @@ hr {
 
 .combat-style-card.equipped {
     border-color: #74ffca;
+    background: rgba(0, 51, 60, 0.6);
 }
 
 .combat-style-card-icon {
     width: 42px;
     height: 42px;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(0, 255, 204, 0.45);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(9, 76, 88, 0.85), rgba(2, 13, 24, 0.95));
+    color: #baffeb;
+    font-size: 1.45em;
 }
 
 .combat-style-card-body {
@@ -4758,6 +4788,12 @@ hr {
 .combat-style-card-preview {
     color: #6fffc3;
     font-size: 0.75em;
+}
+
+.combat-style-card-progress {
+    margin-top: 4px;
+    color: #6f8da2;
+    font-size: 0.7em;
 }
 
 .combat-style-equip-btn,
@@ -4953,6 +4989,244 @@ hr {
     padding: 8px 10px;
     color: #8fc6df;
     font-size: 0.82em;
+}
+
+.combat-style-mastery-panel {
+    min-width: 0;
+    padding: 14px;
+    overflow-y: auto;
+}
+
+.combat-style-mastery-heading {
+    display: grid;
+    grid-template-columns: 58px 1fr;
+    gap: 13px;
+    align-items: center;
+    padding: 2px 2px 14px;
+    border-bottom: 1px solid rgba(0, 255, 204, 0.17);
+}
+
+.combat-style-mastery-icon {
+    display: grid;
+    width: 54px;
+    height: 54px;
+    place-items: center;
+    border: 2px solid #00cfa7;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(13, 89, 98, 0.88), rgba(2, 13, 25, 0.98));
+    box-shadow: 0 0 16px rgba(0, 255, 204, 0.18);
+    color: #ddfff7;
+    font-size: 1.7em;
+}
+
+.combat-style-mastery-heading h3 {
+    margin: 0 0 4px;
+    color: #efffff;
+    font-size: 1.15em;
+}
+
+.combat-style-mastery-heading p {
+    margin: 0;
+    color: #98bad0;
+    font-size: 0.82em;
+    line-height: 1.4;
+}
+
+.combat-style-base-pattern {
+    margin-top: 7px;
+    color: #71fbc8;
+    font-size: 0.76em;
+}
+
+.combat-mastery-tiers {
+    display: grid;
+    gap: 12px;
+    margin-top: 13px;
+}
+
+.combat-mastery-tier {
+    padding: 10px;
+    border: 1px solid rgba(0, 215, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(1, 13, 27, 0.74);
+}
+
+.combat-mastery-tier.locked {
+    border-color: rgba(89, 110, 126, 0.22);
+    background: rgba(4, 9, 17, 0.72);
+}
+
+.combat-mastery-tier-header {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr) auto auto;
+    gap: 9px;
+    align-items: center;
+    margin-bottom: 9px;
+}
+
+.combat-mastery-tier-number {
+    display: grid;
+    width: 27px;
+    height: 27px;
+    place-items: center;
+    border: 1px solid #00cfa7;
+    border-radius: 50%;
+    color: #8dffdc;
+    font-size: 0.78em;
+    font-weight: 700;
+}
+
+.combat-mastery-tier-label {
+    color: #dffbff;
+    font-size: 0.86em;
+    font-weight: 700;
+}
+
+.combat-mastery-tier-purpose {
+    margin-top: 2px;
+    color: #7799ae;
+    font-size: 0.7em;
+}
+
+.combat-mastery-tier-unlock {
+    color: #75c9da;
+    font-size: 0.7em;
+    white-space: nowrap;
+}
+
+.combat-mastery-tier.locked .combat-mastery-tier-unlock {
+    color: #8d7381;
+}
+
+.combat-mastery-clear {
+    padding: 4px 7px;
+    border: 1px solid #704158;
+    border-radius: 4px;
+    background: #1d0c18;
+    color: #e6a6bf;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.66em;
+}
+
+.combat-mastery-choice-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.combat-mastery-choice {
+    position: relative;
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 8px;
+    align-content: start;
+    min-height: 105px;
+    padding: 9px;
+    border: 1px solid rgba(77, 127, 151, 0.42);
+    border-radius: 7px;
+    background: linear-gradient(155deg, rgba(5, 31, 50, 0.9), rgba(2, 12, 24, 0.96));
+    color: #d9f3ff;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+    transition: transform 0.1s ease, border-color 0.1s ease, box-shadow 0.1s ease;
+}
+
+.combat-mastery-choice:hover:not(:disabled),
+.combat-mastery-choice:focus-visible {
+    z-index: 1;
+    transform: translateY(-2px);
+    border-color: #37e0ff;
+    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.28), 0 0 11px rgba(55, 224, 255, 0.17);
+    outline: none;
+}
+
+.combat-mastery-choice.selected {
+    border-color: #61ffcb;
+    background: linear-gradient(155deg, rgba(5, 66, 69, 0.92), rgba(2, 24, 37, 0.97));
+    box-shadow: inset 0 0 14px rgba(0, 255, 204, 0.1), 0 0 12px rgba(0, 255, 204, 0.15);
+}
+
+.combat-mastery-choice:disabled {
+    cursor: not-allowed;
+    opacity: 0.38;
+    filter: saturate(0.45);
+}
+
+.combat-mastery-choice-icon {
+    display: grid;
+    width: 27px;
+    height: 27px;
+    place-items: center;
+    border: 1px solid rgba(78, 220, 223, 0.5);
+    border-radius: 50%;
+    color: #9fffe3;
+}
+
+.combat-mastery-choice-copy {
+    display: grid;
+    gap: 4px;
+}
+
+.combat-mastery-choice-copy strong {
+    color: #ecfcff;
+    font-size: 0.78em;
+}
+
+.combat-mastery-choice-copy span {
+    color: #91afc0;
+    font-size: 0.68em;
+    line-height: 1.4;
+}
+
+.combat-mastery-choice-status {
+    grid-column: 1 / -1;
+    align-self: end;
+    padding-top: 5px;
+    border-top: 1px solid rgba(104, 157, 178, 0.14);
+    color: #6ec6d7;
+    font-size: 0.63em;
+    text-transform: uppercase;
+}
+
+.combat-mastery-choice.selected .combat-mastery-choice-status {
+    color: #6effd1;
+}
+
+@media (max-width: 1050px) {
+    .combat-styles-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .combat-style-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        overflow: visible;
+    }
+}
+
+@media (max-width: 720px) {
+    .combat-styles-header {
+        flex-direction: column;
+    }
+
+    .combat-style-point-summary {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .combat-style-list,
+    .combat-mastery-choice-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .combat-mastery-tier-header {
+        grid-template-columns: 30px minmax(0, 1fr) auto;
+    }
+
+    .combat-mastery-clear {
+        grid-column: 3;
+    }
 }
 
 /* Media Queries for Responsive Design */
