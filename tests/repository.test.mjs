@@ -84,6 +84,30 @@ test('all registered content has a unique name and required equipment level', ()
   assert.deepEqual(missingLevels, [], `equipment without a level requirement: ${missingLevels.join(', ')}`);
 });
 
+test('kinetic and slashing component ladders use dedicated 512px icons', () => {
+  const componentNames = [
+    'Stabilizer',
+    'Advanced Barrel',
+    'Precision Mechanism',
+    'Titanium Thorn',
+    'Metal Scorpion Fang',
+    'Enhanced Cutting Edge'
+  ];
+
+  for (const name of componentNames) {
+    const material = materials.find(candidate => candidate.name === name);
+    assert.ok(material, `${name} is not registered`);
+    assert.notEqual(material.icon, 'icons/default-icon.png', `${name} still uses the default icon`);
+
+    const iconPath = path.join(repositoryRoot, material.icon);
+    assert.ok(fs.existsSync(iconPath), `${material.icon} does not exist`);
+    const png = fs.readFileSync(iconPath);
+    assert.equal(png.toString('hex', 0, 8), '89504e470d0a1a0a', `${material.icon} is not a PNG`);
+    assert.equal(png.readUInt32BE(16), 512, `${material.icon} is not 512px wide`);
+    assert.equal(png.readUInt32BE(20), 512, `${material.icon} is not 512px tall`);
+  }
+});
+
 test('recipes and disassembly only reference registered items', () => {
   const recipes = evaluateClassic('recipes.js', 'window.recipes');
   const badOutputs = recipes.filter(recipe => !itemNames.has(recipe.name)).map(recipe => recipe.name);
