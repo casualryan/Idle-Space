@@ -508,6 +508,12 @@ function displayDebuffMessage(target, debuffName, isApplied) {
     }
 }
 
+function getDebuffDurationMultiplier(source, target) {
+    const sourceBonus = Math.max(-0.9, Number(source?.totalStats?.debuffDurationBonus || 0));
+    const targetReduction = Math.min(0.75, Math.max(0, Number(target?.totalStats?.statusDurationReduction || 0)));
+    return Math.max(0.1, (1 + sourceBonus) * (1 - targetReduction));
+}
+
 // Function to apply a debuff to a target
 function applyDebuff(target, debuffName, source = null, damage = null) {
     if (!target || !debuffs[debuffName]) return false;
@@ -530,7 +536,7 @@ function applyDebuff(target, debuffName, source = null, damage = null) {
             newDebuff.id = debuffName;
             newDebuff.source = source;
             if (newDebuff.duration > 0) {
-                newDebuff.duration *= Math.max(0.1, 1 + Number(source?.totalStats?.debuffDurationBonus || 0));
+                newDebuff.duration *= getDebuffDurationMultiplier(source, target);
             }
             // Apply the debuff, which will update stacks if applicable
             if (newDebuff.onApply && newDebuff.onApply(target, source, damage) === false) {
@@ -564,8 +570,7 @@ function applyDebuff(target, debuffName, source = null, damage = null) {
             existingDebuff.source = source;
             const baseDuration = Number(debuffs[debuffName].duration);
             if (baseDuration > 0) {
-                existingDebuff.duration = baseDuration
-                    * Math.max(0.1, 1 + Number(source?.totalStats?.debuffDurationBonus || 0));
+                existingDebuff.duration = baseDuration * getDebuffDurationMultiplier(source, target);
             }
             if (typeof existingDebuff.onRefresh === 'function') {
                 existingDebuff.onRefresh(target, source, damage);
@@ -581,7 +586,7 @@ function applyDebuff(target, debuffName, source = null, damage = null) {
         newDebuff.id = debuffName;
         newDebuff.source = source;
         if (newDebuff.duration > 0) {
-            newDebuff.duration *= Math.max(0.1, 1 + Number(source?.totalStats?.debuffDurationBonus || 0));
+            newDebuff.duration *= getDebuffDurationMultiplier(source, target);
         }
         newDebuff.appliedTime = Date.now();
         
@@ -768,6 +773,7 @@ function tryApplyDebuffFromDamage(source, target, damageInfo) {
         debuffChance += source._activeSkillDebuffBonus;
     }
     debuffChance += Number(source?.totalStats?.debuffChanceBonus || 0);
+    debuffChance -= Math.max(0, Number(target?.totalStats?.statusResistance || 0));
     debuffChance = Math.min(1, Math.max(0, debuffChance));
     const shouldApply = shouldApplyDebuff(debuffChance);
     console.log(`tryApplyDebuffFromDamage: shouldApplyDebuff() returned ${shouldApply}`);

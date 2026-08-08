@@ -149,7 +149,14 @@ Common Numeric Stats (top-level, ranges only)
 - additionalComboAttacks: { min: number, max: number }
 -   Flat number of extra hits appended to a combo sequence when it procs.
 - armorPenetration: { min: number, max: number }
--   Percent of enemy armor ignored by your attacks.
+-   Percentage points removed from the resistance matching each damage component.
+
+- debuffChanceBonus: { min: number, max: number }
+-   Percentage points added to the inherent status-application chance.
+- statusResistance: { min: number, max: number }
+-   Percentage points removed from an attacker's inherent status-application chance.
+- statusDurationReduction: { min: number, max: number }
+-   Percent reduction to hostile status duration, capped at 75% in combat.
 
 statModifiers (optional catch-all)
 Use this object for any additional numeric stats you want to define. All numeric-like values MUST be { min, max }.

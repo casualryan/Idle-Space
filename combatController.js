@@ -268,7 +268,15 @@ function stopCombat(reason) {
                 clearBuffs(enemy);
             }
 
-            // Don't restore health between delve fights
+            if (
+                currentDelveLocation
+                && currentMonsterIndex < currentDelveLocation.numFights
+                && typeof refreshEnergyShieldBetweenDelveEncounters === 'function'
+            ) {
+                refreshEnergyShieldBetweenDelveEncounters();
+            }
+
+            // Health persists between delve fights; Energy Shield is restored above.
             // Wait 3 seconds before beginning the next fight
             interFightPauseTimer = setTimeout(() => {
                 beginNextMonsterInSequence();

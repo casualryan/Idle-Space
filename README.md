@@ -64,8 +64,8 @@ single unique boss reward belongs in a weighted loot table.
 
 Item scalar bonuses are an explicit schema, not arbitrary object properties. Add
 new live stats to `ITEM_SCALAR_STAT_RULES` in `stats.js` and their validation
-coverage before authoring them on content. `armorPenetration` remains reserved and
-will produce a warning until combat resolution implements it.
+coverage before authoring them on content. Armor Penetration is live and removes
+percentage points from the resistance matching each damage component.
 
 Effect `chance` values are authored as percentages (`25` means 25%). Ordinary
 base equipment should differ through its core stats, not bespoke effects, unless
@@ -82,7 +82,10 @@ facts in UI copy.
   automatic attack pattern and has one exclusive choice in each mastery tier,
   unlocked at levels 11, 26, and 41.
 - Fabrication reserves materials immediately, takes five seconds, allows one
-  active job, and refunds the reservation when cancelled.
+  active job, and refunds the reservation when cancelled. Every ingredient has a
+  documented source available no later than the level of the recipe using it.
+- Health persists between encounters inside a delve. Energy Shield is restored
+  to its current maximum after each victory before the next enemy appears.
 - Successful delve rewards enter a persistent claim cache. Starting another
   delve destroys anything left there; auto re-deploy waits for the cache to be
   claimed or sold.

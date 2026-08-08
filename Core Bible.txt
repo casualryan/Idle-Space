@@ -142,7 +142,10 @@ Definition:
 - currentMonsterIndex tracks sequence progress.
 
 Per-fight behavior inside a delve:
-- HP/shield persist between fights.
+- Current Health persists between fights.
+- Energy Shield is restored to the player's current maximum after a victory and
+  before the next enemy spawns. This boundary restoration is not regeneration
+  and does not restore Health.
 - Buffs and debuffs are cleared between fights.
 - 3 second inter-fight pause.
 - attack timers reset on new spawn.
@@ -356,6 +359,20 @@ Generation responsibilities:
 - Roll random modifiers by level band and grade weighting.
 - Persist rolledModifiers and rolledWires on instances.
 
+Random affix rules:
+- Level 1-10 items roll 1-2 affixes; level 11-30 items roll 2-3; level 31-50
+  items roll 3-4.
+- Affixes use slot-specific eligibility and mutually exclusive families, so one
+  item cannot roll flat and percent variants of the same Health/Shield family.
+- Main hands own local weapon damage, speed, precision, critical, efficiency,
+  penetration, and status-application rolls.
+- Armor shares core Health, Shield, resistance, Deflection, regeneration, and
+  Armor Efficiency rolls, then gains slot-specific offensive or utility pools.
+- Bionics use inferred base roles to constrain offensive, defensive, critical,
+  combo, and damage-type rolls.
+- Random conversion and additional combo hits are excluded from ordinary affix
+  generation and remain authored-item or chip territory.
+
 Weapon-specific generation behavior:
 - Canonical generated base: weaponBaseDamage for weapon templates/instances.
 - Legacy template damageTypes still tolerated as migration input.
@@ -405,6 +422,10 @@ Combat/delve interactions:
 ----------------
 - Active crafting system, but not wired through activityManager.
 - Uses its own fabrication runtime tracking model.
+- Every ingredient has a documented acquisition level and source displayed on
+  recipe cards.
+- Content validation rejects an unsourced ingredient or one introduced after
+  the level of the item whose recipe consumes it.
 
 12.4 Reserved
 -------------

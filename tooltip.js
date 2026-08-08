@@ -920,6 +920,31 @@ function getItemTooltipContent(item, showRanges = false) {
         content += `</div>`;
     }
 
+    const combatAffixStats = [
+        ['armorPenetration', 'Armor Penetration', false],
+        ['debuffChanceBonus', 'Status Application Chance', true],
+        ['statusResistance', 'Status Resistance', true],
+        ['statusDurationReduction', 'Reduced Status Duration', true]
+    ];
+    const visibleCombatAffixes = combatAffixStats.filter(([key]) => item[key] !== undefined);
+    if (visibleCombatAffixes.length > 0) {
+        content += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
+        content += `<span style="color:#ffd166; font-weight:bold;">Combat Modifiers:</span><br>`;
+        visibleCombatAffixes.forEach(([key, label, storedAsFraction]) => {
+            const value = item[key];
+            let displayValue;
+            if (showRanges && typeof value === 'object' && value.min !== undefined) {
+                displayValue = `${value.min}% - ${value.max}%`;
+            } else {
+                const numeric = Number(value || 0);
+                const amount = storedAsFraction ? numeric * 100 : numeric;
+                displayValue = `${Number(amount.toFixed(2))}%`;
+            }
+            content += `<span style="color:#cfe6ff;">${label}:</span> +${displayValue}<br>`;
+        });
+        content += `</div>`;
+    }
+
 
     // Mastery System
     const hasMasteryStats = item.kineticMastery !== undefined || item.slashingMastery !== undefined;

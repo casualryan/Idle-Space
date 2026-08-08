@@ -116,7 +116,13 @@ const LOOT_POOLS = {
         items: [
             { itemName: "Basic Servo", weight: 80 },
             { itemName: "Wire Bundle", weight: 70 },
-            { itemName: "Minor Electronic Circuit", weight: 35 }
+            { itemName: "Minor Electronic Circuit", weight: 35 },
+            { itemName: "Basic Sensor Array", weight: 24 },
+            { itemName: "Stabilizer", weight: 22 },
+            { itemName: "Flame Shell", weight: 18 },
+            { itemName: "Unstable Photon", weight: 14 },
+            { itemName: "Crystalized Light", weight: 12 },
+            { itemName: "Synthetic Poison Gland", weight: 18 }
         ]
     },
     z2Ore: {
@@ -133,7 +139,9 @@ const LOOT_POOLS = {
             { itemName: "Copper Coil", weight: 85 },
             { itemName: "Basic Sensor Array", weight: 60 },
             { itemName: "Basic Servo", weight: 70 },
-            { itemName: "Stabilizer", weight: 30 }
+            { itemName: "Stabilizer", weight: 30 },
+            { itemName: "Titanium Thorn", weight: 28 },
+            { itemName: "Pyro Core", weight: 12 }
         ]
     },
     z3Alloy: {
@@ -142,7 +150,9 @@ const LOOT_POOLS = {
             { itemName: "Titanium", weight: 90 },
             { itemName: "Iron Ore", weight: 70 },
             { itemName: "Pristine Metal Plate", weight: 50 },
-            { itemName: "Titanium Alloy Fragment", weight: 30 }
+            { itemName: "Titanium Alloy Fragment", weight: 30 },
+            { itemName: "Titanium Plating", weight: 35 },
+            { itemName: "Metal Scorpion Fang", weight: 24 }
         ]
     },
     z3Energy: {
@@ -151,7 +161,8 @@ const LOOT_POOLS = {
             { itemName: "Small Power Cell", weight: 80 },
             { itemName: "Stabilizer", weight: 70 },
             { itemName: "Copper Coil", weight: 60 },
-            { itemName: "Flame Shell", weight: 35 }
+            { itemName: "Flame Shell", weight: 35 },
+            { itemName: "Pyro Core", weight: 20 }
         ]
     },
     z4Contamination: {
@@ -280,12 +291,78 @@ const LOOT_POOLS = {
     }
 };
 
+const LOOT_POOL_ACQUISITION = Object.freeze({
+    basicComponents: { level: 1, source: 'uncommon component drops in any progression delve' },
+    midRobotParts: { level: 1, source: 'rare component drops in any progression delve' },
+    advancedComponents: { level: 11, source: 'level 11+ progression delves' },
+    epicTech: { level: 21, source: 'level 21+ progression delves' },
+    legendaryComponents: { level: 31, source: 'level 31+ progression delves' },
+    z1Salvage: { level: 1, source: 'Scrap Intake Yard' },
+    z1Circuits: { level: 1, source: 'Scrap Intake Yard' },
+    z2Ore: { level: 6, source: 'Rustbelt Service Tunnels' },
+    z2Utility: { level: 6, source: 'Rustbelt Service Tunnels' },
+    z3Alloy: { level: 11, source: 'Alloy Processing Floor' },
+    z3Energy: { level: 11, source: 'Alloy Processing Floor' },
+    z4Contamination: { level: 16, source: 'Contaminated Fabrication Wing' },
+    z4Hazard: { level: 16, source: 'Contaminated Fabrication Wing' },
+    z5Transit: { level: 21, source: 'Blackened Transit Grid' },
+    z5Targeting: { level: 21, source: 'Blackened Transit Grid' },
+    z6BioCorrosion: { level: 26, source: 'Bio-Corrosion Research Block' },
+    z6Research: { level: 26, source: 'Bio-Corrosion Research Block' },
+    z7Phase: { level: 31, source: 'Phase Assembly Spire' },
+    z7Spire: { level: 31, source: 'Phase Assembly Spire' },
+    z8Storm: { level: 36, source: 'Storm Furnace Complex' },
+    z8Furnace: { level: 36, source: 'Storm Furnace Complex' },
+    z9Isotope: { level: 41, source: 'Isotope Waste Cathedral' },
+    z9Cathedral: { level: 41, source: 'Isotope Waste Cathedral' },
+    z10Titan: { level: 46, source: 'Titan Foundry' },
+    z10Core: { level: 46, source: 'Titan Foundry' }
+});
+
+const MATERIAL_ACQUISITION = {};
+Object.entries(LOOT_POOLS).forEach(([poolName, pool]) => {
+    const source = LOOT_POOL_ACQUISITION[poolName];
+    if (!source) return;
+    pool.items.forEach(entry => {
+        const current = MATERIAL_ACQUISITION[entry.itemName];
+        if (!current || source.level < current.level) {
+            MATERIAL_ACQUISITION[entry.itemName] = { ...source };
+        }
+    });
+});
+
+const GATHERING_ACQUISITION = {
+    'Scrap Metal': { level: 1, source: 'Mining: Collect Scrap Metal' },
+    'Pristine Metal Plate': { level: 1, source: 'rarely while collecting Scrap Metal' },
+    'Wire Bundle': { level: 2, source: 'Mining: Salvage Wire Bundles' },
+    'Iron Ore': { level: 3, source: 'Mining: Mine Iron Ore' },
+    'Metal Fasteners': { level: 4, source: 'Mining: Break Down Fastener Plates' },
+    'Copper Ore': { level: 5, source: 'Mining: Mine Copper Ore' },
+    'Stabilizer': { level: 8, source: 'Mining: Extract Stabilizer Ore' },
+    'Titanium': { level: 10, source: 'Mining: Extract Titanium' },
+    'Titanium Plating': { level: 16, source: 'Mining: Harvest Titanium Plating' },
+    'Quantum Capacitor': { level: 24, source: 'Mining: Extract Quantum Fragments' }
+};
+
+Object.entries(GATHERING_ACQUISITION).forEach(([itemName, source]) => {
+    const current = MATERIAL_ACQUISITION[itemName];
+    if (!current || source.level < current.level) MATERIAL_ACQUISITION[itemName] = { ...source };
+});
+
+MATERIAL_ACQUISITION['Partical Fuser'] = {
+    level: 1,
+    source: 'Fabrication: Partical Fuser'
+};
+
+Object.freeze(MATERIAL_ACQUISITION);
+
 // Export the data structures
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         LOOT_TIERS,
-        LOOT_POOLS
+        LOOT_POOLS,
+        MATERIAL_ACQUISITION
     };
 } else {
-    // For browser environment
-} 
+    window.MATERIAL_ACQUISITION = MATERIAL_ACQUISITION;
+}

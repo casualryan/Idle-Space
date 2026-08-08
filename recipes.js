@@ -485,25 +485,27 @@ function addThemeIngredients(ingredients, band, theme, domain, family, level) {
     }
 
     if (family === "slashing") {
-        addIngredient(ingredients, "Titanium Thorn", band <= 3 ? 1 : 2);
-        addIngredient(ingredients, "Metal Scorpion Fang", band >= 3 ? 1 : 0);
-        addIngredient(ingredients, "Phase Converter", band >= 4 ? 2 : 1);
+        if (band >= 2) addIngredient(ingredients, "Titanium Thorn", band <= 3 ? 1 : 2);
+        if (band >= 3) addIngredient(ingredients, "Metal Scorpion Fang", 1);
+        if (band >= 4) addIngredient(ingredients, "Phase Converter", 2);
         if (band >= 6) addIngredient(ingredients, "Nanite Cluster", 2);
         return;
     }
 
     if (family === "pyro") {
         addIngredient(ingredients, "Flame Shell", band <= 3 ? 1 : 2);
-        addIngredient(ingredients, "Pyro Core", band >= 3 ? 1 : 0);
-        addIngredient(ingredients, "High-Density Power Cell", band >= 5 ? 2 : 1);
+        if (band <= 2) addIngredient(ingredients, "Small Power Cell", 1);
+        if (band >= 3) addIngredient(ingredients, "Pyro Core", 1);
+        if (band >= 3 && band <= 4) addIngredient(ingredients, "Power Converter", 1);
+        if (band >= 5) addIngredient(ingredients, "High-Density Power Cell", 2);
         if (band >= 6) addIngredient(ingredients, "Flux Crystal", 2);
         return;
     }
 
     if (family === "cryo") {
         addIngredient(ingredients, "Stabilizer", band <= 3 ? 2 : 3);
-        addIngredient(ingredients, "Power Converter", band >= 3 ? 2 : 1);
-        addIngredient(ingredients, "Quantum Capacitor", band >= 5 ? 2 : 1);
+        if (band >= 3) addIngredient(ingredients, "Power Converter", 2);
+        if (band >= 5) addIngredient(ingredients, "Quantum Capacitor", 2);
         if (band >= 6) addIngredient(ingredients, "Temporal Stabilizer", 2);
         return;
     }
@@ -511,23 +513,23 @@ function addThemeIngredients(ingredients, band, theme, domain, family, level) {
     if (family === "electric") {
         addIngredient(ingredients, "Copper Coil", band <= 3 ? 2 : 3);
         addIngredient(ingredients, band <= 3 ? "Small Power Cell" : "High-Density Power Cell", band <= 3 ? 1 : 2);
-        addIngredient(ingredients, "Power Converter", band >= 3 ? 2 : 1);
-        addIngredient(ingredients, "Quantum Capacitor", band >= 5 ? 2 : 1);
+        if (band >= 3) addIngredient(ingredients, "Power Converter", 2);
+        if (band >= 5) addIngredient(ingredients, "Quantum Capacitor", 2);
         return;
     }
 
     if (family === "chemical") {
         addIngredient(ingredients, "Synthetic Poison Gland", band <= 3 ? 1 : 2);
-        addIngredient(ingredients, "Synthetic Biofluid", band >= 4 ? 2 : 1);
-        addIngredient(ingredients, "Power Converter", band >= 3 ? 2 : 1);
+        if (band >= 4) addIngredient(ingredients, "Synthetic Biofluid", 2);
+        if (band >= 3) addIngredient(ingredients, "Power Converter", 2);
         if (band >= 6) addIngredient(ingredients, "Nanite Cluster", 2);
         return;
     }
 
     if (family === "radiation") {
         addIngredient(ingredients, "Unstable Photon", band <= 3 ? 1 : 2);
-        addIngredient(ingredients, "Crystalized Light", band >= 3 ? 1 : 2);
-        addIngredient(ingredients, "AI Core Fragment", band >= 4 ? 2 : 1);
+        if (band >= 3) addIngredient(ingredients, "Crystalized Light", band >= 4 ? 2 : 1);
+        if (band >= 4) addIngredient(ingredients, "AI Core Fragment", 2);
         if (band >= 6) {
             addIngredient(ingredients, "Quantum Core", 2);
             addIngredient(ingredients, "Temporal Stabilizer", 2);
@@ -537,29 +539,29 @@ function addThemeIngredients(ingredients, band, theme, domain, family, level) {
 
     if (theme === "radiation") {
         addIngredient(ingredients, "Unstable Photon", band <= 3 ? 1 : 2);
-        addIngredient(ingredients, "Crystalized Light", band >= 3 ? 1 : 2);
-        addIngredient(ingredients, "AI Core Fragment", band >= 4 ? 1 : 0);
+        if (band >= 3) addIngredient(ingredients, "Crystalized Light", band >= 4 ? 2 : 1);
+        if (band >= 4) addIngredient(ingredients, "AI Core Fragment", 1);
         if (band >= 5) addIngredient(ingredients, "Neural Network Module", 1);
         return;
     }
 
     if (theme === "chemical") {
         addIngredient(ingredients, "Synthetic Poison Gland", band <= 3 ? 1 : 2);
-        addIngredient(ingredients, "Synthetic Biofluid", band >= 4 ? 1 : 2);
+        if (band >= 4) addIngredient(ingredients, "Synthetic Biofluid", band >= 5 ? 2 : 1);
         if (band >= 5) addIngredient(ingredients, "Nanite Cluster", 1);
         return;
     }
 
     if (theme === "cryo") {
         addIngredient(ingredients, "Stabilizer", band <= 3 ? 1 : 2);
-        addIngredient(ingredients, "Power Converter", band >= 3 ? 1 : 2);
+        if (band >= 3) addIngredient(ingredients, "Power Converter", band >= 4 ? 2 : 1);
         if (band >= 6) addIngredient(ingredients, "Temporal Stabilizer", 1);
         return;
     }
 
     if (theme === "electric") {
         addIngredient(ingredients, "Copper Coil", band <= 3 ? 1 : 2);
-        addIngredient(ingredients, "Power Converter", band >= 3 ? 1 : 2);
+        if (band >= 3) addIngredient(ingredients, "Power Converter", band >= 4 ? 2 : 1);
         if (band >= 5) addIngredient(ingredients, "Quantum Capacitor", 1);
         return;
     }
@@ -572,7 +574,7 @@ function addThemeIngredients(ingredients, band, theme, domain, family, level) {
     }
 
     if (theme === "slashing") {
-        addIngredient(ingredients, "Titanium Thorn", band <= 3 ? 1 : 2);
+        if (band >= 2) addIngredient(ingredients, "Titanium Thorn", band <= 3 ? 1 : 2);
         if (band >= 4) addIngredient(ingredients, "Phase Converter", 1);
         return;
     }
@@ -606,7 +608,7 @@ function addSlotIngredients(ingredients, band, category, level) {
         addIngredient(ingredients, "Advanced Servo", level >= 10 && band >= 5 ? 1 : 0);
     } else if (category === "Shields") {
         addIngredient(ingredients, band <= 3 ? "Small Power Cell" : "High-Density Power Cell", band <= 3 ? 1 : 2);
-        addIngredient(ingredients, "Power Converter", band >= 3 ? 1 : 2);
+        if (band >= 3) addIngredient(ingredients, "Power Converter", band >= 4 ? 2 : 1);
         addIngredient(ingredients, "Stabilizer", 1);
     } else {
         addIngredient(ingredients, "Titanium Plating", band >= 3 ? 1 : 0);

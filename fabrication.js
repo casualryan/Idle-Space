@@ -221,6 +221,12 @@ function getRecipeModifierPreview(recipe, itemTemplate) {
     };
 }
 
+function getMaterialAcquisitionHint(itemName) {
+    const acquisition = window.MATERIAL_ACQUISITION?.[itemName];
+    if (!acquisition) return 'Source not documented';
+    return `Available around level ${acquisition.level}: ${acquisition.source}`;
+}
+
 function isDamageFocusCategory(category) {
     return DAMAGE_FOCUS_CATEGORIES.has(category);
 }
@@ -690,7 +696,10 @@ function createRecipeCard(recipe) {
         const li = document.createElement('li');
         li.className = `ingredient-item ${hasIngredient ? '' : 'missing'}`;
         li.innerHTML = `
-            <span>${itemName} × ${quantity}</span>
+            <span class="ingredient-copy">
+                <span>${itemName} × ${quantity}</span>
+                <small class="ingredient-source">${getMaterialAcquisitionHint(itemName)}</small>
+            </span>
             <span>${hasIngredient ? '✓' : '✗'}</span>
         `;
         ingredientsList.appendChild(li);

@@ -577,6 +577,8 @@ test('the stat pipeline applies only declared item stats and is idempotent', () 
             name: 'Synced Bionic', slot: 'bionic',
             precision: 10,
             statModifiers: { damageTypes: { kinetic: 20 } }
+          }, {
+            name: 'Sync Relay', slot: 'bionic', bionicSync: 10
           }]
         },
         passiveBonuses: {
@@ -608,8 +610,9 @@ test('the stat pipeline applies only declared item stats and is idempotent', () 
   assert.equal(result.directStats.maxSeepingWoundStacks, 10);
   assert.equal(result.directStats.precison, undefined);
   assert.deepEqual([...result.unknownKeys], ['precison']);
-  assert.equal(result.first.precision, 15, 'Bionic Sync did not amplify a bionic static stat');
-  assert.equal(result.first.damageTypeModifiers.kinetic, 1.3, 'Bionic Sync did not amplify bionic damage modifiers');
+  assert.equal(result.first.precision, 16, 'Bionic Sync did not amplify a bionic static stat');
+  assert.equal(result.first.damageTypeModifiers.kinetic, 1.32, 'Bionic Sync did not amplify bionic damage modifiers');
+  assert.equal(result.first.bionicSync, 60, 'Bionic Sync rolled on a bionic did not support the installed set');
   assert.equal(result.unchanged, true, 'recalculating unchanged equipment changed totalStats');
   assert.equal(result.afterRemoval.precision, 0, 'removed equipment left a scalar contribution behind');
   assert.equal(result.afterRemoval.damageTypeModifiers.kinetic, undefined, 'removed equipment left a typed contribution behind');
@@ -710,6 +713,7 @@ test('all authored registries satisfy the unified content contract', () => {
       combatStyles,
       lootPools: LOOT_POOLS,
       lootTiers: LOOT_TIERS,
+      materialAcquisition: MATERIAL_ACQUISITION,
       developerMode: ${developerMode}
     })`,
     {
@@ -736,7 +740,123 @@ test('all authored registries satisfy the unified content contract', () => {
   assert.equal(developmentValidation.valid, true);
   assert.deepEqual([...playerValidation.errors], []);
   assert.equal(playerValidation.valid, true);
-  assert.ok(developmentValidation.warnings.some(warning => /armorPenetration.*reserved/i.test(warning)));
+  assert.equal(developmentValidation.warnings.some(warning => /armorPenetration.*reserved/i.test(warning)), false);
+});
+
+test('random affix pools preserve slot identities and restrained late-game counts', () => {
+  const pools = evaluateClassic(
+    'itemgenerator.js',
+    `(() => {
+      const ids = item => getEligibleRandomModifiers(item)
+        .filter(modifier => 50 >= modifier.minLevel)
+        .map(modifier => modifier.id);
+      return {
+        countRange: getModifierCountRangeForLevel(50),
+        weapon: ids({ name: 'Pyro Test Weapon', type: 'Weapon', slot: 'mainHand', levelRequirement: 50, weaponBaseDamage: { pyro: { min: 10, max: 20 } } }),
+        chest: ids({ name: 'Test Chest', type: 'Armor', slot: 'chest', levelRequirement: 50 }),
+        gloves: ids({ name: 'Thermal Test Gloves', type: 'Armor', slot: 'gloves', levelRequirement: 50 }),
+        feet: ids({ name: 'Test Boots', type: 'Armor', slot: 'feet', levelRequirement: 50 }),
+        bionic: ids({ name: 'Pyro Booster', type: 'Bionic', slot: 'bionic', levelRequirement: 50, statModifiers: { damageTypes: { pyro: 10 } } }),
+        generated: Array.from({ length: 25 }, () => {
+          const item = generateItemInstance({
+            name: 'Generated Test Chest', type: 'Armor', slot: 'chest',
+            levelRequirement: { min: 50, max: 50 }, healthBonus: { min: 100, max: 100 }
+          });
+          const families = (item.rolledModifiers || []).map(roll =>
+            RANDOM_MODIFIER_DEFINITIONS.find(modifier => modifier.id === roll.id)?.family
+          );
+          return { count: item.rolledModifiers?.length || 0, unique: new Set(families).size === families.length };
+        }),
+        familiesUnique: (() => {
+          const item = { name: 'Test Chest', type: 'Armor', slot: 'chest', levelRequirement: 50 };
+          const families = getEligibleRandomModifiers(item).map(modifier => modifier.family);
+          return families.includes('maximumHealth') && families.includes('energyShield');
+        })()
+      };
+    })()`,
+    {
+      getRandomInt: (min) => min,
+      getRandomFloat: (min) => min
+    }
+  );
+
+  assert.equal(pools.countRange, '3-4');
+  assert.ok(pools.weapon.includes('weaponDamageTypePercent_pyro'));
+  assert.ok(pools.weapon.includes('armorPenetration'));
+  assert.equal(pools.weapon.some(id => id.startsWith('weaponConversion_')), false);
+  assert.ok(pools.chest.includes('allResistances'));
+  assert.equal(pools.chest.includes('attackSpeed'), false);
+  assert.ok(pools.gloves.includes('criticalChance'));
+  assert.ok(pools.gloves.includes('statusApplicationChance'));
+  assert.ok(pools.feet.includes('comboAttackChance'));
+  assert.ok(pools.bionic.includes('globalDamageTypePercent_pyro'));
+  assert.ok(pools.bionic.includes('bionicEfficiency'));
+  assert.equal(pools.familiesUnique, true);
+  assert.equal(pools.generated.every(sample => sample.count >= 3 && sample.count <= 4), true);
+  assert.equal(pools.generated.every(sample => sample.unique), true);
+});
+
+test('fabrication ingredients are sourced no later than their recipe output', () => {
+  const audit = evaluateClassic(
+    ['recipes.js', 'lootPools.js'],
+    `window.recipes.flatMap(recipe => {
+      const output = testItems.find(item => item.name === recipe.name);
+      const authoredLevel = output?.levelRequirement ?? output?.level;
+      const outputLevel = typeof authoredLevel === 'number'
+        ? authoredLevel
+        : Number(authoredLevel?.min ?? authoredLevel?.max);
+      return Object.keys(recipe.ingredients || {}).flatMap(ingredient => {
+        const source = MATERIAL_ACQUISITION[ingredient];
+        if (!source) return [recipe.name + ' -> ' + ingredient + ' (unsourced)'];
+        if (Number.isFinite(outputLevel) && source.level > outputLevel) {
+          return [recipe.name + ' -> ' + ingredient + ' (level ' + source.level + ' after ' + outputLevel + ')'];
+        }
+        return [];
+      });
+    })`,
+    { testItems: allItems }
+  );
+  assert.deepEqual([...audit], []);
+});
+
+test('Energy Shield refills between delve encounters without healing Health', () => {
+  const logs = [];
+  const result = evaluateClassic(
+    'delveManager.js',
+    `(() => {
+      const restored = refreshEnergyShieldBetweenDelveEncounters();
+      return { restored, health: player.currentHealth, shield: player.currentShield };
+    })()`,
+    {
+      player: { currentHealth: 37, currentShield: 0, totalStats: { health: 100, energyShield: 42 } },
+      logMessage: message => logs.push(message),
+      updatePlayerStatsDisplay: () => {}
+    }
+  );
+  assert.equal(result.restored, 42);
+  assert.equal(result.health, 37);
+  assert.equal(result.shield, 42);
+  assert.match(logs[0], /Energy Shield reconstituted/);
+  assert.match(read('combatController.js'), /currentMonsterIndex < currentDelveLocation\.numFights/);
+});
+
+test('status resistance affixes modify chance and hostile duration through live stats', () => {
+  const durationMultiplier = evaluateClassic(
+    'debuffs.js',
+    `getDebuffDurationMultiplier(
+      { totalStats: { debuffDurationBonus: 0.5 } },
+      { totalStats: { statusDurationReduction: 0.2 } }
+    )`,
+    {
+      displayDamagePopup: () => {},
+      updatePlayerDebuffsUI: () => {},
+      updateEnemyDebuffsUI: () => {},
+      player: {},
+      enemy: {}
+    }
+  );
+  assert.ok(Math.abs(durationMultiplier - 1.2) < 1e-9);
+  assert.match(read('debuffs.js'), /debuffChance -= Math\.max\(0, Number\(target\?\.totalStats\?\.statusResistance/);
 });
 
 test('damage packets carry explicit actors and application returns a structured result', () => {
@@ -1235,4 +1355,31 @@ test('Exposed maximizes the roll and Zapped adds 50% critical damage', () => {
   assert.equal(result.damageRoll, 1);
   assert.equal(result.isCritical, true);
   assert.equal(result.total, 200);
+});
+
+test('Armor Penetration reduces the matching resistance in live damage math', () => {
+  const result = evaluateClassic(
+    ['combatSchema.js', 'stats.js'],
+    `(() => {
+      const attacker = {
+        name: 'Attacker', activeDebuffs: [],
+        totalStats: {
+          damageTypes: { kinetic: 100 }, damageTypeModifiers: { kinetic: 1 },
+          damageGroupModifiers: { physical: 1, elemental: 1, chemical: 1 },
+          damageMultipliers: {}, precision: 0, criticalChance: 0, criticalMultiplier: 1.5,
+          armorPenetration: 15
+        }
+      };
+      const defender = {
+        name: 'Defender', activeDebuffs: [],
+        totalStats: {
+          damageTypes: {}, defenseTypes: { physicalResistance: 40, elementalResistance: 0, chemicalResistance: 0 },
+          deflection: 0
+        }
+      };
+      return calculateDamage(attacker, defender, { forceMaxDamageRoll: true });
+    })()`,
+    { player: {}, logMessage: () => {} }
+  );
+  assert.equal(result.total, 75);
 });

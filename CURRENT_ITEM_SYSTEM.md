@@ -43,7 +43,21 @@ Generator/Drop Rules (Implemented)
   - type damage % -> `weaponLocalTypeIncrease`
   - group damage % -> `weaponLocalGroupIncrease`
   - attack speed % -> `weaponLocalAttackSpeedPercent`
-  - conversions use `weaponDamageConversion`
+  - authored conversion effects use `weaponDamageConversion`
+
+Random Affix Structure (Implemented)
+- Early items roll 1-2 affixes, midgame items roll 2-3, and late-game items roll
+  3-4.
+- Affix families prevent duplicate variants of the same concept on one item.
+- Armor shares a defensive foundation, with slot identity layered on top:
+  head supports precision/critical/status, chest emphasizes Health/Shield, legs
+  emphasize sustain/control, feet support cadence, and gloves support offense.
+- Bionic bases infer role and damage tags so their four interchangeable slots do
+  not draw indiscriminately from every offensive affix.
+- Full weapon conversion is not an ordinary random affix. It remains available
+  to authored bases, crafted uniques, and special chips.
+- Armor Penetration is applied in combat by subtracting percentage points from
+  the resistance matching each damage component.
 
 Save/Load Migration (Implemented)
 - `saveSchema.js` runs ordered, pure migrations before live state is changed.

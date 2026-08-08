@@ -193,6 +193,10 @@ const ITEM_SCALAR_STAT_RULES = Object.freeze({
     weaponEfficiency: { bionicSync: true },
     bionicEfficiency: { bionicSync: true },
     bionicSync: { bionicSync: false },
+    armorPenetration: { bionicSync: true },
+    debuffChanceBonus: { bionicSync: true },
+    statusResistance: { bionicSync: true },
+    statusDurationReduction: { bionicSync: true },
     comboAttack: { bionicSync: true },
     comboEffectiveness: { bionicSync: true },
     additionalComboAttacks: { bionicSync: true },
@@ -203,7 +207,7 @@ const ITEM_SCALAR_STAT_RULES = Object.freeze({
     maxSeepingWoundStacks: { bionicSync: false }
 });
 
-const RESERVED_ITEM_STAT_KEYS = Object.freeze(['armorPenetration']);
+const RESERVED_ITEM_STAT_KEYS = Object.freeze([]);
 const ITEM_NON_APPLIED_MODIFIER_KEYS = new Set([
     'damageTypes',
     'damageGroups',
@@ -233,7 +237,8 @@ function validatePlayerStatSnapshot(stats) {
         'precision', 'deflection', 'healthRegen', 'armorEfficiency', 'weaponEfficiency',
         'bionicEfficiency', 'bionicSync', 'comboAttack', 'comboEffectiveness',
         'additionalComboAttacks', 'maxSeveredLimbs', 'maxSeepingWoundStacks',
-        'damageRollFloorBonus', 'debuffChanceBonus', 'debuffDurationBonus',
+        'armorPenetration', 'damageRollFloorBonus', 'debuffChanceBonus', 'debuffDurationBonus',
+        'statusResistance', 'statusDurationReduction',
         'directDamageMultiplier', 'dotDamageMultiplier', 'damageVsDebuffed', 'damageTakenReduction'
     ];
     for (const key of requiredFinite) {
@@ -418,6 +423,9 @@ function calculatePlayerStats(playerObject) {
     if (stats.weaponEfficiency === undefined) stats.weaponEfficiency = 0;
     if (stats.bionicEfficiency === undefined) stats.bionicEfficiency = 0;
     if (stats.bionicSync === undefined) stats.bionicSync = 0;
+    if (stats.armorPenetration === undefined) stats.armorPenetration = 0;
+    if (stats.statusResistance === undefined) stats.statusResistance = 0;
+    if (stats.statusDurationReduction === undefined) stats.statusDurationReduction = 0;
     if (stats.comboAttack === undefined) stats.comboAttack = 0;
     if (stats.comboEffectiveness === undefined) stats.comboEffectiveness = 0;
     if (stats.additionalComboAttacks === undefined) stats.additionalComboAttacks = 0;
@@ -525,6 +533,10 @@ function calculatePlayerStats(playerObject) {
     });
     
     // Now apply bionics with Bionic Sync enhancement
+    const bionicSyncFromBionics = playerObject.equipment.bionicSlots.reduce((total, bionic) => (
+        total + readItemScalarStat(bionic, 'bionicSync')
+    ), 0);
+    stats.bionicSync += bionicSyncFromBionics;
     const bionicSyncMultiplier = 1 + (stats.bionicSync / 100); // Convert percentage to multiplier
     playerObject.equipment.bionicSlots.forEach(bionic => {
         if (bionic) {
@@ -534,6 +546,10 @@ function calculatePlayerStats(playerObject) {
             }
             
             const enhancedBionic = scaleBionicStaticStats(bionic, bionicSyncMultiplier);
+            // Bionic Sync is collected before scaling so a bionic can support the
+            // whole installed set without multiplying its own Sync contribution.
+            enhancedBionic.bionicSync = 0;
+            if (enhancedBionic.statModifiers) enhancedBionic.statModifiers.bionicSync = 0;
             
             applyItemModifiers(stats, enhancedBionic); // Apply enhanced bionic stats
             // If bionics ever support wires, also apply slotted chip stats
@@ -816,6 +832,8 @@ function calculateDamage(attacker, defender, attackContext = null) {
         let resistanceValue = (defender.totalStats && defender.totalStats.defenseTypes) ? (defender.totalStats.defenseTypes[resistanceStat] || 0) : 0;
 
         // Apply resistance formula (e.g., percentage reduction, capped at 80%)
+        const armorPenetration = Math.max(0, Number(attacker.totalStats.armorPenetration || 0));
+        resistanceValue = Math.max(0, resistanceValue - armorPenetration);
         resistanceValue = Math.min(resistanceValue, 80); // Cap resistance
         let damageReductionMultiplier = Math.max(0, 1 - (resistanceValue / 100)); // Ensure multiplier is not negative
 

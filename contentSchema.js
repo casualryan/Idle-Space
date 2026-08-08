@@ -38,7 +38,8 @@ const CONTENT_ITEM_TEMPLATE_KEYS = new Set([
     'healthBonus', 'healthBonusPercent', 'healthBonusPercentRange',
     'energyShieldBonus', 'energyShieldBonusPercent', 'energyShieldBonusPercentRange',
     'precision', 'deflection', 'healthRegen', 'armorEfficiency', 'weaponEfficiency',
-    'bionicEfficiency', 'bionicSync', 'comboAttack', 'comboEffectiveness',
+    'bionicEfficiency', 'bionicSync', 'armorPenetration', 'debuffChanceBonus',
+    'statusResistance', 'statusDurationReduction', 'comboAttack', 'comboEffectiveness',
     'additionalComboAttacks', 'kineticMastery', 'slashingMastery', 'severedLimbChance',
     'maxSeveredLimbs', 'maxSeepingWoundStacks', ...RESERVED_ITEM_STAT_KEYS
 ]);
@@ -151,7 +152,11 @@ function validateCoreboundContent(registries = {}) {
     const combatStyles = Array.isArray(registries.combatStyles) ? registries.combatStyles : [];
     const lootPools = registries.lootPools && typeof registries.lootPools === 'object' ? registries.lootPools : {};
     const lootTiers = registries.lootTiers && typeof registries.lootTiers === 'object' ? registries.lootTiers : {};
+    const materialAcquisition = registries.materialAcquisition && typeof registries.materialAcquisition === 'object'
+        ? registries.materialAcquisition
+        : {};
     const itemNames = new Set(items.map(item => item?.name).filter(Boolean));
+    const itemByName = new Map(items.map(item => [item?.name, item]));
     const enemyNames = new Set(enemies.map(enemy => enemy?.name).filter(Boolean));
     const passiveNames = new Set(passives.map(passive => passive?.name).filter(Boolean));
     const passiveIds = new Set(passives.map(passive => passive?.id).filter(Boolean));
@@ -227,9 +232,17 @@ function validateCoreboundContent(registries = {}) {
         const name = recipe?.name || 'Unnamed recipe';
         if (!itemNames.has(name)) report('recipe', name, 'output item is not registered');
         if (!recipe?.ingredients || typeof recipe.ingredients !== 'object') report('recipe', name, 'ingredients are required');
+        const output = itemByName.get(name);
+        const outputLevel = getAuthoredMinimum(output?.levelRequirement ?? output?.level);
         for (const [ingredient, quantity] of Object.entries(recipe?.ingredients || {})) {
             if (!itemNames.has(ingredient)) report('recipe', name, `unknown ingredient: ${ingredient}`);
             if (!(Number(quantity) > 0)) report('recipe', name, `invalid ingredient quantity: ${ingredient}`);
+            const source = materialAcquisition[ingredient];
+            if (!source) {
+                report('recipe', name, `ingredient has no documented acquisition source: ${ingredient}`);
+            } else if (Number.isFinite(outputLevel) && Number(source.level) > outputLevel) {
+                report('recipe', name, `${ingredient} first appears at level ${source.level}, after this level ${outputLevel} recipe`);
+            }
         }
         if (recipe?.craftingTime !== undefined && Number(recipe.craftingTime) !== 5) {
             report('recipe', name, 'craftingTime must be five seconds');
@@ -376,6 +389,7 @@ if (typeof window.registerCoreboundInitializer === 'function') {
             combatStyles: window.combatStyles || [],
             lootPools: typeof LOOT_POOLS !== 'undefined' ? LOOT_POOLS : {},
             lootTiers: typeof LOOT_TIERS !== 'undefined' ? LOOT_TIERS : {},
+            materialAcquisition: typeof MATERIAL_ACQUISITION !== 'undefined' ? MATERIAL_ACQUISITION : {},
             developerMode: Boolean(window.coreboundConfig?.developerMode)
         });
     });

@@ -11,7 +11,7 @@
             title: 'Combat',
             sections: [
                 ['Automatic Attacks', 'Combatants attack automatically according to attack speed. Precision improves damage rolls against enemy Deflection. Critical hits use the attacker’s critical multiplier.'],
-                ['Encounter Boundaries', 'Each fight creates a fresh enemy at full Health and Energy Shield. Buffs and debuffs are cleared before the next enemy appears.'],
+                ['Encounter Boundaries', 'Each fight creates a fresh enemy at full Health and Energy Shield. Your Health persists between delve encounters, while your Energy Shield reconstitutes to full after each victory before the next enemy appears. Buffs and debuffs are cleared between fights.'],
                 ['Damage-Type Debuffs', 'The dominant damage type of a hit has a base chance to apply one of its two inherent debuffs. Enemies and players follow the same application rules.']
             ]
         },
@@ -45,7 +45,7 @@
             title: 'Fabrication',
             sections: [
                 ['Crafting', 'The fabricator runs exactly one job at a time. Every fabrication takes five seconds. Ingredients are reserved when fabrication begins, and cancelling returns all reserved ingredients.'],
-                ['Requirements', 'A learned recipe may be fabricated at any level. Items whose level requirement is not met can be crafted and stored, but cannot yet be equipped.'],
+                ['Requirements', 'A learned recipe may be fabricated at any level. Items whose level requirement is not met can be crafted and stored, but cannot yet be equipped. Each listed ingredient includes its earliest documented acquisition source.'],
                 ['Saving', 'Active fabrications preserve their remaining time when saved and do not advance while the game is closed.']
             ]
         },

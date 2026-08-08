@@ -1,5 +1,17 @@
 // Delve deployment, location progression, and encounter sequencing.
 
+function refreshEnergyShieldBetweenDelveEncounters() {
+    if (!player?.totalStats) return 0;
+    const maximum = Math.max(0, Number(player.totalStats.energyShield) || 0);
+    const previous = Math.max(0, Number(player.currentShield) || 0);
+    player.currentShield = maximum;
+    if (maximum > previous) {
+        logMessage(`Energy Shield reconstituted to ${Math.round(maximum)} before the next encounter.`);
+    }
+    if (typeof updatePlayerStatsDisplay === 'function') updatePlayerStatsDisplay();
+    return maximum - previous;
+}
+
 function startAdventure(location) {
     if (window.activityManager && typeof window.activityManager.isActivityActive === 'function' && window.activityManager.isActivityActive()) {
         window.activityManager.cancelActivity('delveStart', { silent: true });
