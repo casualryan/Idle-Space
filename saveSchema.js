@@ -1,6 +1,6 @@
 // Ordered, non-destructive migrations and validation for persisted game snapshots.
 
-const COREBOUND_SAVE_VERSION = 11;
+const COREBOUND_SAVE_VERSION = 12;
 const SAVE_MATERIAL_STACK_CAP = 50000;
 const SAVE_PASSIVE_TREE_VERSION = 2;
 const SAVE_COMBAT_STYLE_VERSION = 2;
@@ -17,6 +17,21 @@ const SAVE_DEFENSE_TYPE_ALIASES = Object.freeze({
     immunity: ['chemicalResistance', 1]
 });
 const SAVE_EQUIPMENT_SLOTS = Object.freeze(['mainHand', 'offHand', 'head', 'chest', 'legs', 'feet', 'gloves']);
+const SAVE_RETIRED_MATERIAL_CONVERSIONS = Object.freeze({
+    'Partical Fuser': ['Advanced Electronic Circuit', 1],
+    'Spider Leg Segment': ['Titanium Thorn', 1],
+    'Optic Sensor': ['Targeting Module', 1],
+    'Memory Chip': ['Minor Electronic Circuit', 1],
+    'Basic Sensor Array': ['Targeting Module', 1],
+    'Power Converter': ['Advanced Electronic Circuit', 1],
+    'Neural Processor': ['Neural Network Module', 1],
+    'Pristine Metal Plate': ['Scrap Metal', 3],
+    'Pure Iron Nugget': ['Iron Ore', 3],
+    'Copper Vein Sample': ['Copper Ore', 3],
+    'Titanium Alloy Fragment': ['Titanium', 2],
+    'Corrosive Fluid': ['Synthetic Biofluid', 1],
+    'Small Power Cell': ['Wire Bundle', 2]
+});
 
 function cloneSaveValue(value) {
     return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -114,6 +129,29 @@ function normalizeSavedMaterialInventory(source) {
     return Object.fromEntries(Object.entries(source)
         .map(([name, quantity]) => [name, Math.min(SAVE_MATERIAL_STACK_CAP, Math.max(0, Math.floor(Number(quantity) || 0)))])
         .filter(([, quantity]) => quantity > 0));
+}
+
+function convertRetiredMaterialMap(source) {
+    const converted = {};
+    for (const [rawName, rawQuantity] of Object.entries(normalizeSavedMaterialInventory(source))) {
+        const [name, multiplier] = SAVE_RETIRED_MATERIAL_CONVERSIONS[rawName] || [rawName, 1];
+        const current = Math.max(0, Number(converted[name]) || 0);
+        const quantity = Math.max(0, Math.floor(Number(rawQuantity) * multiplier));
+        converted[name] = Math.min(SAVE_MATERIAL_STACK_CAP, current + quantity);
+    }
+    return Object.fromEntries(Object.entries(converted).filter(([, quantity]) => quantity > 0));
+}
+
+function convertRetiredMaterialItem(item) {
+    if (!item || typeof item !== 'object') return item;
+    const conversion = SAVE_RETIRED_MATERIAL_CONVERSIONS[item.name];
+    if (!conversion) return item;
+    const [name, multiplier] = conversion;
+    return {
+        ...item,
+        name,
+        quantity: Math.max(1, Math.floor((Number(item.quantity) || 1) * multiplier))
+    };
 }
 
 function mapSavedEquipment(equipment, mapper) {
@@ -262,6 +300,15 @@ const SAVE_MIGRATIONS = Object.freeze([
         }
         state.inventory = ordinaryInventory;
         state.materialInventory = materialInventory;
+    },
+    function migrateToVersion12(state) {
+        state.materialInventory = convertRetiredMaterialMap(state.materialInventory);
+        for (const containerKey of ['delveBag', 'delveClaimCache']) {
+            const container = state[containerKey];
+            if (!container || !Array.isArray(container.items)) continue;
+            container.items = container.items.map(item => convertRetiredMaterialItem(item));
+        }
+        state.componentDropCounts = convertRetiredMaterialMap(state.componentDropCounts);
     }
 ]);
 

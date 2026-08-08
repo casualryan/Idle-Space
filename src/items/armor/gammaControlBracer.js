@@ -8,6 +8,5 @@ export default {
   defenseTypes: { chemicalResistance: { min: 6, max: 10 } },
   statModifiers: { damageTypes: { radiation: { min: 6, max: 11 } } },
   isDisassembleable: true,
-  disassembleResults: [{ name: "Titanium", quantity: 1 }, { name: "Basic Sensor Array", quantity: 1 }]
+  disassembleResults: [{ name: "Titanium", quantity: 1 }, { name: "Targeting Module", quantity: 1 }]
 };
-

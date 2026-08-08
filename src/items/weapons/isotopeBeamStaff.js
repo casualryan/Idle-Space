@@ -12,8 +12,7 @@ export default {
   isDisassembleable: true,
   disassembleResults: [
     { name: "Nanite Cluster", quantity: 1 },
-    { name: "Neural Processor", quantity: 1 }
+    { name: "Neural Network Module", quantity: 1 }
   ],
   description: "A beam staff etched with isotopes for high-radiation delivery."
 };
-

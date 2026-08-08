@@ -640,8 +640,12 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
         inventory: [
           { name: 'Scrap Metal', type: 'Material', quantity: 12, stackable: true },
           { name: 'Scrap Metal', type: 'Material', quantity: 8, stackable: true },
-          { name: 'Wire Bundle', type: 'Material', quantity: 3, stackable: true }
+          { name: 'Wire Bundle', type: 'Material', quantity: 3, stackable: true },
+          { name: 'Small Power Cell', type: 'Material', quantity: 2, stackable: true },
+          { name: 'Partical Fuser', type: 'Material', quantity: 4, stackable: true }
         ],
+        delveBag: { items: [{ name: 'Corrosive Fluid', type: 'Material', quantity: 2 }], credits: 0 },
+        componentDropCounts: { 'Basic Sensor Array': 5 },
         meta: { version: 0 }
       };
       const before = JSON.stringify(original);
@@ -658,11 +662,15 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   );
 
   assert.equal(result.beforeUnchanged, true, 'migration mutated the parsed legacy payload');
-  assert.equal(result.migrated.toVersion, 11);
-  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  assert.equal(result.migrated.toVersion, 12);
+  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   assert.equal(result.migrated.state.inventory.length, 0, 'legacy material stacks still occupy ordinary slots');
   assert.equal(result.migrated.state.materialInventory['Scrap Metal'], 20);
-  assert.equal(result.migrated.state.materialInventory['Wire Bundle'], 3);
+  assert.equal(result.migrated.state.materialInventory['Wire Bundle'], 7);
+  assert.equal(result.migrated.state.materialInventory['Advanced Electronic Circuit'], 4);
+  assert.equal(result.migrated.state.materialInventory['Small Power Cell'], undefined);
+  assert.equal(result.migrated.state.delveBag.items[0].name, 'Synthetic Biofluid');
+  assert.equal(result.migrated.state.componentDropCounts['Targeting Module'], 5);
   assert.equal(result.migrated.state.player.equipment.mainHand.weaponBaseDamage.slashing, 17);
   assert.equal(result.migrated.state.player.equipment.mainHand.rolledModifiers[0].value, 17);
   assert.equal(result.migrated.state.player.equipment.mainHand.levelRequirement, 9);
@@ -871,6 +879,135 @@ test('fabrication ingredients are sourced no later than their recipe output', ()
     { testItems: allItems }
   );
   assert.deepEqual([...audit], []);
+});
+
+test('fabrication economy uses compact recipes with progression-scaled bulk costs', () => {
+  const recipes = evaluateClassic('recipes.js', 'window.recipes');
+  const itemByName = new Map(allItems.map(item => [item.name, item]));
+  const retiredMaterials = new Set([
+    'Partical Fuser', 'Spider Leg Segment', 'Optic Sensor', 'Memory Chip',
+    'Basic Sensor Array', 'Power Converter', 'Neural Processor', 'Pristine Metal Plate',
+    'Pure Iron Nugget', 'Copper Vein Sample', 'Titanium Alloy Fragment',
+    'Corrosive Fluid', 'Small Power Cell'
+  ]);
+  const bands = Array.from({ length: 6 }, () => []);
+  const usedMaterials = new Set();
+
+  for (const recipe of recipes) {
+    const output = itemByName.get(recipe.name);
+    const authoredLevel = output?.levelRequirement ?? output?.level ?? 1;
+    const level = typeof authoredLevel === 'number'
+      ? authoredLevel
+      : Number(authoredLevel?.min ?? authoredLevel?.max ?? 1);
+    const band = level <= 5 ? 0 : level <= 10 ? 1 : level <= 20 ? 2 : level <= 30 ? 3 : level <= 40 ? 4 : 5;
+    const ingredientNames = Object.keys(recipe.ingredients || {});
+    const totalUnits = Object.values(recipe.ingredients || {}).reduce((sum, quantity) => sum + Number(quantity), 0);
+    bands[band].push(totalUnits);
+    ingredientNames.forEach(name => usedMaterials.add(name));
+
+    assert.ok(ingredientNames.length >= 3 && ingredientNames.length <= 6,
+      `${recipe.name} uses ${ingredientNames.length} ingredient types`);
+    assert.equal(ingredientNames.includes('Metal Fasteners'), true, `${recipe.name} lost its fastener foundation`);
+    assert.equal(ingredientNames.includes('Wire Bundle'), true, `${recipe.name} lost its wiring foundation`);
+    assert.equal(ingredientNames.some(name => retiredMaterials.has(name)), false, `${recipe.name} uses a retired material`);
+  }
+
+  const average = values => values.reduce((sum, value) => sum + value, 0) / values.length;
+  const averages = bands.map(average);
+  assert.ok(averages[0] >= 4 && averages[0] <= 6);
+  assert.ok(averages[1] >= 8 && averages[1] <= 12);
+  assert.ok(averages[2] >= 15 && averages[2] <= 22);
+  assert.ok(averages[3] >= 28 && averages[3] <= 38);
+  assert.ok(averages[4] >= 45 && averages[4] <= 58);
+  assert.ok(averages[5] >= 60 && averages[5] <= 80);
+  assert.deepEqual(materials.map(material => material.name).filter(name => !usedMaterials.has(name)), []);
+  assert.equal(materials.some(material => retiredMaterials.has(material.name)), false);
+});
+
+test('enemy material drops carry foundations forward and preserve targeted thematic ladders', () => {
+  const lootPools = evaluateClassic('lootPools.js', 'LOOT_POOLS');
+  const storageGroups = evaluateClassic('materialStorage.js', 'MATERIAL_STORAGE_GROUPS', {
+    window: { materialInventory: {}, materials }
+  });
+  const thematicIds = ['kinetic', 'slashing', 'pyro', 'cryo', 'electric', 'chemical', 'radiation'];
+  for (const id of thematicIds) {
+    const group = storageGroups.find(entry => entry.id === id);
+    assert.equal(group.materials.length, 3, `${id} does not have a three-stage material ladder`);
+  }
+
+  for (let zone = 1; zone <= 10; zone++) {
+    const foundationNames = new Set(lootPools[`foundationZ${zone}`].items.map(entry => entry.itemName));
+    assert.equal(foundationNames.has('Metal Fasteners'), true, `zone ${zone} stopped dropping fasteners`);
+    assert.equal(foundationNames.has('Wire Bundle'), true, `zone ${zone} stopped dropping wire bundles`);
+  }
+  const earlyFasteners = lootPools.foundationZ1.items.find(entry => entry.itemName === 'Metal Fasteners');
+  const apexFasteners = lootPools.foundationZ10.items.find(entry => entry.itemName === 'Metal Fasteners');
+  assert.ok(apexFasteners.minQuantity > earlyFasteners.maxQuantity, 'fastener stacks do not scale with progression');
+
+  const flameVent = enemies.find(enemy => enemy.name === 'Flame Vent Drone');
+  const acidCrawler = enemies.find(enemy => enemy.name === 'Acid Vat Crawler');
+  assert.ok(flameVent.lootConfig.poolsByTier[2].includes('themePyroCommon'));
+  assert.ok(flameVent.lootConfig.poolsByTier[3].includes('themePyroAdvanced'));
+  assert.equal(acidCrawler.lootConfig.poolsByTier[2].includes('themePyroCommon'), false);
+  assert.ok(lootPools.legacyThemesZ2.items.some(entry => entry.itemName === 'Flame Shell'),
+    'later off-theme content cannot carry early Flame Shells forward');
+
+  const apexLegacyNames = new Set(lootPools.legacyThemesZ10.items.map(entry => entry.itemName));
+  for (const group of storageGroups.filter(entry => thematicIds.includes(entry.id))) {
+    group.materials.forEach(name => assert.equal(apexLegacyNames.has(name), true, `${name} disappears from apex progression`));
+  }
+});
+
+test('Flame Shell targeted farming stays practical across progression', () => {
+  const lootPools = evaluateClassic('lootPools.js', 'LOOT_POOLS');
+  const lootTiers = evaluateClassic('lootPools.js', 'LOOT_TIERS');
+  const locations = evaluateClassic('locations.js', 'locations');
+  const tierWeights = new Map(Object.values(lootTiers).map(tier => [Number(tier.id), Number(tier.chance)]));
+
+  const quantityMultiplier = (quantityClass, zone) => {
+    if (quantityClass === 'thematicCommon') return Math.max(1, Math.ceil(zone / 2));
+    if (quantityClass === 'thematicAdvanced') return Math.max(1, Math.ceil((zone - 1) / 3));
+    if (quantityClass === 'thematicApex' && zone >= 11) return 2;
+    return 1;
+  };
+  const expectedUnitsPerKill = (enemy, itemName) => {
+    const viableTiers = Object.entries(enemy.lootConfig.poolsByTier)
+      .map(([tierId, poolNames]) => [Number(tierId), poolNames.filter(name => lootPools[name]?.items?.length)])
+      .filter(([, poolNames]) => poolNames.length > 0);
+    const tierTotal = viableTiers.reduce((sum, [tierId]) => sum + tierWeights.get(tierId), 0);
+    let unitsPerGeneratedStack = 0;
+    for (const [tierId, poolNames] of viableTiers) {
+      const tierChance = tierWeights.get(tierId) / tierTotal;
+      for (const poolName of poolNames) {
+        const entries = lootPools[poolName].items;
+        const totalWeight = entries.reduce((sum, entry) => sum + entry.weight, 0);
+        for (const entry of entries.filter(candidate => candidate.itemName === itemName)) {
+          const averageQuantity = ((entry.minQuantity ?? 1) + (entry.maxQuantity ?? entry.minQuantity ?? 1)) / 2;
+          unitsPerGeneratedStack += tierChance * (1 / poolNames.length) * (entry.weight / totalWeight)
+            * averageQuantity * quantityMultiplier(entry.quantityClass, enemy.zone);
+        }
+      }
+    }
+    const averageStacks = (enemy.lootConfig.minItems + enemy.lootConfig.maxItems) / 2;
+    return enemy.lootConfig.baseDropChance * averageStacks * unitsPerGeneratedStack;
+  };
+  const expectedUnitsPerDelve = (location, itemName) => {
+    const totalSpawnWeight = location.enemies.reduce((sum, spawn) => sum + spawn.spawnRate, 0);
+    const perFight = location.enemies.reduce((sum, spawn) => {
+      const enemy = enemies.find(candidate => candidate.name === spawn.name);
+      return sum + (spawn.spawnRate / totalSpawnWeight) * expectedUnitsPerKill(enemy, itemName);
+    }, 0);
+    return perFight * location.numFights;
+  };
+
+  const scrapYard = locations.find(location => location.name === 'Scrap Intake Yard');
+  const alloyFloor = locations.find(location => location.name === 'Alloy Processing Floor');
+  const contaminatedWing = locations.find(location => location.name === 'Contaminated Fabrication Wing');
+  const flameVent = enemies.find(enemy => enemy.name === 'Flame Vent Drone');
+  assert.ok(expectedUnitsPerDelve(scrapYard, 'Flame Shell') >= 0.3);
+  assert.ok(expectedUnitsPerDelve(alloyFloor, 'Flame Shell') >= 0.6);
+  assert.ok(expectedUnitsPerDelve(contaminatedWing, 'Flame Shell') >= 0.8);
+  assert.ok(expectedUnitsPerKill(flameVent, 'Flame Shell') >= 0.75);
 });
 
 test('Energy Shield refills between delve encounters without healing Health', () => {

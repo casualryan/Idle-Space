@@ -27,7 +27,7 @@ export default {
         slot: 'mainHand',
         isDisassembleable: true,
         disassembleResults: [
-            { name: 'Corrosive Fluid', quantity: 2 },
+            { name: 'Synthetic Biofluid', quantity: 2 },
             { name: 'Enhanced Cutting Edge', quantity: 1 }
         ],
         description: 'Extremely fast acid-coated claws specialized in corrosive damage.'

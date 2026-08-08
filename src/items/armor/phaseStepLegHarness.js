@@ -11,10 +11,9 @@ export default {
     deflection: { min: 4, max: 7 },
     isDisassembleable: true,
     disassembleResults: [
-        { name: 'Neural Processor', quantity: 1 },
+        { name: 'Neural Network Module', quantity: 1 },
         { name: 'Quantum Capacitor', quantity: 1 },
         { name: 'High-Density Power Cell', quantity: 1 }
     ],
     description: 'A phase-tuned leg harness that reinforces your steps with a strong shield and precise control.'
 };
-

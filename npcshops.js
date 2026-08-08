@@ -9,10 +9,14 @@ const MARTY_COMMON_COMPONENTS = [
     { itemName: "Wire Bundle", price: 30, levelReq: 1 },
     { itemName: "Metal Fasteners", price: 25, levelReq: 1 },
     { itemName: "Minor Electronic Circuit", price: 250, levelReq: 2 },
-    { itemName: "Synthetic Poison Gland", price: 60, levelReq: 2 },
-    { itemName: "Spider Leg Segment", price: 40, levelReq: 2 },
+    { itemName: "Basic Servo", price: 120, levelReq: 2 },
     { itemName: "Iron Ore", price: 45, levelReq: 6 },
-    { itemName: "Copper Ore", price: 55, levelReq: 6 }
+    { itemName: "Copper Ore", price: 55, levelReq: 6 },
+    { itemName: "Titanium", price: 120, levelReq: 11 },
+    { itemName: "Titanium Plating", price: 350, levelReq: 16 },
+    { itemName: "Advanced Servo", price: 600, levelReq: 21 },
+    { itemName: "Advanced Electronic Circuit", price: 700, levelReq: 21 },
+    { itemName: "Advanced Alloy", price: 1000, levelReq: 31 }
 ].map(item => ({
     ...item,
     stock: 999,
@@ -237,70 +241,61 @@ function displayNPCShop(npc) {
             descriptionP.className = 'shop-item-desc';
         }
 
-        // Buy button
-        const buyButton = document.createElement('button');
-        buyButton.className = 'shop-buy-button';
-        if (isService && invItem.itemName === "Inventory Slot Expansion") {
-            buyButton.textContent = 'Purchase Expansion';
-            // Check if player is at max slots
-            if (player.maxInventorySlots >= 500) {
-                buyButton.disabled = true;
-                buyButton.textContent = 'Max Slots Reached';
-                buyButton.title = 'You already have the maximum number of inventory slots (500)';
-            }
-        } else {
-            buyButton.textContent = 'Buy 1';
+        let needP = null;
+        const missingCredits = Math.max(0, itemPrice - playerCurrency);
+        if (player.level >= itemLevelReq && missingCredits > 0) {
+            itemDiv.classList.add('unaffordable');
+            needP = document.createElement('p');
+            needP.className = 'shop-item-need';
+            needP.textContent = `Need +${missingCredits} credits`;
         }
 
-        // If player's level < itemLevelReq, lock the item
-        if (player.level < itemLevelReq) {
-            buyButton.disabled = true;
-            buyButton.textContent = 'Locked';
-            buyButton.title = `Requires level ${itemLevelReq}`;
-        } else {
-            // Normal buy behavior
-            // Highlight unaffordable items and show delta
-            const missingCredits = Math.max(0, itemPrice - playerCurrency);
-            if (missingCredits > 0) {
-                itemDiv.classList.add('unaffordable');
-                const needP = document.createElement('p');
-                needP.className = 'shop-item-need';
-                needP.textContent = `Need +${missingCredits} credits`;
-                itemDiv.appendChild(needP);
+        const purchaseControls = document.createElement('div');
+        purchaseControls.className = 'shop-purchase-controls';
+        const purchaseQuantities = !isService && isMaterialItem(itemTemplate) ? [1, 10, 50] : [1];
+
+        purchaseQuantities.forEach(quantity => {
+            const buyButton = document.createElement('button');
+            buyButton.className = 'shop-buy-button';
+            buyButton.textContent = isService && invItem.itemName === 'Inventory Slot Expansion'
+                ? 'Purchase Expansion'
+                : `Buy ${quantity}`;
+
+            if (isService && invItem.itemName === 'Inventory Slot Expansion' && player.maxInventorySlots >= 500) {
                 buyButton.disabled = true;
-                buyButton.title = `Need +${missingCredits} credits`;
-            }
-
-            buyButton.addEventListener('click', () => {
-                const cost = itemPrice * 1; // quantity 1
-                const threshold = (window.gameSettings && window.gameSettings.purchaseConfirmThresholdCredits) || 500;
-                const doBuy = () => buyItemFromNPC(npc, invItem, 1);
-
-                // Only block on inventory space for non-service items
-                if (!isService && !isMaterialItem(itemTemplate)) {
-                    if (!hasInventorySpace(1)) {
-                        if (typeof showWarningPopup === 'function') {
-                            showWarningPopup('Your inventory is full. Free up space before purchasing this item.');
-                        } else {
-                            logMessage('Your inventory is full. Free up space before purchasing this item.');
-                        }
-                        return;
-                    }
+                buyButton.textContent = 'Max Slots Reached';
+                buyButton.title = 'You already have the maximum inventory capacity.';
+            } else if (player.level < itemLevelReq) {
+                buyButton.disabled = true;
+                buyButton.textContent = 'Locked';
+                buyButton.title = `Requires level ${itemLevelReq}`;
+            } else {
+                const cost = itemPrice * quantity;
+                if (cost > playerCurrency) {
+                    buyButton.disabled = true;
+                    buyButton.title = `Need +${cost - playerCurrency} credits`;
                 }
 
-                if (cost >= threshold) {
-                    if (typeof showConfirmationPopup === 'function') {
-                        showConfirmationPopup(`Confirm purchase of ${itemName} for ${cost} credits?`, doBuy);
-                    } else if (window.confirm) {
-                        if (confirm(`Purchase ${itemName} for ${cost} credits?`)) doBuy();
+                buyButton.addEventListener('click', () => {
+                    const threshold = window.gameSettings?.purchaseConfirmThresholdCredits || 500;
+                    const doBuy = () => buyItemFromNPC(npc, invItem, quantity);
+                    if (!isService && !isMaterialItem(itemTemplate) && !hasInventorySpace(1)) {
+                        const message = 'Your inventory is full. Free up space before purchasing this item.';
+                        if (typeof showWarningPopup === 'function') showWarningPopup(message);
+                        else logMessage(message);
+                        return;
+                    }
+                    if (cost >= threshold && typeof showConfirmationPopup === 'function') {
+                        showConfirmationPopup(`Confirm purchase of ${quantity} x ${itemName} for ${cost} credits?`, doBuy);
+                    } else if (cost >= threshold && window.confirm) {
+                        if (confirm(`Purchase ${quantity} x ${itemName} for ${cost} credits?`)) doBuy();
                     } else {
                         doBuy();
                     }
-                } else {
-                    doBuy();
-                }
-            });
-        }
+                });
+            }
+            purchaseControls.appendChild(buyButton);
+        });
 
         // Setup tooltip using global system
         itemDiv.setAttribute('data-has-tooltip', 'true');
@@ -315,7 +310,8 @@ function displayNPCShop(npc) {
         if (descriptionP) {
             itemDiv.appendChild(descriptionP);
         }
-        itemDiv.appendChild(buyButton);
+        if (needP) itemDiv.appendChild(needP);
+        itemDiv.appendChild(purchaseControls);
 
         grid.appendChild(itemDiv);
     });

@@ -5,85 +5,119 @@ const MATERIAL_STORAGE_CAP = 50000;
 
 const MATERIAL_STORAGE_GROUPS = Object.freeze([
     Object.freeze({
-        id: 'raw-salvage',
-        label: 'Raw Salvage & Alloys',
-        description: 'Ore, bulk salvage, plates, and unfinished alloys.',
+        id: 'foundational',
+        label: 'Foundational Stockpile',
+        description: 'Predictable bulk construction supplies used across the entire fabrication ladder.',
         materials: Object.freeze([
             'Scrap Metal',
             'Iron Ore',
             'Copper Ore',
             'Titanium',
-            'Pristine Metal Plate',
-            'Pure Iron Nugget',
-            'Copper Vein Sample',
-            'Titanium Alloy Fragment',
+            'Metal Fasteners',
+            'Wire Bundle',
+            'Minor Electronic Circuit',
+            'Advanced Electronic Circuit',
+            'Basic Servo',
+            'Advanced Servo',
             'Titanium Plating',
             'Advanced Alloy'
         ])
     }),
     Object.freeze({
-        id: 'mechanical',
-        label: 'Mechanical Components',
-        description: 'Fasteners, servos, weapon parts, and fabrication hardware.',
+        id: 'kinetic',
+        label: 'Kinetic Components',
+        description: 'Impact materials progress from common stabilizers to precision driver assemblies.',
         materials: Object.freeze([
-            'Metal Fasteners',
-            'Basic Servo',
-            'Advanced Servo',
-            'Spider Leg Segment',
+            'Stabilizer',
+            'Advanced Barrel',
+            'Precision Mechanism'
+        ])
+    }),
+    Object.freeze({
+        id: 'slashing',
+        label: 'Slashing Components',
+        description: 'Cutting components progress from raw thorns to perfected high-energy edges.',
+        materials: Object.freeze([
             'Titanium Thorn',
             'Metal Scorpion Fang',
-            'Stabilizer',
-            'Partical Fuser',
-            'Advanced Barrel',
-            'Precision Mechanism',
             'Enhanced Cutting Edge'
         ])
     }),
     Object.freeze({
-        id: 'electronics',
-        label: 'Electronics & Power',
-        description: 'Circuits, sensors, processors, converters, and power systems.',
+        id: 'pyro',
+        label: 'Pyro Components',
+        description: 'Thermal components progress from Flame Shells through Pyro Cores to Flux Crystals.',
         materials: Object.freeze([
-            'Wire Bundle',
-            'Minor Electronic Circuit',
-            'Advanced Electronic Circuit',
-            'Copper Coil',
-            'Small Power Cell',
-            'High-Density Power Cell',
-            'Memory Chip',
-            'Optic Sensor',
-            'Basic Sensor Array',
-            'Targeting Module',
-            'Power Converter',
-            'Neural Processor',
-            'Neural Network Module',
-            'AI Core Fragment',
-            'Quantum Capacitor',
-            'Phase Converter'
+            'Flame Shell',
+            'Pyro Core',
+            'Flux Crystal'
         ])
     }),
     Object.freeze({
-        id: 'exotic',
-        label: 'Elemental & Exotic Matter',
-        description: 'Reactive, biological, phase, and endgame matter.',
+        id: 'cryo',
+        label: 'Cryo Components',
+        description: 'Cooling components progress from sealed Cryo Cells to temporal-grade regulation.',
+        materials: Object.freeze([
+            'Cryo Cell',
+            'Unstable Phase Core',
+            'Temporal Stabilizer'
+        ])
+    }),
+    Object.freeze({
+        id: 'electric',
+        label: 'Electric Components',
+        description: 'Electrical components progress from copper windings to quantum charge storage.',
+        materials: Object.freeze([
+            'Copper Coil',
+            'High-Density Power Cell',
+            'Quantum Capacitor'
+        ])
+    }),
+    Object.freeze({
+        id: 'chemical',
+        label: 'Corrosive Components',
+        description: 'Chemical components progress from residue to stable synthetic biofluids.',
+        materials: Object.freeze([
+            'Toxic Residue',
+            'Synthetic Poison Gland',
+            'Synthetic Biofluid'
+        ])
+    }),
+    Object.freeze({
+        id: 'radiation',
+        label: 'Radiation Components',
+        description: 'Isotope components progress from unstable emissions to programmable nanite matter.',
         materials: Object.freeze([
             'Unstable Photon',
             'Crystalized Light',
-            'Flame Shell',
-            'Pyro Core',
-            'Synthetic Poison Gland',
-            'Synthetic Biofluid',
-            'Toxic Residue',
-            'Corrosive Fluid',
-            'Cryo Cell',
-            'Unstable Phase Core',
-            'Quantum Core',
-            'Temporal Stabilizer',
-            'Nanite Cluster',
-            'Flux Crystal'
+            'Nanite Cluster'
+        ])
+    }),
+    Object.freeze({
+        id: 'exceptional',
+        label: 'Exceptional Technology',
+        description: 'Rare neutral components reserved for equipment with unusual or especially powerful identities.',
+        materials: Object.freeze([
+            'Targeting Module',
+            'Neural Network Module',
+            'AI Core Fragment',
+            'Phase Converter',
+            'Quantum Core'
         ])
     })
 ]);
+
+const MATERIAL_STORAGE_ROLE = Object.freeze({
+    foundational: 'Foundational material',
+    kinetic: 'Kinetic thematic ladder',
+    slashing: 'Slashing thematic ladder',
+    pyro: 'Pyro thematic ladder',
+    cryo: 'Cryo thematic ladder',
+    electric: 'Electric thematic ladder',
+    chemical: 'Corrosive thematic ladder',
+    radiation: 'Radiation thematic ladder',
+    exceptional: 'Exceptional neutral material'
+});
 
 const MATERIAL_STORAGE_NAMES = Object.freeze(MATERIAL_STORAGE_GROUPS.flatMap(group => group.materials));
 const MATERIAL_STORAGE_NAME_SET = new Set(MATERIAL_STORAGE_NAMES);
@@ -161,23 +195,32 @@ function getMaterialDropSourceRows(itemName, limit = 4) {
     const locationRegistry = typeof locations !== 'undefined' ? locations : [];
     const rows = [];
     const seen = new Set();
-    const orderedLocations = locationRegistry.slice().sort((a, b) =>
-        Number(a.recommendedLevel || 1) - Number(b.recommendedLevel || 1)
-    );
+    const orderedLocations = locationRegistry.slice().sort((a, b) => Number(a.recommendedLevel || 1) - Number(b.recommendedLevel || 1));
 
     for (const location of orderedLocations) {
         for (const spawn of location.enemies || []) {
             const enemy = enemyRegistry.get(spawn.name);
             const pools = Object.values(enemy?.lootConfig?.poolsByTier || {}).flat();
-            if (!pools.some(poolName => matchingPools.has(poolName))) continue;
+            const identityPools = [
+                ...(enemy?.lootConfig?.poolsByTier?.[2] || []),
+                ...(enemy?.lootConfig?.poolsByTier?.[3] || [])
+            ];
+            const matchingEnemyPools = pools.filter(poolName => matchingPools.has(poolName));
+            if (matchingEnemyPools.length === 0) continue;
             const key = `${spawn.name}|${location.name}`;
             if (seen.has(key)) continue;
             seen.add(key);
-            rows.push({ enemy: spawn.name, location: location.name });
-            if (rows.length >= limit) return rows;
+            rows.push({
+                enemy: spawn.name,
+                location: location.name,
+                level: Number(location.recommendedLevel || 1),
+                targeted: identityPools.some(poolName => matchingPools.has(poolName))
+            });
         }
     }
-    return rows;
+    return rows
+        .sort((a, b) => Number(b.targeted) - Number(a.targeted) || a.level - b.level)
+        .slice(0, limit);
 }
 
 function escapeMaterialTooltipText(value) {
@@ -194,11 +237,15 @@ function getMaterialStorageTooltipContent(itemName, groupLabel) {
     const acquisition = window.MATERIAL_ACQUISITION?.[itemName];
     const dropRows = getMaterialDropSourceRows(itemName);
     const safeName = escapeMaterialTooltipText(itemName);
-    const safeGroup = escapeMaterialTooltipText(groupLabel);
+    const group = MATERIAL_STORAGE_GROUPS.find(entry => entry.materials.includes(itemName));
+    const materialIndex = group ? group.materials.indexOf(itemName) : -1;
+    const role = group?.id === 'foundational' || group?.id === 'exceptional'
+        ? MATERIAL_STORAGE_ROLE[group.id]
+        : `${MATERIAL_STORAGE_ROLE[group?.id] || groupLabel} · ${['common', 'advanced', 'apex'][materialIndex] || 'special'} component`;
     const count = quantity.toLocaleString();
     let content = `<div class="material-tooltip-content">`;
     content += `<div class="material-tooltip-title">${safeName}</div>`;
-    content += `<div class="material-tooltip-meta"><span>${safeGroup}</span><strong>${count} / ${MATERIAL_STORAGE_CAP.toLocaleString()}</strong></div>`;
+    content += `<div class="material-tooltip-meta"><span>${escapeMaterialTooltipText(role)}</span><strong>${count} / ${MATERIAL_STORAGE_CAP.toLocaleString()}</strong></div>`;
 
     if (acquisition?.source) {
         content += `<div class="material-tooltip-section"><div class="material-tooltip-heading">Earliest known source</div>`;
@@ -207,7 +254,7 @@ function getMaterialStorageTooltipContent(itemName, groupLabel) {
 
     content += `<div class="material-tooltip-section"><div class="material-tooltip-heading">Known enemy drops</div>`;
     if (dropRows.length > 0) {
-        content += dropRows.map(row => `<div class="material-tooltip-source"><span>${escapeMaterialTooltipText(row.enemy)}</span><small>${escapeMaterialTooltipText(row.location)}</small></div>`).join('');
+        content += dropRows.map(row => `<div class="material-tooltip-source"><span>${escapeMaterialTooltipText(row.enemy)}</span><small>${escapeMaterialTooltipText(row.location)}${row.targeted ? ' · TARGETED' : ''}</small></div>`).join('');
     } else {
         content += `<div class="material-tooltip-muted">No enemy drop has been documented. Check gathering or fabrication sources above.</div>`;
     }
@@ -224,6 +271,8 @@ function updateMaterialInventoryDisplay() {
         const section = document.createElement('section');
         section.className = 'material-storage-group';
         section.dataset.materialGroup = group.id;
+        const isThematicLadder = !['foundational', 'exceptional'].includes(group.id);
+        if (isThematicLadder) section.classList.add('is-thematic-ladder');
 
         const heading = document.createElement('div');
         heading.className = 'material-storage-group-heading';
@@ -250,6 +299,13 @@ function updateMaterialInventoryDisplay() {
             icon.src = template?.icon || 'icons/default-icon.png';
             icon.alt = itemName;
             slot.appendChild(icon);
+
+            if (isThematicLadder) {
+                const stage = document.createElement('span');
+                stage.className = 'material-stage-badge';
+                stage.textContent = ['COMMON', 'ADVANCED', 'APEX'][index] || 'SPECIAL';
+                slot.appendChild(stage);
+            }
 
             const badge = document.createElement('div');
             badge.className = 'material-quantity-badge';

@@ -1,19 +1,12 @@
-const ZONE_POOL_CONFIG = {
-    1: { primary: 'z1Salvage', secondary: 'z1Circuits', maxTier: 3 },
-    2: { primary: 'z2Ore', secondary: 'z2Utility', maxTier: 3 },
-    3: { primary: 'z3Alloy', secondary: 'z3Energy', maxTier: 4 },
-    4: { primary: 'z4Contamination', secondary: 'z4Hazard', maxTier: 4 },
-    5: { primary: 'z5Transit', secondary: 'z5Targeting', maxTier: 5 },
-    6: { primary: 'z6BioCorrosion', secondary: 'z6Research', maxTier: 5 },
-    7: { primary: 'z7Phase', secondary: 'z7Spire', maxTier: 6 },
-    8: { primary: 'z8Storm', secondary: 'z8Furnace', maxTier: 6 },
-    9: { primary: 'z9Isotope', secondary: 'z9Cathedral', maxTier: 6 },
-    10: { primary: 'z10Titan', secondary: 'z10Core', maxTier: 6 },
-    11: { primary: 'z10Core', secondary: 'z10Titan', maxTier: 6 },
-    12: { primary: 'z10Titan', secondary: 'z10Core', maxTier: 6 },
-    13: { primary: 'z10Core', secondary: 'z10Titan', maxTier: 6 },
-    14: { primary: 'z10Titan', secondary: 'z10Core', maxTier: 6 }
-};
+const THEME_ADVANCED_MIN_ZONE = Object.freeze({
+    kinetic: 3,
+    slashing: 3,
+    electric: 3,
+    corrosive: 4,
+    pyro: 3,
+    cryo: 4,
+    radiation: 4
+});
 
 // Area-level pacing correction after simulating both entry-level and
 // end-of-band crafted loadouts through complete delves. These multipliers
@@ -38,7 +31,7 @@ const ZONE_COMBAT_TUNING = {
 const BLUEPRINTS = [
     { id: 'cb_scrapmite_drone', name: 'Scrapmite Drone', level: 1, zone: 1, damageType: 'kinetic', archetype: 'swarm' },
     { id: 'cb_bent_service_crawler', name: 'Bent Service Crawler', level: 2, zone: 1, damageType: 'slashing', archetype: 'balanced' },
-    { id: 'cb_sparking_loader_pup', name: 'Sparking Loader Pup', level: 3, zone: 1, damageType: 'electric', archetype: 'swarm' },
+    { id: 'cb_sparking_loader_pup', name: 'Sparking Loader Pup', level: 3, zone: 1, damageType: 'electric', lootFamilies: ['electric', 'pyro'], archetype: 'swarm' },
     { id: 'cb_junkyard_compactor', name: 'Junkyard Compactor', level: 5, zone: 1, damageType: 'kinetic', archetype: 'heavy' },
     { id: 'cb_rusted_maintenance_bot', name: 'Rusted Maintenance Bot', level: 6, zone: 2, damageType: 'kinetic', archetype: 'balanced' },
     { id: 'cb_copperline_skitter', name: 'Copperline Skitter', level: 7, zone: 2, damageType: 'electric', archetype: 'swarm' },
@@ -193,36 +186,47 @@ function applyArchetypeStats(level, archetype, baseHealth, baseShield, baseDamag
     };
 }
 
-function getLootConfig(zone, archetype) {
-    const pools = ZONE_POOL_CONFIG[zone];
-    const baseDropChance = Math.min(0.68 + zone * 0.03, 0.95);
+function getThemePoolName(damageType, stage) {
+    return `theme${damageType[0].toUpperCase()}${damageType.slice(1)}${stage}`;
+}
+
+function getLootConfig(zone, archetype, damageTypeOrFamilies) {
+    const progressionZone = Math.min(10, Math.max(1, zone));
+    const baseDropChance = Math.min(0.7 + progressionZone * 0.025, 0.95);
     const isHeavy = archetype === 'heavy' || archetype === 'heavyShield';
-
+    const damageTypes = Array.isArray(damageTypeOrFamilies) ? damageTypeOrFamilies : [damageTypeOrFamilies];
+    const commonThemePools = damageTypes.map(damageType => getThemePoolName(damageType, 'Common'));
+    const advancedThemePools = damageTypes
+        .filter(damageType => progressionZone >= THEME_ADVANCED_MIN_ZONE[damageType])
+        .map(damageType => getThemePoolName(damageType, 'Advanced'));
+    const apexThemePools = progressionZone >= 7
+        ? damageTypes.map(damageType => getThemePoolName(damageType, 'Apex'))
+        : [];
+    const identityPools = [...commonThemePools, ...advancedThemePools, ...apexThemePools];
+    if (progressionZone >= 5 && archetype === 'sniper') identityPools.push('exceptionalPrecision');
+    if (progressionZone >= 6 && ['shield', 'heavy', 'heavyShield'].includes(archetype)) identityPools.push('exceptionalTech');
+    if (progressionZone >= 9 && archetype === 'heavyShield') identityPools.push('exceptionalApex');
     const poolsByTier = {
-        1: [pools.primary],
-        2: [pools.secondary, 'basicComponents'],
-        3: ['midRobotParts'],
-        4: ['advancedComponents'],
-        5: ['epicTech'],
-        6: ['legendaryComponents']
+        1: [`foundationZ${progressionZone}`],
+        2: identityPools,
+        3: [
+            ...advancedThemePools,
+            ...(progressionZone >= 5 && archetype === 'sniper' ? ['exceptionalPrecision'] : []),
+            ...(progressionZone >= 6 && ['shield', 'heavy', 'heavyShield'].includes(archetype) ? ['exceptionalTech'] : [])
+        ],
+        4: [`legacyThemesZ${progressionZone}`, ...(progressionZone >= 5 ? ['exceptionalPrecision'] : [])],
+        5: progressionZone >= 6
+            ? [...apexThemePools, ...(['shield', 'heavy', 'heavyShield'].includes(archetype) ? ['exceptionalTech'] : [])]
+            : [],
+        6: progressionZone >= 9 && ['heavy', 'heavyShield'].includes(archetype) ? ['exceptionalApex'] : []
     };
-
-    for (let tier = pools.maxTier + 1; tier <= 6; tier++) {
-        poolsByTier[tier] = [];
-    }
-
-    if (zone >= 8) {
-        poolsByTier[5] = [pools.secondary, 'epicTech'];
-    }
-
-    if (zone >= 9) {
-        poolsByTier[6] = [pools.secondary, 'legendaryComponents'];
-    }
 
     return {
         baseDropChance,
-        minItems: zone >= 11 ? 3 : (zone >= 6 ? 2 : 1),
-        maxItems: zone >= 11 ? (isHeavy ? 5 : 4) : (isHeavy ? 3 : (zone >= 8 ? 3 : 2)),
+        minItems: zone >= 11 ? 3 : (progressionZone >= 4 ? 2 : 1),
+        maxItems: zone >= 11
+            ? (isHeavy ? 6 : 5)
+            : (isHeavy ? (progressionZone >= 7 ? 5 : 4) : (progressionZone >= 7 ? 4 : 3)),
         poolsByTier
     };
 }
@@ -299,7 +303,7 @@ function toEnemy(blueprint) {
             [blueprint.damageType]: Math.max(1, Math.round(tunedStats.damage * zoneTuning.damage))
         },
         defenseTypes: getDefenses(blueprint.level, blueprint.damageType),
-        lootConfig: getLootConfig(blueprint.zone, blueprint.archetype),
+        lootConfig: getLootConfig(blueprint.zone, blueprint.archetype, blueprint.lootFamilies || blueprint.damageType),
         currencyDrop: getCurrencyDrop(blueprint.zone, blueprint.level),
         experienceValue: getExperienceValue(blueprint.zone, blueprint.archetype),
         statusEffects: [],

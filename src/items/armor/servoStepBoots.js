@@ -11,7 +11,7 @@ export default {
     disassembleResults: [
         { name: 'Titanium Plating', quantity: 1 },
         { name: 'Advanced Servo', quantity: 1 },
-        { name: 'Small Power Cell', quantity: 1 }
+        { name: 'Wire Bundle', quantity: 2 }
     ],
     description: 'Servo-step boots that sharpen rhythm and footing without sacrificing control.'
 };

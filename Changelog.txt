@@ -1,3 +1,21 @@
+8/8/26
+
+Changes:
+
+rebuilt fabrication around scaling foundational costs and compact thematic recipes
+added common, advanced, and apex material ladders for all seven damage families
+enemy damage identities now determine their best targeted material drops
+higher-level delves now retain earlier materials and drop foundations in larger stacks
+reorganized material storage around material roles and progression stages
+Marty now sells unlocked foundational materials in bulk quantities of 1, 10, or 50
+retired thirteen redundant materials and added automatic save conversion for existing stockpiles
+
+Fixes:
+
+Flame Shell now has practical targeted sources at early, mid, and high progression
+late recipes no longer expand into thirteen-ingredient grocery lists
+material drop stack ranges are now visible in the enemy Codex
+
 8/7/26
 
 Changes:

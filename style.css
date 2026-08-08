@@ -600,6 +600,11 @@ hr {
     padding: 0;
 }
 
+.material-storage-group.is-thematic-ladder .material-storage-grid {
+    grid-template-columns: repeat(3, minmax(68px, 86px));
+    justify-content: start;
+}
+
 .material-storage-slot {
     aspect-ratio: 1;
     min-width: 0;
@@ -655,6 +660,24 @@ hr {
     padding: 3px 4px;
     border-radius: 8px;
     background: rgba(0, 12, 31, 0.9);
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+
+.material-stage-badge {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    max-width: calc(100% - 6px);
+    overflow: hidden;
+    color: #79a9c3;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 7px;
+    letter-spacing: 0.03em;
+    line-height: 1;
+    padding: 3px 4px;
+    border-radius: 6px;
+    background: rgba(0, 12, 31, 0.86);
     text-overflow: ellipsis;
     pointer-events: none;
 }
@@ -755,6 +778,10 @@ hr {
 @media (max-width: 520px) {
     .material-storage-grid {
         grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .material-storage-group.is-thematic-ladder .material-storage-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
     .material-storage-group-heading {
@@ -3546,6 +3573,17 @@ hr {
     transition: all 0.2s ease;
     width: 100%;
     font-family: 'Orbitron', sans-serif;
+}
+
+.shop-purchase-controls {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: auto;
+}
+
+.shop-purchase-controls .shop-buy-button:only-child {
+    grid-column: 1 / -1;
 }
 
 .shop-buy-button:hover:not(:disabled) {

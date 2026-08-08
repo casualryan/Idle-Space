@@ -9,6 +9,5 @@ export default {
   defenseTypes: { physicalResistance: { min: 17, max: 24 } },
   statModifiers: { damageTypes: { slashing: { min: 24, max: 32 } } },
   isDisassembleable: true,
-  disassembleResults: [{ name: "Nanite Cluster", quantity: 1 }, { name: "Neural Processor", quantity: 1 }]
+  disassembleResults: [{ name: "Nanite Cluster", quantity: 1 }, { name: "Neural Network Module", quantity: 1 }]
 };
-

@@ -12,8 +12,8 @@ const gatheringActivities = [
         experience: 5,
         requiredLevel: 1,
         rareFind: {
-            name: "Pristine Metal Plate",
-            quantity: 1
+            name: "Scrap Metal",
+            quantity: 3
         }
     },
     {
@@ -27,8 +27,8 @@ const gatheringActivities = [
         experience: 8,
         requiredLevel: 3,
         rareFind: {
-            name: "Pure Iron Nugget",
-            quantity: 1
+            name: "Iron Ore",
+            quantity: 3
         }
     },
     {
@@ -42,8 +42,8 @@ const gatheringActivities = [
         experience: 10,
         requiredLevel: 5,
         rareFind: {
-            name: "Copper Vein Sample",
-            quantity: 1
+            name: "Copper Ore",
+            quantity: 3
         }
     },
     {
@@ -57,8 +57,8 @@ const gatheringActivities = [
         experience: 15,
         requiredLevel: 10,
         rareFind: {
-            name: "Titanium Alloy Fragment",
-            quantity: 1
+            name: "Titanium",
+            quantity: 2
         }
     },
     {

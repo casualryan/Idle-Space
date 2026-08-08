@@ -13,7 +13,7 @@ export default {
     disassembleResults: [
         { name: 'Scrap Metal', quantity: 5 },
         { name: 'Titanium', quantity: 1 },
-        { name: 'Basic Sensor Array', quantity: 1 }
+        { name: 'Targeting Module', quantity: 1 }
     ],
     description: 'Steel helm with sensor arrays that sharpen accuracy under pressure.'
 };

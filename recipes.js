@@ -1,168 +1,25 @@
+// Older authored outputs that predate the generated level 1-50 equipment spine.
+// Their ingredient maps are built by the same economy rules as every other recipe.
 const recipes = [
-    {
-        name: "Makeshift Laser Sword",
-        category: "Weapons",
-        levelRequirement: 1,
-        ingredients: {
-            "Crystalized Light": 1,
-            "Scrap Metal": 5,
-            "Minor Electronic Circuit": 2,
-            "Partical Fuser": 1
-        }
-    },
-    {
-        name: "Metal Carapace",
-        category: "Armor",
-        ingredients: {
-            "Scrap Metal": 15,
-            "Partical Fuser": 1
-        }
-    },
-    {
-        name: "Partical Fuser",
-        category: "Material",
-        ingredients: {
-            "Scrap Metal": 20,
-            "Unstable Photon": 4
-        }
-    },
-    {
-        name: "Reaction Enhancer",
-        category: "Bionics",
-        ingredients: {
-            "Scrap Metal": 10,
-            "Partical Fuser": 1
-        },
-        craftingTime: 5
-    },
-    {
-        name: "Health Exchanger",
-        category: "Bionics",
-        ingredients: {
-            "Scrap Metal": 10,
-            "Partical Fuser": 1
-        },
-        craftingTime: 5
-    },
-    {
-        name: "Kinetic Booster",
-        category: "Bionics",
-        ingredients: {
-            "Scrap Metal": 3
-        }
-    },
-    {
-        name: "Heavy Metal Boots",
-        category: "Boots",
-        ingredients: {
-            "Scrap Metal": 5,
-            "Partical Fuser": 1
-        }
-    },
-    {
-        name: "Scorpion Sword",
-        category: "Weapons",
-        ingredients: {
-            "Metal Scorpion Fang": 1,
-            "Scrap Metal": 5,
-            "Minor Electronic Circuit": 2,
-            "Partical Fuser": 1
-        }
-    },
-    {
-        name: "Fire Spewer Mk1",
-        category: "Weapons",
-        ingredients: {
-            "Flame Shell": 2,
-            "Pyro Core": 1,
-            "Partical Fuser": 1,
-            "Scrap Metal": 5
-        }
-    },
-    {
-        name: "Scrap Metal Boots",
-        category: "Scrap Armor",
-        ingredients: {
-            "Scrap Metal": 4
-        }
-    },
-    {
-        name: "Scrap Metal Helmet",
-        category: "Scrap Armor",
-        ingredients: {
-            "Scrap Metal": 8
-        }
-    },
-    {
-        name: "Scrap Metal Trousers",
-        category: "Scrap Armor",
-        ingredients: {
-            "Scrap Metal": 8
-        }
-    },
-    {
-        name: "Scrap Chest Plate",
-        category: "Scrap Armor",
-        ingredients: {
-            "Scrap Metal": 10
-        }
-    },
-    {
-        name: "Cryo Booster",
-        category: "Bionics",
-        ingredients: {
-            "Scrap Metal": 3,
-            "Partical Fuser": 1
-        }
-    },
-    {
-        name: "Electric Booster",
-        category: "Bionics",
-        ingredients: {
-            "Scrap Metal": 3,
-            "Partical Fuser": 1
-        }
-    },
-    {
-        name: "Slashing Booster",
-        category: "Bionics",
-        ingredients: {
-            "Scrap Metal": 3,
-            "Partical Fuser": 1
-        }
-    },
-    {
-        name: "Chemical Booster",
-        category: "Bionics",
-        ingredients: {
-            "Scrap Metal": 3,
-            "Partical Fuser": 1
-        }
-    },
-    {
-        name: "Radiation Booster",
-        category: "Bionics",
-        ingredients: {
-            "Scrap Metal": 3,
-            "Partical Fuser": 1
-        }
-    },
-    {
-        name: "Health Module",
-        category: "Bionics",
-        ingredients: {
-            "Scrap Metal": 3,
-            "Partical Fuser": 1
-        }
-    },
-    {
-        name: "Pyro Booster",
-        category: "Bionics",
-        ingredients: {
-            "Scrap Metal": 3,
-            "Partical Fuser": 1
-        }
-    }
+    { name: 'Makeshift Laser Sword', category: 'Weapons', levelRequirement: 1 },
+    { name: 'Metal Carapace', category: 'Armor' },
+    { name: 'Reaction Enhancer', category: 'Bionics', craftingTime: 5 },
+    { name: 'Health Exchanger', category: 'Bionics', craftingTime: 5 },
+    { name: 'Kinetic Booster', category: 'Bionics' },
+    { name: 'Heavy Metal Boots', category: 'Boots' },
+    { name: 'Scorpion Sword', category: 'Weapons' },
+    { name: 'Fire Spewer Mk1', category: 'Weapons' },
+    { name: 'Scrap Metal Boots', category: 'Scrap Armor' },
+    { name: 'Scrap Metal Helmet', category: 'Scrap Armor' },
+    { name: 'Scrap Metal Trousers', category: 'Scrap Armor' },
+    { name: 'Scrap Chest Plate', category: 'Scrap Armor' },
+    { name: 'Cryo Booster', category: 'Bionics' },
+    { name: 'Electric Booster', category: 'Bionics' },
+    { name: 'Slashing Booster', category: 'Bionics' },
+    { name: 'Chemical Booster', category: 'Bionics' },
+    { name: 'Radiation Booster', category: 'Bionics' },
+    { name: 'Health Module', category: 'Bionics' },
+    { name: 'Pyro Booster', category: 'Bionics' }
 ];
 
 const baselineArmorItems = [
@@ -411,224 +268,132 @@ function inferTheme(name) {
     return "physical";
 }
 
-function addBandCore(ingredients, band, domain) {
-    if (band === 1) {
-        addIngredient(ingredients, "Scrap Metal", domain === "armor" ? 3 : 2);
-        addIngredient(ingredients, "Metal Fasteners", 1);
-        if (domain !== "armor") addIngredient(ingredients, "Wire Bundle", 1);
-        return;
-    }
+const FABRICATION_FOUNDATION_BANDS = Object.freeze({
+    1: Object.freeze({ structure: 2, fasteners: 1, wire: 1 }),
+    2: Object.freeze({ structure: 4, fasteners: 2, wire: 2 }),
+    3: Object.freeze({ structure: 7, fasteners: 4, wire: 3 }),
+    4: Object.freeze({ structure: 13, fasteners: 8, wire: 6 }),
+    5: Object.freeze({ structure: 20, fasteners: 12, wire: 9 }),
+    6: Object.freeze({ structure: 28, fasteners: 18, wire: 12 })
+});
 
-    if (band === 2) {
-        addIngredient(ingredients, "Scrap Metal", domain === "armor" ? 5 : 4);
-        addIngredient(ingredients, "Iron Ore", 2);
-        addIngredient(ingredients, "Copper Ore", 1);
-        addIngredient(ingredients, "Metal Fasteners", 1);
-        addIngredient(ingredients, "Basic Servo", 1);
-        return;
-    }
+const FABRICATION_THEME_LADDERS = Object.freeze({
+    kinetic: Object.freeze(['Stabilizer', 'Advanced Barrel', 'Precision Mechanism']),
+    slashing: Object.freeze(['Titanium Thorn', 'Metal Scorpion Fang', 'Enhanced Cutting Edge']),
+    pyro: Object.freeze(['Flame Shell', 'Pyro Core', 'Flux Crystal']),
+    cryo: Object.freeze(['Cryo Cell', 'Unstable Phase Core', 'Temporal Stabilizer']),
+    electric: Object.freeze(['Copper Coil', 'High-Density Power Cell', 'Quantum Capacitor']),
+    chemical: Object.freeze(['Toxic Residue', 'Synthetic Poison Gland', 'Synthetic Biofluid']),
+    radiation: Object.freeze(['Unstable Photon', 'Crystalized Light', 'Nanite Cluster'])
+});
 
-    if (band === 3) {
-        addIngredient(ingredients, "Iron Ore", domain === "armor" ? 4 : 3);
-        addIngredient(ingredients, "Copper Ore", 3);
-        addIngredient(ingredients, "Titanium", domain === "armor" ? 3 : 2);
-        addIngredient(ingredients, "Minor Electronic Circuit", 2);
-        addIngredient(ingredients, "Small Power Cell", 1);
-        addIngredient(ingredients, "Copper Coil", 1);
-        addIngredient(ingredients, "Stabilizer", 1);
-        return;
-    }
+const FABRICATION_THEME_SOURCE_LEVELS = Object.freeze({
+    kinetic: Object.freeze([1, 11, 31]),
+    slashing: Object.freeze([1, 11, 31]),
+    electric: Object.freeze([1, 11, 31]),
+    chemical: Object.freeze([6, 16, 31]),
+    pyro: Object.freeze([1, 11, 31]),
+    cryo: Object.freeze([16, 16, 31]),
+    radiation: Object.freeze([16, 16, 31])
+});
 
-    if (band === 4) {
-        addIngredient(ingredients, "Titanium", 6);
-        addIngredient(ingredients, "Titanium Plating", 3);
-        addIngredient(ingredients, "Advanced Servo", domain === "armor" ? 2 : 3);
-        addIngredient(ingredients, "Targeting Module", 1);
-        addIngredient(ingredients, "Power Converter", 2);
-        addIngredient(ingredients, "Neural Processor", 1);
-        return;
-    }
+const FABRICATION_THEME_QUANTITIES = Object.freeze({
+    1: Object.freeze([1, 0, 0]),
+    2: Object.freeze([2, 0, 0]),
+    3: Object.freeze([3, 1, 0]),
+    4: Object.freeze([4, 2, 0]),
+    5: Object.freeze([6, 3, 1]),
+    6: Object.freeze([8, 4, 2])
+});
 
-    if (band === 5) {
-        addIngredient(ingredients, "Quantum Capacitor", 3);
-        addIngredient(ingredients, "High-Density Power Cell", 3);
-        addIngredient(ingredients, "Neural Network Module", 2);
-        addIngredient(ingredients, "Phase Converter", 2);
-        addIngredient(ingredients, "Advanced Servo", 3);
-        addIngredient(ingredients, "Power Converter", 2);
-        if (domain !== "armor") addIngredient(ingredients, "AI Core Fragment", 1);
-        return;
-    }
+const LEGACY_RECIPE_LEVELS = Object.freeze({
+    'Makeshift Laser Sword': 1,
+    'Metal Carapace': 20,
+    'Reaction Enhancer': 4,
+    'Health Exchanger': 5,
+    'Kinetic Booster': 1,
+    'Heavy Metal Boots': 10,
+    'Scorpion Sword': 15,
+    'Fire Spewer Mk1': 10,
+    'Scrap Metal Boots': 1,
+    'Scrap Metal Helmet': 1,
+    'Scrap Metal Trousers': 1,
+    'Scrap Chest Plate': 1,
+    'Cryo Booster': 1,
+    'Electric Booster': 1,
+    'Slashing Booster': 1,
+    'Chemical Booster': 1,
+    'Radiation Booster': 1,
+    'Health Module': 1,
+    'Pyro Booster': 1
+});
 
-    addIngredient(ingredients, "Quantum Core", 3);
-    addIngredient(ingredients, "Temporal Stabilizer", 2);
-    addIngredient(ingredients, "Nanite Cluster", 3);
-    addIngredient(ingredients, "Flux Crystal", 3);
-    addIngredient(ingredients, "Phase Converter", 3);
-    addIngredient(ingredients, "AI Core Fragment", 2);
-    addIngredient(ingredients, "Synthetic Biofluid", 2);
-    addIngredient(ingredients, "Neural Network Module", 3);
-    addIngredient(ingredients, "High-Density Power Cell", 3);
-    addIngredient(ingredients, "Quantum Capacitor", 3);
+function getFoundationIdentityMaterial(level, family, category) {
+    const band = getLevelBand(level);
+    if (category === 'Boots' || category === 'Gloves') {
+        return band <= 3 ? 'Basic Servo' : 'Advanced Servo';
+    }
+    if (category === 'Helmets' || category === 'Bionics') {
+        return band <= 3 ? 'Minor Electronic Circuit' : 'Advanced Electronic Circuit';
+    }
+    if (band === 1) return 'Scrap Metal';
+    if (band === 2) return ['pyro', 'cryo', 'electric', 'radiation'].includes(family) ? 'Copper Ore' : 'Iron Ore';
+    if (band === 3) return 'Titanium';
+    if (band === 4) return 'Titanium Plating';
+    return 'Advanced Alloy';
 }
 
-function addThemeIngredients(ingredients, band, theme, domain, family, level) {
-    if (family === "kinetic") {
-        if (level >= 10) {
-            addIngredient(ingredients, band <= 2 ? "Pristine Metal Plate" : "Titanium Plating", band <= 3 ? 1 : 2);
-            addIngredient(ingredients, "Advanced Servo", band >= 4 ? 2 : 1);
-        } else if (band > 2) {
-            addIngredient(ingredients, "Titanium Plating", band <= 3 ? 1 : 2);
-        }
-        if (band >= 6) addIngredient(ingredients, "Quantum Core", 2);
-        return;
-    }
-
-    if (family === "slashing") {
-        if (band >= 2) addIngredient(ingredients, "Titanium Thorn", band <= 3 ? 1 : 2);
-        if (band >= 3) addIngredient(ingredients, "Metal Scorpion Fang", 1);
-        if (band >= 4) addIngredient(ingredients, "Phase Converter", 2);
-        if (band >= 6) addIngredient(ingredients, "Nanite Cluster", 2);
-        return;
-    }
-
-    if (family === "pyro") {
-        addIngredient(ingredients, "Flame Shell", band <= 3 ? 1 : 2);
-        if (band <= 2) addIngredient(ingredients, "Small Power Cell", 1);
-        if (band >= 3) addIngredient(ingredients, "Pyro Core", 1);
-        if (band >= 3 && band <= 4) addIngredient(ingredients, "Power Converter", 1);
-        if (band >= 5) addIngredient(ingredients, "High-Density Power Cell", 2);
-        if (band >= 6) addIngredient(ingredients, "Flux Crystal", 2);
-        return;
-    }
-
-    if (family === "cryo") {
-        addIngredient(ingredients, "Stabilizer", band <= 3 ? 2 : 3);
-        if (band >= 3) addIngredient(ingredients, "Power Converter", 2);
-        if (band >= 5) addIngredient(ingredients, "Quantum Capacitor", 2);
-        if (band >= 6) addIngredient(ingredients, "Temporal Stabilizer", 2);
-        return;
-    }
-
-    if (family === "electric") {
-        addIngredient(ingredients, "Copper Coil", band <= 3 ? 2 : 3);
-        addIngredient(ingredients, band <= 3 ? "Small Power Cell" : "High-Density Power Cell", band <= 3 ? 1 : 2);
-        if (band >= 3) addIngredient(ingredients, "Power Converter", 2);
-        if (band >= 5) addIngredient(ingredients, "Quantum Capacitor", 2);
-        return;
-    }
-
-    if (family === "chemical") {
-        addIngredient(ingredients, "Synthetic Poison Gland", band <= 3 ? 1 : 2);
-        if (band >= 4) addIngredient(ingredients, "Synthetic Biofluid", 2);
-        if (band >= 3) addIngredient(ingredients, "Power Converter", 2);
-        if (band >= 6) addIngredient(ingredients, "Nanite Cluster", 2);
-        return;
-    }
-
-    if (family === "radiation") {
-        addIngredient(ingredients, "Unstable Photon", band <= 3 ? 1 : 2);
-        if (band >= 3) addIngredient(ingredients, "Crystalized Light", band >= 4 ? 2 : 1);
-        if (band >= 4) addIngredient(ingredients, "AI Core Fragment", 2);
-        if (band >= 6) {
-            addIngredient(ingredients, "Quantum Core", 2);
-            addIngredient(ingredients, "Temporal Stabilizer", 2);
-        }
-        return;
-    }
-
-    if (theme === "radiation") {
-        addIngredient(ingredients, "Unstable Photon", band <= 3 ? 1 : 2);
-        if (band >= 3) addIngredient(ingredients, "Crystalized Light", band >= 4 ? 2 : 1);
-        if (band >= 4) addIngredient(ingredients, "AI Core Fragment", 1);
-        if (band >= 5) addIngredient(ingredients, "Neural Network Module", 1);
-        return;
-    }
-
-    if (theme === "chemical") {
-        addIngredient(ingredients, "Synthetic Poison Gland", band <= 3 ? 1 : 2);
-        if (band >= 4) addIngredient(ingredients, "Synthetic Biofluid", band >= 5 ? 2 : 1);
-        if (band >= 5) addIngredient(ingredients, "Nanite Cluster", 1);
-        return;
-    }
-
-    if (theme === "cryo") {
-        addIngredient(ingredients, "Stabilizer", band <= 3 ? 1 : 2);
-        if (band >= 3) addIngredient(ingredients, "Power Converter", band >= 4 ? 2 : 1);
-        if (band >= 6) addIngredient(ingredients, "Temporal Stabilizer", 1);
-        return;
-    }
-
-    if (theme === "electric") {
-        addIngredient(ingredients, "Copper Coil", band <= 3 ? 1 : 2);
-        if (band >= 3) addIngredient(ingredients, "Power Converter", band >= 4 ? 2 : 1);
-        if (band >= 5) addIngredient(ingredients, "Quantum Capacitor", 1);
-        return;
-    }
-
-    if (theme === "pyro") {
-        addIngredient(ingredients, "Flame Shell", band <= 3 ? 1 : 2);
-        if (band >= 3) addIngredient(ingredients, "Pyro Core", 1);
-        if (band >= 6) addIngredient(ingredients, "Flux Crystal", 1);
-        return;
-    }
-
-    if (theme === "slashing") {
-        if (band >= 2) addIngredient(ingredients, "Titanium Thorn", band <= 3 ? 1 : 2);
-        if (band >= 4) addIngredient(ingredients, "Phase Converter", 1);
-        return;
-    }
-
-    if (theme === "utility") {
-        addIngredient(ingredients, "Basic Sensor Array", band <= 3 ? 1 : 2);
-        addIngredient(ingredients, "Targeting Module", band >= 4 ? 2 : 1);
-        if (band >= 5) addIngredient(ingredients, "Neural Network Module", 1);
-        return;
-    }
-
-    if (level >= 10) {
-        addIngredient(ingredients, "Pristine Metal Plate", band <= 3 ? 1 : 2);
-    }
-    if (band >= 4) addIngredient(ingredients, "Titanium Plating", 1);
+function normalizeFabricationFamily(family, name) {
+    const candidate = family || inferTheme(name);
+    if (candidate === 'physical') return 'kinetic';
+    return FABRICATION_THEME_LADDERS[candidate] ? candidate : null;
 }
 
-function addSlotIngredients(ingredients, band, category, level) {
-    if (category === "Boots") {
-        addIngredient(ingredients, "Basic Servo", band <= 3 ? 1 : 0);
-        addIngredient(ingredients, "Advanced Servo", level >= 10 && band >= 4 ? 1 : 0);
-        addIngredient(ingredients, "Stabilizer", band >= 3 ? 1 : 0);
-    } else if (category === "Helmets") {
-        addIngredient(ingredients, "Basic Sensor Array", band <= 3 ? 1 : 0);
-        addIngredient(ingredients, "Targeting Module", band >= 4 ? 1 : 0);
-        addIngredient(ingredients, "Neural Processor", band >= 4 ? 1 : 0);
-    } else if (category === "Gloves") {
-        addIngredient(ingredients, "Wire Bundle", 1);
-        addIngredient(ingredients, "Metal Fasteners", band <= 4 ? 1 : 0);
-        addIngredient(ingredients, "Basic Servo", band >= 2 && band <= 4 ? 1 : 0);
-        addIngredient(ingredients, "Advanced Servo", level >= 10 && band >= 5 ? 1 : 0);
-    } else if (category === "Shields") {
-        addIngredient(ingredients, band <= 3 ? "Small Power Cell" : "High-Density Power Cell", band <= 3 ? 1 : 2);
-        if (band >= 3) addIngredient(ingredients, "Power Converter", band >= 4 ? 2 : 1);
-        addIngredient(ingredients, "Stabilizer", 1);
-    } else {
-        addIngredient(ingredients, "Titanium Plating", band >= 3 ? 1 : 0);
+function getExceptionalIngredient(name, level) {
+    const lower = name.toLowerCase();
+    if (level >= 41 && /(quantum|singularity)/.test(lower)) return 'Quantum Core';
+    if (level >= 31 && /(phase|entropy)/.test(lower)) return 'Phase Converter';
+    if (level >= 31 && /(omni|aegis)/.test(lower)) return 'Neural Network Module';
+    if (level >= 26 && /(neural|command|calibrated|adaptive|reflex)/.test(lower)) return 'AI Core Fragment';
+    if (level >= 21 && /(target|visor|sight)/.test(lower)) return 'Targeting Module';
+    return null;
+}
+
+function buildEconomyIngredients(name, level, family, category = '') {
+    const band = getLevelBand(level);
+    const foundation = FABRICATION_FOUNDATION_BANDS[band];
+    const normalizedFamily = normalizeFabricationFamily(family, name);
+    const ingredients = {};
+
+    addIngredient(ingredients, getFoundationIdentityMaterial(level, normalizedFamily, category), foundation.structure);
+    addIngredient(ingredients, 'Metal Fasteners', foundation.fasteners);
+    addIngredient(ingredients, 'Wire Bundle', foundation.wire);
+
+    if (!normalizedFamily) {
+        const exceptional = getExceptionalIngredient(name, level) || (level >= 21 ? 'Targeting Module' : 'Stabilizer');
+        if (exceptional) addIngredient(ingredients, exceptional, band >= 6 ? 2 : 1);
+        return ingredients;
     }
+
+    const ladder = FABRICATION_THEME_LADDERS[normalizedFamily];
+    const sourceLevels = FABRICATION_THEME_SOURCE_LEVELS[normalizedFamily];
+    const quantities = FABRICATION_THEME_QUANTITIES[band];
+    const exceptional = getExceptionalIngredient(name, level);
+
+    ladder.forEach((materialName, index) => {
+        if (quantities[index] <= 0 || level < sourceLevels[index]) return;
+        if (index === 2 && exceptional) return;
+        addIngredient(ingredients, materialName, quantities[index]);
+    });
+    if (exceptional) addIngredient(ingredients, exceptional, band >= 6 ? 2 : 1);
+    return ingredients;
 }
 
 function createProgressionRecipe({ name, level, category, family }) {
-    const band = getLevelBand(level);
-    const theme = inferTheme(name);
-    const domain = category === "Weapons" ? "weapon" : "armor";
-    const ingredients = {};
-
-    addBandCore(ingredients, band, domain);
-    addSlotIngredients(ingredients, band, category, level);
-    addThemeIngredients(ingredients, band, theme, domain, family, level);
-
     return {
         name,
         category,
-        ingredients,
+        ingredients: buildEconomyIngredients(name, level, family, category),
         damageFocus: family ? family : undefined
     };
 }
@@ -671,12 +436,17 @@ function inferDamageFocusByName(name) {
 const recipeByName = new Map();
 for (const recipe of [...recipes, ...baselineRecipes]) {
     const mergedRecipe = { ...recipe };
+    const baseline = [...baselineArmorItems, ...baselineWeaponItems, ...baselineOffHandItems]
+        .find(item => item.name === mergedRecipe.name);
+    const level = Number(baseline?.level || LEGACY_RECIPE_LEVELS[mergedRecipe.name] || mergedRecipe.levelRequirement || 1);
     if (mergedRecipe.category === "Weapons" || mergedRecipe.category === "Shields") {
         const legacyFocus = LEGACY_RECIPE_DAMAGE_FOCUS[mergedRecipe.name];
         mergedRecipe.damageFocus = normalizeRecipeDamageFocus(mergedRecipe.damageFocus)
             || normalizeRecipeDamageFocus(legacyFocus)
             || inferDamageFocusByName(mergedRecipe.name);
     }
+    const authoredFamily = baseline?.family || mergedRecipe.damageFocus;
+    mergedRecipe.ingredients = buildEconomyIngredients(mergedRecipe.name, level, authoredFamily, mergedRecipe.category);
     recipeByName.set(mergedRecipe.name, mergedRecipe);
 }
 

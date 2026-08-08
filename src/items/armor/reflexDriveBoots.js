@@ -10,7 +10,7 @@ export default {
     deflection: { min: 4, max: 6 },
     isDisassembleable: true,
     disassembleResults: [
-        { name: 'Neural Processor', quantity: 1 },
+        { name: 'Neural Network Module', quantity: 1 },
         { name: 'Quantum Capacitor', quantity: 1 },
         { name: 'Minor Electronic Circuit', quantity: 2 }
     ],

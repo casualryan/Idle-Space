@@ -255,6 +255,14 @@ function validateCoreboundContent(registries = {}) {
         for (const entry of pool?.items || []) {
             if (!itemNames.has(entry?.itemName)) report('loot pool', poolName, `unknown item: ${entry?.itemName}`);
             if (!(Number(entry?.weight) > 0)) report('loot pool', poolName, `invalid weight for ${entry?.itemName}`);
+            const minimumQuantity = Number(entry?.minQuantity ?? 1);
+            const maximumQuantity = Number(entry?.maxQuantity ?? minimumQuantity);
+            if (!Number.isInteger(minimumQuantity) || minimumQuantity < 1) {
+                report('loot pool', poolName, `invalid minimum quantity for ${entry?.itemName}`);
+            }
+            if (!Number.isInteger(maximumQuantity) || maximumQuantity < minimumQuantity) {
+                report('loot pool', poolName, `invalid maximum quantity for ${entry?.itemName}`);
+            }
         }
     }
 

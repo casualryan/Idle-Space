@@ -11,7 +11,7 @@ export default {
     healthRegen: { min: 0.4, max: 0.7 },
     isDisassembleable: true,
     disassembleResults: [
-        { name: 'Neural Processor', quantity: 1 },
+        { name: 'Neural Network Module', quantity: 1 },
         { name: 'Synthetic Biofluid', quantity: 2 }
     ],
     description: 'Biohazard tread boots for contaminated zones—protection with steady recovery.'

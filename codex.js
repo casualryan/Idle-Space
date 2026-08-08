@@ -45,6 +45,8 @@
             title: 'Fabrication',
             sections: [
                 ['Crafting', 'The fabricator runs exactly one job at a time. Every fabrication takes five seconds. Ingredients are reserved when fabrication begins, and cancelling returns all reserved ingredients.'],
+                ['Recipe Economy', 'Most recipes use a bulk foundation of fasteners, wiring, and one slot-appropriate construction material. Higher-level recipes require larger stockpiles rather than wider lists of unrelated parts.'],
+                ['Thematic Components', 'Each damage family has a common, advanced, and apex material. Later matching enemies continue dropping earlier components in larger stacks. Exceptional technology appears only in equipment with unusual identities.'],
                 ['Requirements', 'A learned recipe may be fabricated at any level. Items whose level requirement is not met can be crafted and stored, but cannot yet be equipped. Each listed ingredient includes its earliest documented acquisition source.'],
                 ['Saving', 'Active fabrications preserve their remaining time when saved and do not advance while the game is closed.']
             ]
@@ -190,7 +192,7 @@
         return Object.values(LOOT_TIERS).find(tier => Number(tier.id) === Number(tierId)) || null;
     }
 
-    function calculateItemRollOdds(config) {
+    function calculateItemRollOdds(config, enemy) {
         const viableTiers = Object.entries(config?.poolsByTier || {}).map(([tierId, poolNames]) => {
             const pools = (poolNames || [])
                 .map(name => ({ name, items: getPoolItems(name) }))
@@ -209,9 +211,20 @@
                 const totalItemWeight = pool.items.reduce((sum, item) => sum + (Number(item.weight) || 1), 0) || 1;
                 pool.items.forEach(item => {
                     const itemChance = tierChance * poolChance * ((Number(item.weight) || 1) / totalItemWeight);
-                    const previous = odds.get(item.itemName) || { name: item.itemName, chance: 0, tiers: new Set() };
+                    const quantityRange = typeof getLootQuantityRange === 'function'
+                        ? getLootQuantityRange(item, enemy)
+                        : { min: Number(item.minQuantity) || 1, max: Number(item.maxQuantity) || Number(item.minQuantity) || 1 };
+                    const previous = odds.get(item.itemName) || {
+                        name: item.itemName,
+                        chance: 0,
+                        tiers: new Set(),
+                        minQuantity: quantityRange.min,
+                        maxQuantity: quantityRange.max
+                    };
                     previous.chance += itemChance;
                     previous.tiers.add(entry.tier?.name || `Tier ${entry.tierId}`);
+                    previous.minQuantity = Math.min(previous.minQuantity, quantityRange.min);
+                    previous.maxQuantity = Math.max(previous.maxQuantity, quantityRange.max);
                     odds.set(item.itemName, previous);
                 });
             });
@@ -333,19 +346,22 @@
 
             const oddsGrid = document.createElement('div');
             oddsGrid.className = 'enemy-loot-grid';
-            calculateItemRollOdds(config).forEach(item => {
+            calculateItemRollOdds(config, enemy).forEach(item => {
                 const row = document.createElement('div');
                 row.className = 'enemy-loot-item';
                 const chance = item.chance * 100;
                 const chanceLabel = chance < 1 ? chance.toFixed(1) : chance.toFixed(0);
-                row.innerHTML = `<div><strong>${item.name}</strong><span>${item.tiers.join(' / ')}</span></div><b>${chanceLabel}%</b>`;
+                const quantityLabel = item.minQuantity === item.maxQuantity
+                    ? `×${item.minQuantity}`
+                    : `×${item.minQuantity}–${item.maxQuantity}`;
+                row.innerHTML = `<div><strong>${item.name}</strong><span>${item.tiers.join(' / ')} · ${quantityLabel}</span></div><b>${chanceLabel}%</b>`;
                 row.title = 'Chance for each generated item after this enemy succeeds on its base loot roll.';
                 oddsGrid.appendChild(row);
             });
             loot.appendChild(oddsGrid);
             const note = document.createElement('p');
             note.className = 'enemy-loot-note';
-            note.textContent = 'Percentages are per generated item. Empowered enemies increase the base loot chance by 50%, up to 100%.';
+            note.textContent = 'Percentages are per generated stack after the base loot roll. Stack ranges scale with enemy progression. Empowered enemies increase both loot chance and stack size.';
             loot.appendChild(note);
             stats.appendChild(loot);
         }

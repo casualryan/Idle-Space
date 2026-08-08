@@ -172,7 +172,7 @@ function selectLootPool(enemy, tier) {
  * @param {string} poolName - The name of the loot pool
  * @return {string|null} The selected item name or null if pool not found
  */
-function selectItemFromPool(poolName) {
+function selectLootEntryFromPool(poolName) {
     const pool = LOOT_POOLS[poolName];
     if (!pool || !pool.items || pool.items.length === 0) {
         return null;
@@ -189,12 +189,37 @@ function selectItemFromPool(poolName) {
     for (const item of pool.items) {
         cumulativeWeight += (item.weight || 1);
         if (roll <= cumulativeWeight) {
-            return item.itemName;
+            return item;
         }
     }
     
     // Fallback to the first item if something went wrong
-    return pool.items[0].itemName;
+    return pool.items[0];
+}
+
+function selectItemFromPool(poolName) {
+    return selectLootEntryFromPool(poolName)?.itemName || null;
+}
+
+function getLootQuantityRange(entry, enemy) {
+    if (!entry) return { min: 1, max: 1 };
+    const min = Math.max(1, Math.floor(Number(entry.minQuantity) || 1));
+    const max = Math.max(min, Math.floor(Number(entry.maxQuantity) || min));
+    const zone = Math.min(14, Math.max(1, Math.floor(Number(enemy?.zone) || 1)));
+    let multiplier = 1;
+    if (entry.quantityClass === 'thematicCommon') multiplier = Math.max(1, Math.ceil(zone / 2));
+    if (entry.quantityClass === 'thematicAdvanced') multiplier = Math.max(1, Math.ceil((zone - 1) / 3));
+    if (entry.quantityClass === 'thematicApex' && zone >= 11) multiplier = 2;
+    if (enemy?.isEmpowered) multiplier *= 1.5;
+    return {
+        min: Math.max(1, Math.floor(min * multiplier)),
+        max: Math.max(1, Math.floor(max * multiplier))
+    };
+}
+
+function rollLootQuantity(entry, enemy) {
+    const range = getLootQuantityRange(entry, enemy);
+    return Math.floor(Math.random() * (range.max - range.min + 1)) + range.min;
 }
 
 /**
@@ -226,7 +251,8 @@ function generateLoot(enemy, player) {
         if (!poolName) continue;
         
         // Select an item from the pool
-        const itemName = selectItemFromPool(poolName);
+        const lootEntry = selectLootEntryFromPool(poolName);
+        const itemName = lootEntry?.itemName;
         if (!itemName) continue;
         
         // Find the item template
@@ -238,6 +264,7 @@ function generateLoot(enemy, player) {
         
         // Generate an instance of the item
         const itemInstance = generateItemInstance(itemTemplate);
+        itemInstance.quantity = rollLootQuantity(lootEntry, enemy);
         
         // Add the generated item to the loot list
         lootItems.push(itemInstance);
@@ -310,7 +337,10 @@ if (typeof module !== 'undefined' && module.exports) {
         rollLootTier,
         rollItemCount,
         selectLootPool,
+        selectLootEntryFromPool,
         selectItemFromPool,
+        getLootQuantityRange,
+        rollLootQuantity,
         getAvailableLootTiers
     };
 } else {

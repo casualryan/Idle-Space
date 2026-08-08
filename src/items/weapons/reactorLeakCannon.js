@@ -13,8 +13,7 @@ export default {
   isDisassembleable: true,
   disassembleResults: [
     { name: "Flux Crystal", quantity: 2 },
-    { name: "Neural Processor", quantity: 1 }
+    { name: "Neural Network Module", quantity: 1 }
   ],
   description: "A slow leak cannon built from failed reactor valves."
 };
-

@@ -39,8 +39,8 @@ export default {
     isDisassembleable: true,
     disassembleResults: [
         { name: 'Nanite Cluster', quantity: 3 },
-        { name: 'Titanium Alloy Fragment', quantity: 2 },
-        { name: 'Neural Processor', quantity: 1 }
+        { name: 'Titanium', quantity: 4 },
+        { name: 'Neural Network Module', quantity: 1 }
     ],
     wires: {
         totalSlots: "2-2",

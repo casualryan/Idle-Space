@@ -9,6 +9,5 @@ export default {
   statModifiers: { damageTypes: { electric: { min: 11, max: 18 } } },
   defenseTypes: { elementalResistance: { min: 9, max: 14 } },
   isDisassembleable: true,
-  disassembleResults: [{ name: "Titanium", quantity: 2 }, { name: "Basic Sensor Array", quantity: 1 }]
+  disassembleResults: [{ name: "Titanium", quantity: 2 }, { name: "Targeting Module", quantity: 1 }]
 };
-

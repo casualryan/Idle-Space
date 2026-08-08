@@ -13,8 +13,7 @@ export default {
   isDisassembleable: true,
   disassembleResults: [
     { name: "Titanium Plating", quantity: 1 },
-    { name: "Basic Sensor Array", quantity: 1 }
+    { name: "Targeting Module", quantity: 1 }
   ],
   description: "A mid-tier radium carbine designed for controllable beam shots."
 };
-

@@ -11,7 +11,7 @@ export default {
     healthRegen: { min: 0.8, max: 1.2 },
     isDisassembleable: true,
     disassembleResults: [
-        { name: 'Neural Processor', quantity: 1 },
+        { name: 'Neural Network Module', quantity: 1 },
         { name: 'High-Density Power Cell', quantity: 1 },
         { name: 'Synthetic Biofluid', quantity: 2 }
     ],

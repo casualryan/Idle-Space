@@ -13,10 +13,9 @@ export default {
     deflection: { min: 5, max: 8 },
     isDisassembleable: true,
     disassembleResults: [
-        { name: 'Neural Processor', quantity: 1 },
+        { name: 'Neural Network Module', quantity: 1 },
         { name: 'Quantum Capacitor', quantity: 1 },
         { name: 'Minor Electronic Circuit', quantity: 2 }
     ],
     description: 'Reflex-tuned servo greaves that favor speed and precision with light elemental insulation.'
 };
-

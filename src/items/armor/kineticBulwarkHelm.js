@@ -11,7 +11,7 @@ export default {
     deflection: { min: 6, max: 9 },
     isDisassembleable: true,
     disassembleResults: [
-        { name: 'Neural Processor', quantity: 1 },
+        { name: 'Neural Network Module', quantity: 1 },
         { name: 'Quantum Capacitor', quantity: 1 }
     ],
     description: 'Kinetic bulwark helm that turns aside glancing blows and stabilizes your stance.'

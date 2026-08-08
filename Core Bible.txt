@@ -100,9 +100,11 @@ Non-body attachment system:
 Default inventory capacity:
 - maxInventorySlots = 30 (saved and restorable).
 - Materials never consume those slots. They occupy deterministic positions in
-  four categorized material-storage grids and stack to 50,000 per material.
-- Save version 11 migrates legacy material stacks out of the ordinary inventory
-  and merges them into dedicated storage on load.
+  a foundational stockpile, seven three-stage damage-family ladders, and an
+  exceptional-technology group. Every material stacks to 50,000.
+- Save version 11 migrates loose material stacks into dedicated storage. Save
+  version 12 consolidates retired materials into their surviving equivalents,
+  including saved delve rewards and Marty unlock progress.
 
 Combat style equip model:
 - One active style equipped at a time via player.equippedSkillId.
@@ -433,6 +435,14 @@ Combat/delve interactions:
   recipe cards.
 - Content validation rejects an unsourced ingredient or one introduced after
   the level of the item whose recipe consumes it.
+- Standard recipes use three bulk foundations plus zero to three identity
+  materials. Ingredient-type count is capped at six; quantities rise from
+  roughly five total units for starter gear to roughly seventy at the apex.
+- Foundational enemy-drop stacks grow with progression. Matching damage-family
+  enemies are the best source for their common, advanced, and apex components,
+  while later zones retain low-frequency access to earlier thematic families.
+- Marty permanently stocks observed foundational materials and sells them in
+  quantities of 1, 10, or 50 as a late-game credit sink.
 
 12.4 Reserved
 -------------
@@ -444,7 +454,7 @@ Combat/delve interactions:
 ================================================================================
 
 Snapshot/version:
-- buildGameStateSnapshot includes meta.version = 8.
+- buildGameStateSnapshot includes meta.version = 12.
 - Includes combat styles, gathering progress, and fabrication reservation state.
 
 Slot model:

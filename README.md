@@ -87,6 +87,11 @@ facts in UI copy.
 - Materials use categorized, fixed-position storage below the ordinary
   inventory. They do not consume ordinary slots, stack to 50,000 each, and old
   save stacks migrate into the dedicated store on load.
+- Fabrication materials are organized into bulk foundations, seven hidden
+  common/advanced/apex damage-family ladders, and exceptional neutral parts.
+  Standard recipes use at most six ingredient types, while enemy stack sizes
+  and recipe quantities both rise across progression. Matching enemies remain
+  the best targeted source, but later delves retain earlier materials.
 - Health persists between encounters inside a delve. Energy Shield is restored
   to its current maximum after each victory before the next enemy appears.
 - Successful delves automatically collect materials and credits. Ordinary items

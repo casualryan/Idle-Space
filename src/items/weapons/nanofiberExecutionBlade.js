@@ -13,8 +13,7 @@ export default {
   isDisassembleable: true,
   disassembleResults: [
     { name: "Nanite Cluster", quantity: 2 },
-    { name: "Neural Processor", quantity: 1 }
+    { name: "Neural Network Module", quantity: 1 }
   ],
   description: "A nanofiber edge designed for controlled, devastating execution strikes."
 };
-
