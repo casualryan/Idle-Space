@@ -15,48 +15,21 @@ const SAVE_SLOT_KEY_PREFIX = 'idleCombatGameSave_slot_';
 
 // Helper function to cleanly remove and reapply all passive bonuses from gear
 function resetGearPassiveBonuses() {
-    // Clear all gear passive bonuses
     player.gearPassiveBonuses = {};
-    const registeredPassiveNames = new Set((typeof passives !== 'undefined' ? passives : []).map(passive => passive.name));
-    
-    // Reapply from all equipped items
-    const equipSlots = ['mainHand', 'offHand', 'head', 'chest', 'legs', 'feet', 'gloves'];
-    
-    // Apply from normal equipment slots
-    for (const slot of equipSlots) {
-        if (player.equipment[slot] && player.equipment[slot].passiveBonuses) {
-            for (const passiveName in player.equipment[slot].passiveBonuses) {
-                if (!registeredPassiveNames.has(passiveName)) continue;
-                const bonusValue = player.equipment[slot].passiveBonuses[passiveName];
-                if (typeof bonusValue === 'number' && bonusValue > 0) {
-                    if (!player.gearPassiveBonuses[passiveName]) {
-                        player.gearPassiveBonuses[passiveName] = bonusValue;
-                    } else {
-                        player.gearPassiveBonuses[passiveName] += bonusValue;
-                    }
-                }
-            }
-        }
-    }
-    
-    // Apply from bionic slots
-    if (player.equipment.bionicSlots) {
-        for (const bionicItem of player.equipment.bionicSlots) {
-            if (bionicItem && bionicItem.passiveBonuses) {
-                for (const passiveName in bionicItem.passiveBonuses) {
-                    if (!registeredPassiveNames.has(passiveName)) continue;
-                    const bonusValue = bionicItem.passiveBonuses[passiveName];
-                    if (typeof bonusValue === 'number' && bonusValue > 0) {
-                        if (!player.gearPassiveBonuses[passiveName]) {
-                            player.gearPassiveBonuses[passiveName] = bonusValue;
-                        } else {
-                            player.gearPassiveBonuses[passiveName] += bonusValue;
-                        }
-                    }
-                }
-            }
-        }
-    }
+
+    const addBonuses = item => {
+        if (!item?.passiveBonuses) return;
+        Object.entries(item.passiveBonuses).forEach(([reference, rawValue]) => {
+            const node = typeof getPassiveNode === 'function' ? getPassiveNode(reference) : null;
+            const value = Number(rawValue);
+            if (!node?.gearScalable || !Number.isFinite(value) || value <= 0) return;
+            player.gearPassiveBonuses[node.id] = (player.gearPassiveBonuses[node.id] || 0) + value;
+        });
+    };
+
+    ['mainHand', 'offHand', 'head', 'chest', 'legs', 'feet', 'gloves']
+        .forEach(slot => addBonuses(player.equipment[slot]));
+    (player.equipment.bionicSlots || []).forEach(addBonuses);
 }
 
 // applyItemModifiers function moved to stats.js
@@ -134,6 +107,11 @@ let player = {
     activeBuffs: [],
     // This property holds the cumulative passive bonus (e.g., 0.30 for +30%)
     passiveAttackSpeedBonus: 0,
+    passiveAllocations: {},
+    passivePoints: 1,
+    passiveTreeVersion: PASSIVE_TREE_VERSION,
+    gearPassiveBonuses: {},
+    passiveBonuses: createEmptyPassiveBonuses(),
     // Combat style tree system
     equippedSkillId: window.DEFAULT_COMBAT_STYLE_ID || 'balancedStyle',
     unlockedSkillIds: (window.combatStyles || []).map(style => style.id),
@@ -504,7 +482,8 @@ function buildGameStateSnapshot() {
             maxInventorySlots: player.maxInventorySlots,
             passives: {
                 allocations: player.passiveAllocations,
-                points: player.passivePoints
+                points: player.passivePoints,
+                treeVersion: player.passiveTreeVersion
             },
             combatStyles: {
                 equipped: player.equippedSkillId,
@@ -645,9 +624,11 @@ function loadGame(slotIndex = null) {
         if (savedPlayer.passives) {
             player.passiveAllocations = savedPlayer.passives.allocations || {};
             player.passivePoints = savedPlayer.passives.points || 0;
+            player.passiveTreeVersion = savedPlayer.passives.treeVersion || PASSIVE_TREE_VERSION;
         } else {
             player.passiveAllocations = {};
             player.passivePoints = 1;
+            player.passiveTreeVersion = PASSIVE_TREE_VERSION;
         }
 
         player.equippedSkillId = restoredEquippedStyle;
@@ -872,6 +853,7 @@ function resetGame(slotIndex = null) {
         // Reset passive system
         player.passivePoints = 1; // Start with 1 point as a new player
         player.passiveAllocations = {}; // Clear all allocations
+        player.passiveTreeVersion = PASSIVE_TREE_VERSION;
         player.gearPassiveBonuses = {}; // Clear all gear bonuses
         player.passiveAttackSpeedBonus = 0; // Reset cumulative passive bonus
 

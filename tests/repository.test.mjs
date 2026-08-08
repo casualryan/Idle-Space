@@ -173,9 +173,10 @@ test('effect chances use percentage authoring and base weapons stay base weapons
   }
 });
 
-test('placeholder passives only accept authored bonuses and lower-tier points unlock later tiers', () => {
+test('radial passive tree is connected, stable, and honors allocation/refund rules', () => {
   const passiveDefinitions = evaluateClassic('passives.js', 'passives');
   const passiveNames = new Set(passiveDefinitions.map(passive => passive.name));
+  const passiveIds = new Set(passiveDefinitions.map(passive => passive.id));
   const invalidBonuses = allItems.flatMap(item => {
     const direct = Object.keys(item.passiveBonuses || {});
     const rolled = (item.rollGroups || []).flatMap(group => (group.from || []))
@@ -183,34 +184,41 @@ test('placeholder passives only accept authored bonuses and lower-tier points un
       .filter(pathName => pathName.startsWith('passiveBonuses.'))
       .map(pathName => pathName.slice('passiveBonuses.'.length));
     return [...direct, ...rolled]
-      .filter(name => !passiveNames.has(name))
+      .filter(name => !passiveNames.has(name) && !passiveIds.has(name))
       .map(name => `${item.name} -> ${name}`);
   });
   assert.deepEqual(invalidBonuses, []);
 
-  const player = {
-    passiveAllocations: {
-      'Swift Strikes': 2,
-      'Critical Precision': 3,
-      'Raw Power': 4
-    },
-    passivePoints: 0,
-    gearPassiveBonuses: {},
-    passiveBonuses: {}
-  };
-  const document = {
-    addEventListener: () => {},
-    getElementById: () => null
-  };
-  const helpers = evaluateClassic(
-    'passivesUI.js',
-    '({ getInvestedPassivePointsBelowTier, getPassiveMaxEffectiveRank })',
-    { player, passives: passiveDefinitions, document }
+  const result = evaluateClassic(
+    'passives.js',
+    `(() => {
+      const validation = validatePassiveTree();
+      const gateway = getPassiveNode('core-kinetic-gateway');
+      const outerId = gateway.connections.find(id => id.startsWith('kinetic-'));
+      const before = canAllocatePassiveNode({}, gateway.id);
+      const blockedOuter = canAllocatePassiveNode({}, outerId);
+      const allocations = { [gateway.id]: 1, [outerId]: 1 };
+      const blockedRefund = canRefundPassiveNode(allocations, gateway.id);
+      const leafRefund = canRefundPassiveNode(allocations, outerId);
+      return {
+        validation,
+        nodeCount: validation.nodeCount,
+        edgeCount: validation.edgeCount,
+        sectorCounts: PASSIVE_TREE_SECTOR_ORDER.map(sector => passives.filter(node => node.sector === sector).length),
+        keystones: passives.filter(node => node.type === 'keystone').length,
+        before, blockedOuter, blockedRefund, leafRefund
+      };
+    })()`
   );
-  assert.equal(helpers.getInvestedPassivePointsBelowTier(2), 2, 'tier 2 counted points invested in later tiers');
-  assert.equal(helpers.getInvestedPassivePointsBelowTier(3), 5, 'tier 3 did not count all earlier tiers');
-  assert.equal(helpers.getPassiveMaxEffectiveRank(passiveDefinitions.find(p => p.name === 'Swift Strikes')), 7);
-  assert.equal(helpers.getPassiveMaxEffectiveRank(passiveDefinitions.find(p => p.name === 'Critical Precision')), 6);
+  assert.equal(result.validation.valid, true, result.validation.errors.join('; '));
+  assert.equal(result.nodeCount, 253);
+  assert.equal(result.edgeCount, 294);
+  assert.equal(result.keystones, 21);
+  assert.equal(result.sectorCounts.every(count => count === 25), true);
+  assert.equal(result.before.ok, true, 'an origin gateway was not allocatable');
+  assert.equal(result.blockedOuter.ok, false, 'a disconnected outer node was allocatable');
+  assert.equal(result.blockedRefund.ok, false, 'a connecting node could orphan an allocation');
+  assert.equal(result.leafRefund.ok, true, 'an outer leaf could not be refunded');
 });
 
 test('only the authored Balanced combat style is player-facing', () => {
@@ -485,7 +493,7 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
             },
             bionicSlots: [{ name: 'Legacy Bionic', type: 'Bionic', slot: 'bionic', defenseTypes: { immunity: 3 } }]
           },
-          passives: { allocations: {}, points: 4, gearBonuses: { GhostPassive: 99 } },
+          passives: { allocations: { 'Swift Strikes': 3 }, points: 4, gearBonuses: { GhostPassive: 99 } },
           skills: { equipped: 'legacyStyle' }
         },
         inventory: [],
@@ -505,8 +513,8 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   );
 
   assert.equal(result.beforeUnchanged, true, 'migration mutated the parsed legacy payload');
-  assert.equal(result.migrated.toVersion, 8);
-  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.equal(result.migrated.toVersion, 9);
+  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9]);
   assert.equal(result.migrated.state.player.equipment.mainHand.weaponBaseDamage.slashing, 17);
   assert.equal(result.migrated.state.player.equipment.mainHand.rolledModifiers[0].value, 17);
   assert.equal(result.migrated.state.player.equipment.mainHand.levelRequirement, 9);
@@ -515,6 +523,9 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   assert.equal(result.migrated.state.player.equipment.bionicSlots[0].defenseTypes.chemicalResistance, 3);
   assert.equal(result.migrated.state.player.equipment.bionicSlots.length, 4);
   assert.equal(result.migrated.state.player.passives.gearBonuses, undefined);
+  assert.equal(result.migrated.state.player.passives.treeVersion, 2);
+  assert.equal(result.migrated.state.player.passives.points, 7, 'retired passive ranks were not refunded');
+  assert.equal(Object.keys(result.migrated.state.player.passives.allocations).length, 0);
   assert.equal(result.validation.valid, true);
   assert.equal(result.repeatUnchanged, true, 'current save migration was not idempotent');
 

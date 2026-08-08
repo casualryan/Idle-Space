@@ -289,10 +289,13 @@ function applyDamage(packetOrTarget, legacyDamage = 0, legacyTargetName = null, 
     return legacyCall ? packet.total : application;
 }
 
-function applyEffectDamage(target, amount, damageType, ignoreDefense = false, sourceInfo = null, sourceEntity = null) {
+function applyEffectDamage(target, amount, damageType, ignoreDefense = false, sourceInfo = null, sourceEntity = null, isDamageOverTime = false) {
     if (!target) return null;
 
-    const rawAmount = Math.max(0, toFiniteCombatNumber(amount));
+    const dotMultiplier = isDamageOverTime
+        ? Math.max(0.1, Number(sourceEntity?.totalStats?.dotDamageMultiplier || 1))
+        : 1;
+    const rawAmount = Math.max(0, toFiniteCombatNumber(amount) * dotMultiplier);
     if (rawAmount <= 0) return null;
     const displayAmount = Math.round(rawAmount * 10) / 10;
     let appliedAmount = rawAmount;
@@ -305,6 +308,8 @@ function applyEffectDamage(target, amount, damageType, ignoreDefense = false, so
             appliedAmount = Math.max(0, appliedAmount * (1 - effectiveDefense / 100));
         }
     }
+    const globalReduction = Math.min(0.75, Math.max(-0.5, Number(target.totalStats?.damageTakenReduction || 0)));
+    appliedAmount *= (1 - globalReduction);
 
     const fallbackTypeLabel = typeof capitalize === 'function'
         ? capitalize(damageType || 'unknown')

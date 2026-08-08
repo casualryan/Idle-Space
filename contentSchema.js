@@ -6,7 +6,11 @@ const CONTENT_DAMAGE_GROUPS = new Set(['physical', 'elemental', 'chemical']);
 const CONTENT_PASSIVE_STAT_KEYS = new Set([
     'attackSpeed', 'damageTypes', 'damageGroups', 'healthPercent', 'energyShieldPercent',
     'criticalChance', 'criticalMultiplier', 'flatDamageTypes', 'flatHealth', 'flatEnergyShield',
-    'healthRegen', 'precision', 'deflection', 'defenseTypes'
+    'healthRegen', 'precision', 'deflection', 'defenseTypes', 'armorEfficiency',
+    'weaponEfficiency', 'bionicEfficiency', 'bionicSync', 'comboAttack', 'comboEffectiveness',
+    'additionalComboAttacks', 'severedLimbChance', 'maxSeveredLimbs', 'maxSeepingWoundStacks',
+    'damageRollFloorBonus', 'debuffChanceBonus', 'debuffDurationBonus', 'directDamageMultiplier',
+    'dotDamageMultiplier', 'damageVsDebuffed', 'damageTakenReduction'
 ]);
 const CONTENT_ITEM_TEMPLATE_KEYS = new Set([
     'name', 'description', 'icon', 'color', 'type', 'slot', 'weaponType', 'levelRequirement',
@@ -136,6 +140,8 @@ function validateCoreboundContent(registries = {}) {
     const itemNames = new Set(items.map(item => item?.name).filter(Boolean));
     const enemyNames = new Set(enemies.map(enemy => enemy?.name).filter(Boolean));
     const passiveNames = new Set(passives.map(passive => passive?.name).filter(Boolean));
+    const passiveIds = new Set(passives.map(passive => passive?.id).filter(Boolean));
+    const passiveReferences = new Set([...passiveNames, ...passiveIds]);
     const validTierIds = new Set(Object.values(lootTiers).map(tier => Number(tier?.id)).filter(Number.isFinite));
 
     const report = (section, name, message, severity = 'error') => {
@@ -155,7 +161,7 @@ function validateCoreboundContent(registries = {}) {
     findDuplicates(recipes.map(recipe => recipe?.name).filter(Boolean), 'recipe');
     findDuplicates(shops.map(shop => shop?.name).filter(Boolean), 'shop');
     findDuplicates(locations.map(location => location?.name).filter(Boolean), 'location');
-    findDuplicates(passives.map(passive => passive?.name).filter(Boolean), 'passive');
+    findDuplicates(passives.map(passive => passive?.id).filter(Boolean), 'passive ID');
 
     for (const item of items) {
         const validation = validateItemContent(item);
@@ -166,7 +172,7 @@ function validateCoreboundContent(registries = {}) {
             if (!(Number(result?.quantity) > 0)) report('item', validation.name, `invalid disassembly quantity for ${result?.name}`);
         }
         for (const passiveName of Object.keys(item?.passiveBonuses || {})) {
-            if (!passiveNames.has(passiveName)) report('item', validation.name, `unknown passive bonus: ${passiveName}`);
+            if (!passiveReferences.has(passiveName)) report('item', validation.name, `unknown passive bonus: ${passiveName}`);
         }
         for (const [groupIndex, group] of (item?.rollGroups || []).entries()) {
             if (!Array.isArray(group?.from) || group.from.length === 0) {
@@ -189,7 +195,7 @@ function validateCoreboundContent(registries = {}) {
                 let validPath = false;
                 if (root === 'damageTypes') validPath = COMBAT_DAMAGE_TYPES.includes(category);
                 else if (root === 'defenseTypes') validPath = COMBAT_RESISTANCE_TYPES.includes(category);
-                else if (root === 'passiveBonuses') validPath = passiveNames.has(category);
+                else if (root === 'passiveBonuses') validPath = passiveReferences.has(category);
                 else if (root === 'statModifiers' && category === 'damageTypes') validPath = COMBAT_DAMAGE_TYPES.includes(key);
                 else if (root === 'statModifiers' && category === 'damageGroups') validPath = CONTENT_DAMAGE_GROUPS.has(key);
                 else if (window.coreboundStatPipeline?.scalarStatRules?.[root]) validPath = true;
@@ -264,9 +270,15 @@ function validateCoreboundContent(registries = {}) {
 
     for (const passive of passives) {
         const name = passive?.name || 'Unnamed passive';
-        if (!(Number(passive?.passiveTier) >= 1)) report('passive', name, 'passiveTier must be positive');
-        if (!passive?.statChanges || typeof passive.statChanges !== 'object') report('passive', name, 'statChanges are required');
-        for (const [key, value] of Object.entries(passive?.statChanges || {})) {
+        if (!passive?.id) report('passive', name, 'id is required');
+        if (!passive?.type) report('passive', name, 'node type is required');
+        if (!Number.isFinite(passive?.x) || !Number.isFinite(passive?.y)) report('passive', name, 'coordinates are required');
+        if (!Array.isArray(passive?.connections)) report('passive', name, 'connections are required');
+        for (const connection of passive?.connections || []) {
+            if (!passiveIds.has(connection)) report('passive', name, `unknown connection: ${connection}`);
+        }
+        if (!passive?.effects || typeof passive.effects !== 'object') report('passive', name, 'effects are required');
+        for (const [key, value] of Object.entries(passive?.effects || {})) {
             if (!CONTENT_PASSIVE_STAT_KEYS.has(key)) report('passive', name, `unknown stat category: ${key}`);
             if (key === 'damageTypes' || key === 'flatDamageTypes') {
                 for (const type of Object.keys(value || {})) {
@@ -280,6 +292,8 @@ function validateCoreboundContent(registries = {}) {
                 for (const type of Object.keys(value || {})) {
                     if (!COMBAT_RESISTANCE_TYPES.includes(type)) report('passive', name, `unknown resistance type: ${type}`);
                 }
+            } else if (!Number.isFinite(Number(value))) {
+                report('passive', name, `${key} must be numeric`);
             }
         }
     }

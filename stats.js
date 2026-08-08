@@ -232,7 +232,9 @@ function validatePlayerStatSnapshot(stats) {
         'health', 'energyShield', 'attackSpeed', 'criticalChance', 'criticalMultiplier',
         'precision', 'deflection', 'healthRegen', 'armorEfficiency', 'weaponEfficiency',
         'bionicEfficiency', 'bionicSync', 'comboAttack', 'comboEffectiveness',
-        'additionalComboAttacks', 'maxSeveredLimbs', 'maxSeepingWoundStacks'
+        'additionalComboAttacks', 'maxSeveredLimbs', 'maxSeepingWoundStacks',
+        'damageRollFloorBonus', 'debuffChanceBonus', 'debuffDurationBonus',
+        'directDamageMultiplier', 'dotDamageMultiplier', 'damageVsDebuffed', 'damageTakenReduction'
     ];
     for (const key of requiredFinite) {
         if (!Number.isFinite(Number(stats[key]))) errors.push(`${key} must be finite`);
@@ -424,6 +426,13 @@ function calculatePlayerStats(playerObject) {
     if (stats.severedLimbChance === undefined) stats.severedLimbChance = 0;
     if (stats.maxSeveredLimbs === undefined) stats.maxSeveredLimbs = 1;
     if (stats.maxSeepingWoundStacks === undefined) stats.maxSeepingWoundStacks = 5;
+    stats.damageRollFloorBonus = 0;
+    stats.debuffChanceBonus = 0;
+    stats.debuffDurationBonus = 0;
+    stats.directDamageMultiplier = 1;
+    stats.dotDamageMultiplier = 1;
+    stats.damageVsDebuffed = 0;
+    stats.damageTakenReduction = 0;
 
 
     // --- Apply Passives ---
@@ -441,6 +450,18 @@ function calculatePlayerStats(playerObject) {
         // Crit
         stats.criticalChance += (passives.criticalChance || 0) / 100;
         stats.criticalMultiplier += passives.criticalMultiplier || 0;
+        for (const key of [
+            'armorEfficiency', 'weaponEfficiency', 'bionicEfficiency', 'bionicSync',
+            'comboAttack', 'comboEffectiveness', 'additionalComboAttacks',
+            'severedLimbChance', 'maxSeveredLimbs', 'maxSeepingWoundStacks'
+        ]) stats[key] += passives[key] || 0;
+        stats.damageRollFloorBonus += passives.damageRollFloorBonus || 0;
+        stats.debuffChanceBonus += passives.debuffChanceBonus || 0;
+        stats.debuffDurationBonus += passives.debuffDurationBonus || 0;
+        stats.directDamageMultiplier += passives.directDamageMultiplier || 0;
+        stats.dotDamageMultiplier += passives.dotDamageMultiplier || 0;
+        stats.damageVsDebuffed += passives.damageVsDebuffed || 0;
+        stats.damageTakenReduction += passives.damageTakenReduction || 0;
         // Flat damage
         for (const damageType in passives.flatDamageTypes) {
             if (!stats.damageTypes[damageType]) stats.damageTypes[damageType] = 0;
@@ -666,6 +687,7 @@ function calculateDamage(attacker, defender, attackContext = null) {
     // 1. Calculate Total Potential Damage (Sum of base damages after % increases)
     let totalPotentialDamage = 0;
     let adjustedBaseDamages = {}; // Store base damage *after* % mods for later proportion calculation
+    const defenderDebuffs = Array.isArray(defender.activeDebuffs) ? defender.activeDebuffs : [];
 
     for (let damageType in baseDamages) {
         let currentDamage = baseDamages[damageType];
@@ -700,6 +722,10 @@ function calculateDamage(attacker, defender, attackContext = null) {
                 currentDamage *= attacker.totalStats.damageMultipliers[multiplierName];
             }
         }
+        currentDamage *= Math.max(0.1, Number(attacker.totalStats.directDamageMultiplier || 1));
+        if (defenderDebuffs.length > 0) {
+            currentDamage *= Math.max(0.1, 1 + Number(attacker.totalStats.damageVsDebuffed || 0));
+        }
 
         adjustedBaseDamages[damageType] = Math.max(0, currentDamage); // Store adjusted base damage
         totalPotentialDamage += adjustedBaseDamages[damageType];
@@ -720,12 +746,14 @@ function calculateDamage(attacker, defender, attackContext = null) {
     }
 
     // 2. Damage Roll (Randomization based on Precision/Deflection)
-    let attackerPrecision = attacker.totalStats.precision || 0;
-    let defenderDeflection = defender.totalStats.deflection || 0;
-    let skew = Math.max(0.1, 1 + (defenderDeflection - attackerPrecision) * 0.05);
-    const defenderDebuffs = Array.isArray(defender.activeDebuffs) ? defender.activeDebuffs : [];
+    const attackerPrecision = Number(attacker.totalStats.precision || 0);
+    const defenderDeflection = Number(defender.totalStats.deflection || 0);
     const isExposed = defenderDebuffs.some(effect => effect.name === 'Exposed');
-    let damagePercentage = isExposed ? 1 : skewedRandom(0.1, 1.0, skew);
+    const rollFloor = Math.min(0.85, Math.max(0.1,
+        0.35 + ((attackerPrecision - defenderDeflection) * 0.015)
+        + Number(attacker.totalStats.damageRollFloorBonus || 0)
+    ));
+    let damagePercentage = isExposed ? 1 : rollFloor + (Math.random() * (1 - rollFloor));
     let rolledDamage = totalPotentialDamage * damagePercentage;
 
     // Strict cap: ensure rolled damage doesn't exceed total potential damage
@@ -790,7 +818,8 @@ function calculateDamage(attacker, defender, attackContext = null) {
         resistanceValue = Math.min(resistanceValue, 80); // Cap resistance
         let damageReductionMultiplier = Math.max(0, 1 - (resistanceValue / 100)); // Ensure multiplier is not negative
 
-        let finalDamageForType = damageAmountForType * damageReductionMultiplier;
+        const globalReduction = Math.min(0.75, Math.max(-0.5, Number(defender.totalStats.damageTakenReduction || 0)));
+        let finalDamageForType = damageAmountForType * damageReductionMultiplier * (1 - globalReduction);
 
         // Store in final breakdown and add to total
         finalDamageBreakdown[damageType] = Math.round(finalDamageForType * 10) / 10; // Round for display
@@ -828,6 +857,13 @@ function calculateEnemyStats(enemyObject) {
     enemyObject.totalStats.criticalMultiplier = enemyObject.criticalMultiplier || 1.5;
     enemyObject.totalStats.precision = enemyObject.precision || 0;
     enemyObject.totalStats.deflection = enemyObject.deflection || 0;
+    enemyObject.totalStats.damageRollFloorBonus = 0;
+    enemyObject.totalStats.debuffChanceBonus = 0;
+    enemyObject.totalStats.debuffDurationBonus = 0;
+    enemyObject.totalStats.directDamageMultiplier = 1;
+    enemyObject.totalStats.dotDamageMultiplier = 1;
+    enemyObject.totalStats.damageVsDebuffed = 0;
+    enemyObject.totalStats.damageTakenReduction = 0;
 
     // Damage types (store base flat damage)
     enemyObject.totalStats.damageTypes = {};

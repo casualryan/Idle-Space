@@ -1,6 +1,7 @@
 // Ordered, non-destructive migrations and validation for persisted game snapshots.
 
-const COREBOUND_SAVE_VERSION = 8;
+const COREBOUND_SAVE_VERSION = 9;
+const SAVE_PASSIVE_TREE_VERSION = 2;
 const SAVE_DAMAGE_TYPE_ALIASES = Object.freeze({
     mental: 'slashing',
     magnetic: 'electric',
@@ -193,6 +194,33 @@ const SAVE_MIGRATIONS = Object.freeze([
         state.player.currency = Math.max(0, Number.isFinite(currency) ? currency : 1000);
         state.componentDropCounts = Object.fromEntries(Object.entries(state.componentDropCounts || {})
             .map(([name, count]) => [name, Math.max(0, Math.floor(Number(count) || 0))]));
+    },
+    function migrateToVersion9(state) {
+        const passives = state.player.passives && typeof state.player.passives === 'object'
+            ? state.player.passives
+            : { allocations: {}, points: 1 };
+        const allocations = passives.allocations && typeof passives.allocations === 'object'
+            ? passives.allocations
+            : {};
+        let points = Math.max(0, Math.floor(Number(passives.points) || 0));
+
+        // The v2 graph does not guess at mappings from the retired tier-card tree.
+        // Every legitimately spent rank is returned so an old character loses nothing.
+        if (Number(passives.treeVersion) !== SAVE_PASSIVE_TREE_VERSION) {
+            points += Object.values(allocations).reduce((total, rank) => {
+                const value = Math.floor(Number(rank));
+                return total + (Number.isFinite(value) && value > 0 ? value : 0);
+            }, 0);
+            passives.allocations = {};
+        } else {
+            passives.allocations = Object.fromEntries(Object.entries(allocations)
+                .filter(([, rank]) => Number(rank) > 0)
+                .map(([id]) => [id, 1]));
+        }
+        passives.points = points;
+        passives.treeVersion = SAVE_PASSIVE_TREE_VERSION;
+        delete passives.gearBonuses;
+        state.player.passives = passives;
     }
 ]);
 
@@ -241,6 +269,28 @@ function validateGameStateSnapshot(state, options = {}) {
     }
     if (!Number.isFinite(Number(state.player?.level)) || Number(state.player.level) < 1) errors.push('player level is invalid');
     if (!Number.isFinite(Number(state.player?.currency)) || Number(state.player.currency) < 0) errors.push('player currency is invalid');
+    const passives = state.player?.passives;
+    if (!passives || typeof passives !== 'object') errors.push('player passives are required');
+    else {
+        if (!passives.allocations || typeof passives.allocations !== 'object' || Array.isArray(passives.allocations)) {
+            errors.push('passive allocations must be an object');
+        }
+        if (!Number.isFinite(Number(passives.points)) || Number(passives.points) < 0) {
+            errors.push('passive points are invalid');
+        }
+        if (Number(passives.treeVersion) !== SAVE_PASSIVE_TREE_VERSION) {
+            errors.push(`passive tree version must be ${SAVE_PASSIVE_TREE_VERSION}`);
+        }
+        const passiveTree = window.coreboundPassiveTree;
+        if (passiveTree?.getNode && passives.allocations && typeof passives.allocations === 'object') {
+            for (const [nodeId, rank] of Object.entries(passives.allocations)) {
+                if (!passiveTree.getNode(nodeId) || nodeId === passiveTree.originId) {
+                    errors.push(`unknown passive allocation: ${nodeId}`);
+                }
+                if (Number(rank) !== 1) errors.push(`passive allocation ${nodeId} must have rank one`);
+            }
+        }
+    }
 
     const knownItemNames = options.knownItemNames instanceof Set ? options.knownItemNames : null;
     if (knownItemNames) {

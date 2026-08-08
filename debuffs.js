@@ -220,7 +220,7 @@ const debuffs = {
         },
         onTick: function(target, deltaTime) {
             const dotDamage = this.damagePerTick;
-            applyEffectDamage(target, dotDamage, "pyro", false, "Ablaze debuff");
+            applyEffectDamage(target, dotDamage, "pyro", false, "Ablaze debuff", this.source, true);
             console.log(`${target.name} took ${dotDamage} pyro damage from being ablaze!`);
         }
     },
@@ -364,7 +364,7 @@ const debuffs = {
         },
         onTick: function(target, deltaTime) {
             const dotDamage = this.baseDamage;
-            applyEffectDamage(target, dotDamage, "corrosive", false, "Coated in Acid");
+            applyEffectDamage(target, dotDamage, "corrosive", false, "Coated in Acid", this.source, true);
             console.log(`${target.name} took ${dotDamage} corrosive damage from acid!`);
         }
     },
@@ -418,7 +418,7 @@ const debuffs = {
         },
         onTick: function(target, deltaTime) {
             const dotDamage = 2 * this.stacks;
-            applyEffectDamage(target, dotDamage, "radiation", false, "Rad Poisoning");
+            applyEffectDamage(target, dotDamage, "radiation", false, "Rad Poisoning", this.source, true);
             console.log(`${target.name} took ${dotDamage} radiation damage from rad poisoning (${this.stacks} stacks)!`);
         }
     },
@@ -472,7 +472,7 @@ const debuffs = {
         },
         onTick: function(target, deltaTime) {
             const tickDamage = Math.round((this.sourceDamage * this.baseDamagePercent) * this.stacks);
-            applyEffectDamage(target, tickDamage, "slashing", false, "Seeping Wound");
+            applyEffectDamage(target, tickDamage, "slashing", false, "Seeping Wound", this.source, true);
 
             console.log(`${target.name} took ${tickDamage} slashing damage from seeping wound (${this.stacks} stacks)!`);
 
@@ -528,10 +528,16 @@ function applyDebuff(target, debuffName, source = null, damage = null) {
             // Clone the debuff to keep the prototype methods
             const newDebuff = Object.assign({}, debuffs[debuffName]);
             newDebuff.id = debuffName;
+            newDebuff.source = source;
+            if (newDebuff.duration > 0) {
+                newDebuff.duration *= Math.max(0.1, 1 + Number(source?.totalStats?.debuffDurationBonus || 0));
+            }
             // Apply the debuff, which will update stacks if applicable
             if (newDebuff.onApply && newDebuff.onApply(target, source, damage) === false) {
                 // Just update duration if onApply returns false (meaning no new instance)
                 existingDebuff.appliedTime = Date.now();
+                existingDebuff.duration = newDebuff.duration;
+                existingDebuff.source = source;
                 return true;
             } else {
                 // Replace with new instance
@@ -555,6 +561,12 @@ function applyDebuff(target, debuffName, source = null, damage = null) {
         } else {
             // Just refresh the duration
             existingDebuff.appliedTime = Date.now();
+            existingDebuff.source = source;
+            const baseDuration = Number(debuffs[debuffName].duration);
+            if (baseDuration > 0) {
+                existingDebuff.duration = baseDuration
+                    * Math.max(0.1, 1 + Number(source?.totalStats?.debuffDurationBonus || 0));
+            }
             if (typeof existingDebuff.onRefresh === 'function') {
                 existingDebuff.onRefresh(target, source, damage);
             }
@@ -567,6 +579,10 @@ function applyDebuff(target, debuffName, source = null, damage = null) {
         // Clone the debuff to create a new instance
         const newDebuff = Object.assign({}, debuffs[debuffName]);
         newDebuff.id = debuffName;
+        newDebuff.source = source;
+        if (newDebuff.duration > 0) {
+            newDebuff.duration *= Math.max(0.1, 1 + Number(source?.totalStats?.debuffDurationBonus || 0));
+        }
         newDebuff.appliedTime = Date.now();
         
         // Call onApply if it exists
@@ -751,6 +767,8 @@ function tryApplyDebuffFromDamage(source, target, damageInfo) {
     if (source && source._activeSkillDebuffBonus) {
         debuffChance += source._activeSkillDebuffBonus;
     }
+    debuffChance += Number(source?.totalStats?.debuffChanceBonus || 0);
+    debuffChance = Math.min(1, Math.max(0, debuffChance));
     const shouldApply = shouldApplyDebuff(debuffChance);
     console.log(`tryApplyDebuffFromDamage: shouldApplyDebuff() returned ${shouldApply}`);
     

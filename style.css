@@ -2474,6 +2474,373 @@ hr {
     box-shadow: none;
 }
 
+/* Radial passive tree v2 */
+#passives-screen {
+    overflow: visible;
+    min-height: 0;
+    padding: 18px;
+    background:
+        radial-gradient(circle at 50% 35%, rgba(0, 89, 135, 0.2), transparent 45%),
+        linear-gradient(180deg, #040912, #071224);
+}
+
+.passive-tree-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(0, 255, 204, 0.28);
+}
+
+.passive-tree-header h2 {
+    margin: 2px 0 8px;
+    color: #eafcff;
+    letter-spacing: 0.04em;
+}
+
+.passive-tree-kicker {
+    color: #00ffcc;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+}
+
+.passive-tree-points {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: baseline;
+    gap: 2px 14px;
+    min-width: 150px;
+    padding: 10px 14px;
+    border: 1px solid rgba(0, 255, 204, 0.45);
+    border-radius: 6px;
+    background: rgba(0, 22, 48, 0.78);
+}
+
+.passive-tree-points span {
+    color: #7fa9bd;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.passive-tree-points strong {
+    color: #00ffcc;
+    font-size: 21px;
+    text-align: right;
+}
+
+.passive-tree-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 22px;
+}
+
+.passive-summary-sector,
+.passive-summary-empty {
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: rgba(6, 35, 61, 0.85);
+    border: 1px solid color-mix(in srgb, var(--sector-color, #4ba7cf) 55%, transparent);
+    color: #d8eff9;
+    font-size: 11px;
+}
+
+.passive-tree-toolbar {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) auto auto auto auto;
+    gap: 7px;
+    margin-bottom: 7px;
+}
+
+.passive-tree-toolbar input,
+.passive-tree-toolbar button,
+.passive-tree-action {
+    border: 1px solid #176a8b;
+    border-radius: 4px;
+    background: #061b31;
+    color: #dff8ff;
+    padding: 8px 10px;
+    font-family: inherit;
+}
+
+.passive-tree-toolbar input:focus,
+.passive-tree-toolbar button:focus,
+.passive-tree-action:focus {
+    outline: 2px solid #00ffcc;
+    outline-offset: 1px;
+}
+
+.passive-tree-toolbar button,
+.passive-tree-action {
+    cursor: pointer;
+}
+
+.passive-tree-toolbar button:hover:not(:disabled),
+.passive-tree-action:hover:not(:disabled) {
+    border-color: #00ffcc;
+    background: #093153;
+}
+
+.passive-tree-toolbar button:disabled,
+.passive-tree-action:disabled {
+    cursor: not-allowed;
+    opacity: 0.42;
+}
+
+.passive-tree-toolbar .danger {
+    border-color: #8b3651;
+    color: #ffc2d0;
+}
+
+.passive-tree-instructions {
+    color: #7894a8;
+    font-size: 11px;
+    margin: 0 0 9px 2px;
+}
+
+.passive-tree-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 12px;
+    align-items: stretch;
+}
+
+.passive-tree-viewport {
+    position: relative;
+    min-height: 700px;
+    height: min(72vh, 820px);
+    overflow: hidden;
+    border: 1px solid rgba(0, 218, 255, 0.32);
+    border-radius: 7px;
+    background:
+        linear-gradient(rgba(18, 79, 108, 0.09) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(18, 79, 108, 0.09) 1px, transparent 1px),
+        radial-gradient(circle at center, rgba(5, 43, 73, 0.88), #020711 72%);
+    background-size: 32px 32px, 32px 32px, auto;
+    box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.7);
+}
+
+#passive-tree-svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+}
+
+#passive-tree-svg.is-dragging {
+    cursor: grabbing;
+}
+
+.passive-tree-edge {
+    stroke: rgba(78, 117, 139, 0.28);
+    stroke-width: 5;
+    vector-effect: non-scaling-stroke;
+}
+
+.passive-tree-edge.is-available {
+    stroke: rgba(84, 176, 199, 0.5);
+}
+
+.passive-tree-edge.is-active {
+    stroke: #00dcb5;
+    stroke-width: 7;
+    filter: drop-shadow(0 0 6px rgba(0, 255, 204, 0.7));
+}
+
+.passive-tree-node {
+    --sector-color: #5d91ad;
+    cursor: pointer;
+    color: var(--sector-color);
+    transition: opacity 0.16s ease;
+}
+
+.passive-tree-node circle {
+    fill: #07111f;
+    stroke: color-mix(in srgb, var(--sector-color) 62%, #496273);
+    stroke-width: 3;
+    vector-effect: non-scaling-stroke;
+}
+
+.passive-tree-node path {
+    fill: color-mix(in srgb, var(--sector-color) 30%, #07111f);
+    stroke: var(--sector-color);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+}
+
+.passive-tree-node:hover circle,
+.passive-tree-node:focus circle,
+.passive-tree-node.is-selected circle {
+    stroke: #ffffff;
+    stroke-width: 5;
+}
+
+.passive-tree-node.is-available circle {
+    fill: color-mix(in srgb, var(--sector-color) 14%, #07111f);
+    stroke: var(--sector-color);
+    filter: drop-shadow(0 0 7px color-mix(in srgb, var(--sector-color) 70%, transparent));
+}
+
+.passive-tree-node.is-active circle {
+    fill: color-mix(in srgb, var(--sector-color) 60%, #07111f);
+    stroke: #dffcff;
+    filter: drop-shadow(0 0 9px color-mix(in srgb, var(--sector-color) 88%, transparent));
+}
+
+.passive-tree-node.has-gear-rank circle {
+    stroke: #ffd166;
+}
+
+.passive-tree-node.is-search-dimmed {
+    opacity: 0.12;
+}
+
+.passive-tree-node.is-search-match circle {
+    stroke: #ffffff;
+    stroke-width: 6;
+}
+
+.passive-node-label,
+.passive-sector-label,
+.passive-node-gear {
+    fill: #dff8ff;
+    paint-order: stroke;
+    stroke: #020711;
+    stroke-width: 4px;
+    stroke-linejoin: round;
+    text-anchor: middle;
+    pointer-events: none;
+}
+
+.passive-node-label {
+    font-size: 20px;
+}
+
+.passive-sector-label {
+    fill: var(--sector-color);
+    font-size: 42px;
+    font-weight: bold;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+}
+
+.passive-node-gear {
+    fill: #ffd166;
+    font-size: 15px;
+    font-weight: bold;
+}
+
+.passive-node-details {
+    min-height: 300px;
+    padding: 15px;
+    border: 1px solid rgba(0, 218, 255, 0.3);
+    border-radius: 7px;
+    background: linear-gradient(180deg, rgba(4, 18, 35, 0.98), rgba(3, 10, 21, 0.98));
+}
+
+.passive-detail-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(67, 151, 183, 0.25);
+}
+
+.passive-detail-heading h3 {
+    margin: 3px 0 0;
+    color: #f1fcff;
+}
+
+.passive-detail-type {
+    color: #00dcb5;
+    font-size: 10px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+}
+
+.passive-effective-rank {
+    color: #ffd166;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.passive-node-details p {
+    color: #9db8c7;
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+.passive-detail-effects {
+    display: grid;
+    gap: 5px;
+    margin: 14px 0;
+}
+
+.passive-detail-effects > div {
+    padding: 6px 8px;
+    border-left: 2px solid #00dcb5;
+    background: rgba(4, 48, 67, 0.42);
+    color: #dff9ff;
+    font-size: 12px;
+}
+
+.passive-detail-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+}
+
+.passive-tree-action.secondary {
+    border-color: #547183;
+}
+
+.passive-detail-reason {
+    min-height: 16px;
+    margin-top: 8px;
+    color: #708c9c;
+    font-size: 10px;
+}
+
+.sector-kinetic { --sector-color: #e0a84c; }
+.sector-slashing { --sector-color: #e35c6d; }
+.sector-corrosive { --sector-color: #71c96a; }
+.sector-radiation { --sector-color: #b583e8; }
+.sector-electric { --sector-color: #5bb9ff; }
+.sector-cryo { --sector-color: #73e0e8; }
+.sector-pyro { --sector-color: #ff764f; }
+.sector-core { --sector-color: #dceff5; }
+.sector-bridge { --sector-color: #9aaec3; }
+
+@media (max-width: 1050px) {
+    .passive-tree-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .passive-tree-viewport {
+        min-height: 560px;
+        height: 68vh;
+    }
+
+    .passive-node-details {
+        min-height: 0;
+    }
+}
+
+@media (max-width: 680px) {
+    #passives-screen { padding: 10px; }
+    .passive-tree-header { align-items: stretch; flex-direction: column; }
+    .passive-tree-toolbar { grid-template-columns: 1fr repeat(3, auto); }
+    .passive-tree-toolbar input { grid-column: 1 / -1; }
+    .passive-tree-toolbar .danger { grid-column: 1 / -1; }
+    .passive-tree-viewport { min-height: 480px; height: 62vh; }
+}
+
 /* Glow effect for the entire tier container */
 .tiers-glow-effect {
     position: absolute;

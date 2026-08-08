@@ -148,6 +148,7 @@ function buildProfile(location, gearLevel, quality = 0.5) {
   let criticalChance = 0;
   let criticalMultiplier = 1;
   let precision = 0;
+  let deflection = 0;
   const defense = { physicalResistance: 0, elementalResistance: 0, chemicalResistance: 0 };
   const damageModifiers = {};
 
@@ -161,6 +162,7 @@ function buildProfile(location, gearLevel, quality = 0.5) {
     criticalChance += itemValue(item, 'criticalChanceModifier', 'criticalChanceModifierRange', quality);
     criticalMultiplier += itemValue(item, 'criticalMultiplierModifier', 'criticalMultiplierModifierRange', quality);
     precision += itemValue(item, 'precision', 'precisionRange', quality);
+    deflection += itemValue(item, 'deflection', 'deflectionRange', quality);
     for (const key of Object.keys(defense)) defense[key] += itemDefense(item, key, quality);
     for (const [type, value] of Object.entries(item.statModifiers?.damageTypes || {})) {
       damageModifiers[type] = (damageModifiers[type] || 0) + valueAt(value, quality, 0);
@@ -181,6 +183,7 @@ function buildProfile(location, gearLevel, quality = 0.5) {
     criticalChance: Math.max(0, Math.min(1, criticalChance / 100)),
     criticalMultiplier: Math.max(1, criticalMultiplier),
     precision,
+    deflection,
     defense,
     damage
   };
@@ -200,6 +203,7 @@ function buildStarterProfile() {
     criticalChance: 0,
     criticalMultiplier: 1,
     precision: 0,
+    deflection: 0,
     defense: { physicalResistance: 0, elementalResistance: 0, chemicalResistance: 0 },
     damage: weaponDamage(weapon)
   };
@@ -224,9 +228,11 @@ function weightedChoice(entries, random) {
   return entries.at(-1);
 }
 
-function rolledHit(damage, attacker, defenderDefense, random) {
-  const precisionSkew = Math.max(0.1, 1 - (attacker.precision || 0) * 0.05);
-  const roll = 0.1 + 0.9 * Math.pow(random(), precisionSkew);
+function rolledHit(damage, attacker, defenderDefense, random, defenderDeflection = 0) {
+  const rollFloor = Math.min(0.85, Math.max(0.1,
+    0.35 + ((attacker.precision || 0) - (defenderDeflection || 0)) * 0.015
+  ));
+  const roll = rollFloor + random() * (1 - rollFloor);
   let total = Object.entries(damage).reduce((sum, [type, amount]) => {
     const resistance = Math.min(80, defenderDefense[DAMAGE_GROUP[type]] || 0);
     return sum + amount * roll * (1 - resistance / 100);
@@ -262,13 +268,13 @@ function runDelve(location, profile, random) {
         duration += playerClock;
         enemyClock -= playerClock;
         playerClock = 1 / profile.attackSpeed;
-        enemyHp -= rolledHit(profile.damage, profile, baseEnemy.defenseTypes, random);
+        enemyHp -= rolledHit(profile.damage, profile, baseEnemy.defenseTypes, random, baseEnemy.deflection || 0);
       } else {
         hp = Math.min(profile.health, hp + profile.healthRegen * enemyClock);
         duration += enemyClock;
         playerClock -= enemyClock;
         enemyClock = 1 / baseEnemy.attackSpeed;
-        let incoming = rolledHit(enemyDamage, enemyAttacker, profile.defense, random);
+        let incoming = rolledHit(enemyDamage, enemyAttacker, profile.defense, random, profile.deflection || 0);
         const shieldDamage = Math.min(shield, incoming);
         shield -= shieldDamage;
         incoming -= shieldDamage;
