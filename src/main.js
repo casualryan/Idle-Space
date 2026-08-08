@@ -4,6 +4,13 @@ import armor from './items/armor/index.js';
 import bionics from './items/bionics/index.js';
 import chips from './items/chips/index.js';
 import enemyTemplates from './enemies/index.js';
+import {
+  WEAPON_FAMILY_DEFINITIONS,
+  WEAPON_TAG_DEFINITIONS,
+  normalizeWeaponTaxonomy,
+  resolveWeaponTaxonomy,
+  validateWeaponTaxonomy
+} from './items/weapons/taxonomy.js';
 import { RUNTIME_SCRIPTS } from './runtimeScripts.js';
 
 const DEV_MODE_STORAGE_KEY = 'coreboundDeveloperMode';
@@ -38,6 +45,13 @@ window.armor = visibleOnly(armor);
 window.bionics = visibleOnly(bionics);
 window.chips = visibleOnly(chips);
 window.enemies = visibleOnly(enemyTemplates);
+window.coreboundWeaponTaxonomy = Object.freeze({
+  families: WEAPON_FAMILY_DEFINITIONS,
+  tags: WEAPON_TAG_DEFINITIONS,
+  normalizeWeapon: normalizeWeaponTaxonomy,
+  resolveWeapon: resolveWeaponTaxonomy,
+  validateWeapons: validateWeaponTaxonomy
+});
 
 window.loadItems = function loadItems() {
   window.items = [

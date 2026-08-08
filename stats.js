@@ -378,11 +378,65 @@ function applyItemModifiers(stats, item, options = {}) {
     }
 }
 
+function getActiveWeaponTaxonomy(playerObject) {
+    const mainHand = playerObject?.equipment?.mainHand;
+    if (!mainHand) return null;
+    const resolved = window.coreboundWeaponTaxonomy?.resolveWeapon?.(mainHand);
+    if (resolved) return resolved;
+    if (!mainHand.weaponFamily) return null;
+    return {
+        family: mainHand.weaponFamily,
+        familyLabel: mainHand.weaponFamilyLabel || mainHand.weaponFamily,
+        tags: Array.isArray(mainHand.weaponTags) ? mainHand.weaponTags : []
+    };
+}
+
+function applyPassiveStatPackage(stats, effects) {
+    if (!effects || typeof effects !== 'object') return 0;
+    stats.healthBonus += Number(effects.flatHealth || 0);
+    stats.energyShieldBonus += Number(effects.flatEnergyShield || 0);
+    stats.healthRegen += Number(effects.healthRegen || 0);
+    stats.precision += Number(effects.precision || 0);
+    stats.deflection += Number(effects.deflection || 0);
+    stats.healthBonusPercent += Number(effects.healthPercent || 0) / 100;
+    stats.energyShieldBonusPercent += Number(effects.energyShieldPercent || 0) / 100;
+    stats.criticalChance += Number(effects.criticalChance || 0) / 100;
+    stats.criticalMultiplier += Number(effects.criticalMultiplier || 0);
+    for (const key of [
+        'armorEfficiency', 'weaponEfficiency', 'bionicEfficiency', 'bionicSync', 'armorPenetration',
+        'comboAttack', 'comboEffectiveness', 'additionalComboAttacks',
+        'severedLimbChance', 'maxSeveredLimbs', 'maxSeepingWoundStacks'
+    ]) stats[key] += Number(effects[key] || 0);
+    for (const key of [
+        'damageRollFloorBonus', 'debuffChanceBonus', 'debuffDurationBonus',
+        'directDamageMultiplier', 'dotDamageMultiplier', 'damageVsDebuffed', 'damageTakenReduction'
+    ]) stats[key] += Number(effects[key] || 0);
+    for (const [damageType, value] of Object.entries(effects.flatDamageTypes || {})) {
+        if (!stats.damageTypes[damageType]) stats.damageTypes[damageType] = 0;
+        stats.damageTypes[damageType] += Number(value || 0);
+    }
+    for (const [defenseType, value] of Object.entries(effects.defenseTypes || {})) {
+        if (!stats.defenseTypes[defenseType]) stats.defenseTypes[defenseType] = 0;
+        stats.defenseTypes[defenseType] += Number(value || 0);
+    }
+    for (const [damageType, value] of Object.entries(effects.damageTypes || {})) {
+        if (!stats.damageTypeModifiers[damageType]) stats.damageTypeModifiers[damageType] = 1;
+        stats.damageTypeModifiers[damageType] += Number(value || 0) / 100;
+    }
+    for (const [group, value] of Object.entries(effects.damageGroups || {})) {
+        if (!stats.damageGroupModifiers[group]) stats.damageGroupModifiers[group] = 1;
+        stats.damageGroupModifiers[group] += Number(value || 0) / 100;
+    }
+    return Number(effects.attackSpeed || 0) / 100;
+}
+
 window.coreboundStatPipeline = Object.freeze({
     scalarStatRules: ITEM_SCALAR_STAT_RULES,
     reservedStatKeys: RESERVED_ITEM_STAT_KEYS,
     readItemScalarStat,
     getUnknownItemStatModifierKeys,
+    getActiveWeaponTaxonomy,
+    applyPassiveStatPackage,
     scaleBionicStaticStats,
     validatePlayerStatSnapshot,
     assertPlayerStatSnapshot
@@ -443,53 +497,31 @@ function calculatePlayerStats(playerObject) {
     stats.damageTakenReduction = 0;
 
 
+    let passiveASBonus = 0;
+
     // --- Apply Passives ---
     if (playerObject.passiveBonuses) {
         const passives = playerObject.passiveBonuses;
-        // Flat bonuses
-        stats.healthBonus += passives.flatHealth || 0;
-        stats.energyShieldBonus += passives.flatEnergyShield || 0;
-        stats.healthRegen += passives.healthRegen || 0;
-        stats.precision += passives.precision || 0;
-        stats.deflection += passives.deflection || 0;
-        // Percentage bonuses
-        stats.healthBonusPercent += (passives.healthPercent || 0) / 100;
-        stats.energyShieldBonusPercent += (passives.energyShieldPercent || 0) / 100;
-        // Crit
-        stats.criticalChance += (passives.criticalChance || 0) / 100;
-        stats.criticalMultiplier += passives.criticalMultiplier || 0;
-        for (const key of [
-            'armorEfficiency', 'weaponEfficiency', 'bionicEfficiency', 'bionicSync',
-            'comboAttack', 'comboEffectiveness', 'additionalComboAttacks',
-            'severedLimbChance', 'maxSeveredLimbs', 'maxSeepingWoundStacks'
-        ]) stats[key] += passives[key] || 0;
-        stats.damageRollFloorBonus += passives.damageRollFloorBonus || 0;
-        stats.debuffChanceBonus += passives.debuffChanceBonus || 0;
-        stats.debuffDurationBonus += passives.debuffDurationBonus || 0;
-        stats.directDamageMultiplier += passives.directDamageMultiplier || 0;
-        stats.dotDamageMultiplier += passives.dotDamageMultiplier || 0;
-        stats.damageVsDebuffed += passives.damageVsDebuffed || 0;
-        stats.damageTakenReduction += passives.damageTakenReduction || 0;
-        // Flat damage
-        for (const damageType in passives.flatDamageTypes) {
-            if (!stats.damageTypes[damageType]) stats.damageTypes[damageType] = 0;
-            stats.damageTypes[damageType] += passives.flatDamageTypes[damageType];
+        passiveASBonus += applyPassiveStatPackage(stats, passives);
+
+        const taxonomy = getActiveWeaponTaxonomy(playerObject);
+        if (taxonomy) {
+            passiveASBonus += applyPassiveStatPackage(stats, passives.weaponFamilyBonuses?.[taxonomy.family]);
+            for (const tag of taxonomy.tags || []) {
+                passiveASBonus += applyPassiveStatPackage(stats, passives.weaponTagBonuses?.[tag]);
+            }
+            stats.activeWeaponFamily = taxonomy.family;
+            stats.activeWeaponTags = [...(taxonomy.tags || [])];
+        } else {
+            stats.activeWeaponFamily = null;
+            stats.activeWeaponTags = [];
         }
-        // Defense
-        for (const defenseType in passives.defenseTypes) {
-            if (!stats.defenseTypes[defenseType]) stats.defenseTypes[defenseType] = 0;
-            stats.defenseTypes[defenseType] += passives.defenseTypes[defenseType];
-        }
-        // Percentage damage (Type specific) - ADDITIVE
-        for (const damageType in passives.damageTypes) {
-            if (!stats.damageTypeModifiers[damageType]) stats.damageTypeModifiers[damageType] = 1.0;
-            stats.damageTypeModifiers[damageType] += passives.damageTypes[damageType] / 100;
-        }
-        // Percentage damage (Group specific) - ADDITIVE
-        for (const groupType in passives.damageGroups) {
-            if (!stats.damageGroupModifiers[groupType]) stats.damageGroupModifiers[groupType] = 1.0;
-            stats.damageGroupModifiers[groupType] += passives.damageGroups[groupType] / 100;
-        }
+
+        const activeStyle = typeof getEquippedSkillId === 'function'
+            ? getEquippedSkillId(playerObject)
+            : (playerObject.equippedSkillId || 'balancedStyle');
+        passiveASBonus += applyPassiveStatPackage(stats, passives.combatStyleBonuses?.[activeStyle]);
+        stats.activeCombatStyle = activeStyle;
     }
 
     // --- Mining permanent bonuses (derived from gathering skill level) ---
@@ -607,7 +639,7 @@ function calculatePlayerStats(playerObject) {
     const localAttackSpeed = baseAttackSpeed * localWeaponASMultiplier;
 
     // Calculate final attack speed: (Weapon Base * local weapon AS) * (1 + global AS bonuses)
-    let totalASBonusPercent = equipmentASBonus + buffASBonus + (playerObject.passiveAttackSpeedBonus || 0);
+    let totalASBonusPercent = equipmentASBonus + buffASBonus + passiveASBonus;
     stats.attackSpeed = localAttackSpeed * (1 + totalASBonusPercent);
     stats.attackSpeed = Math.min(Math.max(stats.attackSpeed, 0.1), 10); // Clamp attack speed
 

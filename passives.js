@@ -2,7 +2,7 @@
 // cluster blueprints so the renderer, save migration, validation, and stat
 // pipeline share one authority without maintaining thousands of hand-wired IDs.
 
-const PASSIVE_TREE_VERSION = 3;
+const PASSIVE_TREE_VERSION = 4;
 const PASSIVE_TREE_ORIGIN_ID = 'core-origin';
 const PASSIVE_TREE_SECTOR_ORDER = Object.freeze([
     'kinetic', 'slashing', 'corrosive', 'radiation', 'electric', 'cryo', 'pyro'
@@ -154,32 +154,76 @@ const PASSIVE_BRIDGE_DEFINITIONS = Object.freeze([
     { sectors: ['pyro', 'kinetic'], label: 'Explosive Impact', notable: 'Detonation Physics', effects: { damageTypes: { pyro: 4, kinetic: 4 }, debuffChanceBonus: 0.012 } }
 ]);
 
-const PASSIVE_CLUSTER_BLUEPRINTS = Object.freeze([
-    { label: 'Force Calibration', focus: 'damage' },
-    { label: 'Vital Frame', focus: 'health' },
-    { label: 'Target Analysis', focus: 'precision' },
-    { label: 'Reactive Guard', focus: 'guard' },
-    { label: 'Signature Method', focus: 'identity' },
-    { label: 'Barrier Weave', focus: 'shield' },
-    { label: 'Critical Geometry', focus: 'critical' },
-    { label: 'Recovery Loop', focus: 'sustain' },
-    { label: 'Mechanism Tuning', focus: 'efficiency' },
-    { label: 'Unified Theory', focus: 'group' },
-    { label: 'Reinforced Core', focus: 'health' },
-    { label: 'Status Control', focus: 'control' },
-    { label: 'Persistent Harm', focus: 'dot' },
-    { label: 'Armored Circuit', focus: 'armor' },
-    { label: 'Combat Tempo', focus: 'tempo' },
-    { label: 'Synthetic Integration', focus: 'bionic' },
-    { label: 'Execution Logic', focus: 'execution' },
-    { label: 'Outer Resilience', focus: 'resilience' }
+const PASSIVE_GENERIC_BLUEPRINTS = Object.freeze([
+    { label: 'Vital Frame', focus: 'health', category: 'generic' },
+    { label: 'Barrier Weave', focus: 'shield', category: 'generic' },
+    { label: 'Sector Method', focus: 'identity', category: 'generic' }
+]);
+const PASSIVE_WEAPON_FAMILY_ORDER = Object.freeze([
+    'blades', 'impact', 'sidearms', 'rifles', 'projectors', 'ordnance', 'conduits'
+]);
+const PASSIVE_WEAPON_FAMILY_DEFINITIONS = Object.freeze({
+    blades: { label: 'Blades', identity: 'critical timing, combo pressure, and precise wounds' },
+    impact: { label: 'Impact', identity: 'reliable damage rolls, penetration, and crushing force' },
+    sidearms: { label: 'Sidearms', identity: 'fast attacks, precision, and opportunistic combos' },
+    rifles: { label: 'Rifles', identity: 'precision, critical damage, and deliberate execution' },
+    projectors: { label: 'Projectors', identity: 'status application, duration, and persistent harm' },
+    ordnance: { label: 'Ordnance', identity: 'oversized direct hits, penetration, and mechanism efficiency' },
+    conduits: { label: 'Conduits', identity: 'synthetic integration, status control, and adaptive output' }
+});
+const PASSIVE_WEAPON_TAG_ORDER = Object.freeze(['melee', 'ranged', 'oneHanded', 'twoHanded']);
+const PASSIVE_WEAPON_TAG_DEFINITIONS = Object.freeze({
+    melee: { label: 'Melee', identity: 'close-range force and defensive commitment' },
+    ranged: { label: 'Ranged', identity: 'precision and controlled damage rolls' },
+    oneHanded: { label: 'One-Handed', identity: 'speed, flexibility, and combo cadence' },
+    twoHanded: { label: 'Two-Handed', identity: 'deliberate force and efficient mechanisms' }
+});
+const PASSIVE_COMBAT_STYLE_ORDER = Object.freeze(['balancedStyle', 'heavyStyle', 'twinStyle', 'counterStyle']);
+const PASSIVE_COMBAT_STYLE_DEFINITIONS = Object.freeze({
+    balancedStyle: { label: 'Balanced Style', identity: 'clean timing, precision, and reliable damage' },
+    heavyStyle: { label: 'Heavy Style', identity: 'committed force, resistance, and concentrated hits' },
+    twinStyle: { label: 'Twin Style', identity: 'multi-hit tempo, combos, and status opportunities' },
+    counterStyle: { label: 'Counter Style', identity: 'deflection, mitigation, and retaliatory control' }
+});
+const PASSIVE_CLUSTER_SLOT_SEQUENCE = Object.freeze([
+    'generic', 'family', 'tag', 'style', 'family', 'generic',
+    'family', 'tag', 'style', 'family', 'tag', 'family',
+    'style', 'family', 'tag', 'family', 'style', 'generic'
 ]);
 
-const PASSIVE_KEYSTONE_CLUSTER_INDEXES = Object.freeze([4, 5, 9, 14, 17]);
+// Irregular arterial anchors. Clusters are hung beside these roads instead of
+// being inserted into them, so travel can pass by a specialization.
+const PASSIVE_ARTERY_LAYOUT = Object.freeze([
+    { radius: 540, angle: -13, side: -1 }, { radius: 690, angle: 1, side: 1 }, { radius: 560, angle: 14, side: 1 },
+    { radius: 1030, angle: -18, side: -1 }, { radius: 1190, angle: -5, side: 1 }, { radius: 1050, angle: 11, side: -1 },
+    { radius: 1510, angle: -12, side: 1 }, { radius: 1690, angle: 4, side: -1 }, { radius: 1480, angle: 18, side: 1 },
+    { radius: 2050, angle: -19, side: -1 }, { radius: 2220, angle: -3, side: 1 }, { radius: 2030, angle: 14, side: -1 },
+    { radius: 2580, angle: -13, side: 1 }, { radius: 2780, angle: 4, side: -1 }, { radius: 2540, angle: 19, side: 1 },
+    { radius: 3150, angle: -18, side: -1 }, { radius: 3340, angle: -1, side: 1 }, { radius: 3130, angle: 16, side: -1 }
+]);
+const PASSIVE_CLUSTER_RADII = Object.freeze([
+    770, 930, 780,
+    1270, 1430, 1290,
+    1750, 1950, 1740,
+    2290, 2460, 2290,
+    2820, 3020, 2800,
+    3380, 3590, 3380
+]);
+const PASSIVE_ARTERY_EDGES = Object.freeze([
+    [0, 3], [0, 4], [1, 4], [1, 5], [2, 5],
+    [3, 6], [3, 7], [4, 6], [4, 7], [4, 8], [5, 7], [5, 8],
+    [6, 9], [6, 10], [7, 9], [7, 10], [7, 11], [8, 10], [8, 11],
+    [9, 12], [9, 13], [10, 12], [10, 13], [10, 14], [11, 13], [11, 14],
+    [12, 15], [12, 16], [13, 15], [13, 16], [13, 17], [14, 16], [14, 17]
+]);
+const PASSIVE_TWO_EXIT_CLUSTERS = new Set([4, 7, 10, 13, 16]);
+const PASSIVE_CLUSTER_LINKS = Object.freeze([[1, 4], [3, 6], [7, 11], [9, 12], [13, 16]]);
+const PASSIVE_SPECIALIST_LAYOUT = Object.freeze([
+    { radius: 3860, angle: -17 }, { radius: 4210, angle: 1 }, { radius: 3910, angle: 17 }
+]);
+
+const PASSIVE_KEYSTONE_CLUSTER_INDEXES = Object.freeze([0, 5]);
 const PASSIVE_SECOND_NOTABLE_INDEXES = new Set([1, 3, 5, 7, 9, 11, 13, 15, 17]);
-const PASSIVE_BRANCH_ANGLE_OFFSETS = Object.freeze([-16, 0, 16]);
-const PASSIVE_BRANCH_RADII = Object.freeze([750, 1270, 1800, 2330, 2860, 3390]);
-const PASSIVE_BRANCH_DEPTH_WIGGLE = Object.freeze([0, 2.5, -2, 3, -2.5, 0]);
 
 function passivePolarPosition(radius, degrees) {
     const radians = degrees * Math.PI / 180;
@@ -193,17 +237,18 @@ function offsetPassivePosition(position, distance, degrees) {
 
 function mergePassiveEffects(...sources) {
     const result = {};
-    for (const source of sources) {
+    const mergeInto = (target, source) => {
         for (const [key, value] of Object.entries(source || {})) {
             if (value && typeof value === 'object' && !Array.isArray(value)) {
-                result[key] = result[key] || {};
-                for (const [nestedKey, nestedValue] of Object.entries(value)) {
-                    result[key][nestedKey] = Number(result[key][nestedKey] || 0) + Number(nestedValue || 0);
-                }
+                if (!target[key] || typeof target[key] !== 'object' || Array.isArray(target[key])) target[key] = {};
+                mergeInto(target[key], value);
             } else {
-                result[key] = Number(result[key] || 0) + Number(value || 0);
+                target[key] = Number(target[key] || 0) + Number(value || 0);
             }
         }
+    };
+    for (const source of sources) {
+        mergeInto(result, source);
     }
     return result;
 }
@@ -270,8 +315,138 @@ function scaleDecimal(value, scale, digits = 3) {
     return Number((value * scale).toFixed(digits));
 }
 
+function getSectorClusterBlueprints(sectorIndex) {
+    let familyIndex = 0;
+    let tagIndex = 0;
+    let styleIndex = 0;
+    let genericIndex = 0;
+    return PASSIVE_CLUSTER_SLOT_SEQUENCE.map(category => {
+        if (category === 'family') {
+            const target = PASSIVE_WEAPON_FAMILY_ORDER[(familyIndex++ + sectorIndex * 2) % PASSIVE_WEAPON_FAMILY_ORDER.length];
+            const definition = PASSIVE_WEAPON_FAMILY_DEFINITIONS[target];
+            return { category, target, focus: 'weaponFamily', label: `${definition.label} Method`, identity: definition.identity };
+        }
+        if (category === 'tag') {
+            const target = PASSIVE_WEAPON_TAG_ORDER[(tagIndex++ + sectorIndex) % PASSIVE_WEAPON_TAG_ORDER.length];
+            const definition = PASSIVE_WEAPON_TAG_DEFINITIONS[target];
+            return { category, target, focus: 'weaponTag', label: `${definition.label} Method`, identity: definition.identity };
+        }
+        if (category === 'style') {
+            const target = PASSIVE_COMBAT_STYLE_ORDER[(styleIndex++ + sectorIndex) % PASSIVE_COMBAT_STYLE_ORDER.length];
+            const definition = PASSIVE_COMBAT_STYLE_DEFINITIONS[target];
+            return { category, target, focus: 'combatStyle', label: `${definition.label} Method`, identity: definition.identity };
+        }
+        return PASSIVE_GENERIC_BLUEPRINTS[genericIndex++ % PASSIVE_GENERIC_BLUEPRINTS.length];
+    });
+}
+
+function wrapConditionalPassiveEffects(category, target, effects) {
+    const key = category === 'family'
+        ? 'weaponFamilyBonuses'
+        : category === 'tag'
+            ? 'weaponTagBonuses'
+            : 'combatStyleBonuses';
+    return { [key]: { [target]: effects } };
+}
+
+function getWeaponFamilyMinorEffects(sector, family, nodeIndex, scale) {
+    const variants = {
+        blades: [
+            { criticalChance: scaleDecimal(0.7, scale, 2), criticalMultiplier: scaleDecimal(0.012, scale) },
+            { comboAttack: scaleDecimal(1.2, scale, 2), precision: scaleWhole(1, scale) },
+            { directDamageMultiplier: scaleDecimal(0.009, scale), damageTypes: { [sector.damageType]: scaleWhole(1, scale) } }
+        ],
+        impact: [
+            { damageRollFloorBonus: scaleDecimal(0.009, scale), weaponEfficiency: scaleDecimal(1.2, scale, 2) },
+            { armorPenetration: scaleWhole(1, scale), directDamageMultiplier: scaleDecimal(0.008, scale) },
+            { damageTypes: { [sector.damageType]: scaleWhole(2, scale) }, precision: scaleWhole(1, scale) }
+        ],
+        sidearms: [
+            { attackSpeed: scaleDecimal(1.1, scale, 2), precision: scaleWhole(1, scale) },
+            { comboAttack: scaleDecimal(1.2, scale, 2), criticalChance: scaleDecimal(0.5, scale, 2) },
+            { damageRollFloorBonus: scaleDecimal(0.007, scale), damageTypes: { [sector.damageType]: scaleWhole(1, scale) } }
+        ],
+        rifles: [
+            { precision: scaleWhole(2, scale), criticalMultiplier: scaleDecimal(0.014, scale) },
+            { damageRollFloorBonus: scaleDecimal(0.009, scale), criticalChance: scaleDecimal(0.5, scale, 2) },
+            { directDamageMultiplier: scaleDecimal(0.009, scale), damageTypes: { [sector.damageType]: scaleWhole(1, scale) } }
+        ],
+        projectors: [
+            { debuffChanceBonus: scaleDecimal(0.004, scale), debuffDurationBonus: scaleDecimal(0.018, scale) },
+            { dotDamageMultiplier: scaleDecimal(0.012, scale), weaponEfficiency: scaleDecimal(1, scale, 2) },
+            { damageVsDebuffed: scaleDecimal(0.009, scale), damageTypes: { [sector.damageType]: scaleWhole(1, scale) } }
+        ],
+        ordnance: [
+            { directDamageMultiplier: scaleDecimal(0.012, scale), armorPenetration: scaleWhole(1, scale) },
+            { weaponEfficiency: scaleDecimal(1.5, scale, 2), damageRollFloorBonus: scaleDecimal(0.008, scale) },
+            { damageTypes: { [sector.damageType]: scaleWhole(2, scale) }, criticalMultiplier: scaleDecimal(0.012, scale) }
+        ],
+        conduits: [
+            { bionicSync: scaleDecimal(1, scale, 2), weaponEfficiency: scaleDecimal(1, scale, 2) },
+            { debuffChanceBonus: scaleDecimal(0.0035, scale), precision: scaleWhole(1, scale) },
+            { damageTypes: { [sector.damageType]: scaleWhole(2, scale) }, flatEnergyShield: scaleWhole(4, scale) }
+        ]
+    };
+    return wrapConditionalPassiveEffects('family', family, variants[family][nodeIndex % 3]);
+}
+
+function getWeaponTagMinorEffects(sector, tag, nodeIndex, scale) {
+    const variants = {
+        melee: [
+            { directDamageMultiplier: scaleDecimal(0.008, scale), deflection: scaleWhole(1, scale) },
+            { damageTypes: { [sector.damageType]: scaleWhole(1, scale) }, flatHealth: scaleWhole(5, scale) },
+            { weaponEfficiency: scaleDecimal(1, scale, 2), armorPenetration: scaleWhole(1, scale) }
+        ],
+        ranged: [
+            { precision: scaleWhole(2, scale), damageRollFloorBonus: scaleDecimal(0.006, scale) },
+            { criticalChance: scaleDecimal(0.5, scale, 2), damageTypes: { [sector.damageType]: scaleWhole(1, scale) } },
+            { weaponEfficiency: scaleDecimal(1, scale, 2), criticalMultiplier: scaleDecimal(0.01, scale) }
+        ],
+        oneHanded: [
+            { attackSpeed: scaleDecimal(1, scale, 2), comboAttack: scaleDecimal(1, scale, 2) },
+            { precision: scaleWhole(1, scale), criticalChance: scaleDecimal(0.5, scale, 2) },
+            { damageTypes: { [sector.damageType]: scaleWhole(1, scale) }, deflection: scaleWhole(1, scale) }
+        ],
+        twoHanded: [
+            { directDamageMultiplier: scaleDecimal(0.01, scale), weaponEfficiency: scaleDecimal(1.2, scale, 2) },
+            { armorPenetration: scaleWhole(1, scale), damageRollFloorBonus: scaleDecimal(0.007, scale) },
+            { damageTypes: { [sector.damageType]: scaleWhole(2, scale) }, criticalMultiplier: scaleDecimal(0.01, scale) }
+        ]
+    };
+    return wrapConditionalPassiveEffects('tag', tag, variants[tag][nodeIndex % 3]);
+}
+
+function getCombatStyleMinorEffects(sector, style, nodeIndex, scale) {
+    const variants = {
+        balancedStyle: [
+            { attackTimeModifier: scaleDecimal(-0.008, scale), precision: scaleWhole(1, scale) },
+            { damageRollFloorBonus: scaleDecimal(0.007, scale), damageTypes: { [sector.damageType]: scaleWhole(1, scale) } },
+            { criticalChance: scaleDecimal(0.5, scale, 2), deflection: scaleWhole(1, scale) }
+        ],
+        heavyStyle: [
+            { defenseTypes: { [sector.resistance]: scaleWhole(1, scale) }, flatHealth: scaleWhole(5, scale) },
+            { directDamageMultiplier: scaleDecimal(0.01, scale), armorPenetration: scaleWhole(1, scale) },
+            { damageRollFloorBonus: scaleDecimal(0.008, scale), damageTypes: { [sector.damageType]: scaleWhole(1, scale) } }
+        ],
+        twinStyle: [
+            { comboAttack: scaleDecimal(1.2, scale, 2), attackSpeed: scaleDecimal(0.8, scale, 2) },
+            { debuffChanceBonus: scaleDecimal(0.0035, scale), damageTypes: { [sector.damageType]: scaleWhole(1, scale) } },
+            { criticalChance: scaleDecimal(0.6, scale, 2), comboEffectiveness: scaleDecimal(1, scale, 2) }
+        ],
+        counterStyle: [
+            { damageTakenReduction: scaleDecimal(0.003, scale, 4), deflection: scaleWhole(1, scale) },
+            { flatEnergyShield: scaleWhole(6, scale), defenseTypes: { [sector.resistance]: scaleWhole(1, scale) } },
+            { damageTypes: { [sector.damageType]: scaleWhole(1, scale) }, damageRollFloorBonus: scaleDecimal(0.006, scale) }
+        ]
+    };
+    return wrapConditionalPassiveEffects('style', style, variants[style][nodeIndex % 3]);
+}
+
 function getClusterMinorEffects(sector, blueprint, depth, nodeIndex) {
     const scale = 1 + Math.floor(depth / 6) * 0.15 + (nodeIndex % 4 === 3 ? 0.08 : 0);
+    if (blueprint.category === 'family') return getWeaponFamilyMinorEffects(sector, blueprint.target, nodeIndex, scale);
+    if (blueprint.category === 'tag') return getWeaponTagMinorEffects(sector, blueprint.target, nodeIndex, scale);
+    if (blueprint.category === 'style') return getCombatStyleMinorEffects(sector, blueprint.target, nodeIndex, scale);
     switch (blueprint.focus) {
         case 'damage': return { damageTypes: { [sector.damageType]: scaleWhole(3, scale) } };
         case 'health': return nodeIndex % 3 === 0
@@ -312,6 +487,9 @@ function getTravelEffects(sector, depth) {
 
 function getClusterNotableEffects(sector, blueprint, depth, nodeIndex) {
     const base = getClusterMinorEffects(sector, blueprint, depth, nodeIndex);
+    if (blueprint.category === 'family' || blueprint.category === 'tag' || blueprint.category === 'style') {
+        return mergePassiveEffects(base, base, base, getSectorIdentityEffects(sector, depth + nodeIndex));
+    }
     const focusBonuses = {
         health: { healthPercent: 3 },
         shield: { energyShieldPercent: 4 },
@@ -337,24 +515,40 @@ function getLegacyNotableName(sector, clusterIndex) {
     return names[clusterIndex] || null;
 }
 
+function getLegacyNotableNameForNode(sector, clusterIndex, nodeIndex) {
+    const placement = {
+        '1:3': 0,
+        '2:3': 1,
+        '3:3': 2,
+        '4:3': 3,
+        '5:7': 4,
+        '6:3': 5
+    }[`${clusterIndex}:${nodeIndex}`];
+    return placement === undefined ? null : getLegacyNotableName(sector, placement);
+}
+
 function getSectorKeystones(sector) {
     return [sector.keystones.offense, sector.keystones.defense, sector.keystones.utility, ...sector.outerKeystones];
 }
 
 function getSpecialistMinorEffects(sector, wheelIndex, nodeIndex) {
     if (wheelIndex === 0) {
-        return nodeIndex % 3 === 0
+        const offense = nodeIndex % 3 === 0
             ? mergePassiveEffects({ damageTypes: { [sector.damageType]: 3 } }, getSectorEfficiencyEffects(sector))
             : { damageTypes: { [sector.damageType]: 3 }, precision: 1 };
+        return mergePassiveEffects(offense, nodeIndex % 2 === 0 ? { flatHealth: 5 } : null);
     }
     if (wheelIndex === 1) {
         return nodeIndex % 2 === 0
             ? { flatHealth: 14, defenseTypes: { [sector.resistance]: 2 }, armorEfficiency: 1 }
             : { flatEnergyShield: 11, deflection: 1, energyShieldPercent: 1 };
     }
-    return mergePassiveEffects(getSectorIdentityEffects(sector, nodeIndex), nodeIndex % 2 === 0
-        ? { damageVsDebuffed: 0.01 }
-        : { directDamageMultiplier: 0.01 });
+    return mergePassiveEffects(
+        getSectorIdentityEffects(sector, nodeIndex),
+        nodeIndex % 2 === 0
+            ? { damageVsDebuffed: 0.01, flatEnergyShield: 4 }
+            : { directDamageMultiplier: 0.01 }
+    );
 }
 
 function getBridgeMinorEffects(leftSector, rightSector, index) {
@@ -412,48 +606,60 @@ function createPassiveTree() {
     });
 
     const sectorClusterIds = {};
-    for (const sectorId of PASSIVE_TREE_SECTOR_ORDER) {
+    PASSIVE_TREE_SECTOR_ORDER.forEach((sectorId, sectorIndex) => {
         const sector = PASSIVE_SECTOR_DEFINITIONS[sectorId];
-        const branchClusterIds = [[], [], []];
-        sectorClusterIds[sectorId] = branchClusterIds;
+        const blueprints = getSectorClusterBlueprints(sectorIndex);
+        const travelIds = [];
+        const ringGroups = [];
+        const specialistGroups = [];
+        sectorClusterIds[sectorId] = { travelIds, ringGroups, specialistGroups };
 
-        PASSIVE_CLUSTER_BLUEPRINTS.forEach((blueprint, clusterIndex) => {
+        PASSIVE_ARTERY_LAYOUT.forEach((layout, clusterIndex) => {
             const depth = clusterIndex + 1;
-            const branchIndex = Math.floor(clusterIndex / 6);
-            const branchDepth = clusterIndex % 6;
-            const branchAngle = sector.angle
-                + PASSIVE_BRANCH_ANGLE_OFFSETS[branchIndex]
-                + PASSIVE_BRANCH_DEPTH_WIGGLE[branchDepth];
-            const clusterRadius = PASSIVE_BRANCH_RADII[branchDepth];
-            const travelPosition = passivePolarPosition(clusterRadius - 180, branchAngle);
+            const radialWobble = ((sectorIndex * 37 + clusterIndex * 53) % 91) - 45;
+            const angularWobble = Math.sin((sectorIndex + 2) * (clusterIndex + 3)) * 1.65;
+            const travelAngle = sector.angle + layout.angle + angularWobble;
+            const travelPosition = passivePolarPosition(layout.radius + radialWobble, travelAngle);
             const travelId = `${sectorId}-travel-${depth}`;
             addNode({
                 id: travelId,
-                name: `${sector.label} Neural Conduit`,
-                description: `A compact travel node leading toward ${blueprint.label}.`,
+                name: `${sector.label} Arterial Conduit`,
+                description: `A travel node passing the nearby ${blueprints[clusterIndex].label} cluster.`,
                 sector: sectorId, type: 'travel', depth, ...travelPosition,
                 effects: getTravelEffects(sector, clusterIndex)
             });
-            const previousRing = branchClusterIds[branchIndex][branchDepth - 1];
-            link(previousRing ? previousRing[4] : gatewayIds[sectorId], travelId);
+            travelIds.push(travelId);
+        });
+        [0, 1, 2].forEach(index => link(gatewayIds[sectorId], travelIds[index]));
+        PASSIVE_ARTERY_EDGES.forEach(([leftIndex, rightIndex]) => link(travelIds[leftIndex], travelIds[rightIndex]));
 
-            const center = passivePolarPosition(clusterRadius, branchAngle);
+        blueprints.forEach((blueprint, clusterIndex) => {
+            const depth = clusterIndex + 1;
+            const layout = PASSIVE_ARTERY_LAYOUT[clusterIndex];
+            const roadAngle = sector.angle + layout.angle;
+            const clusterRadiusWobble = ((sectorIndex * 29 + clusterIndex * 41) % 61) - 30;
+            const center = passivePolarPosition(
+                PASSIVE_CLUSTER_RADII[clusterIndex] + clusterRadiusWobble,
+                roadAngle + layout.side * 2.5
+            );
             const ringIds = [];
             const keystonePosition = PASSIVE_KEYSTONE_CLUSTER_INDEXES.indexOf(clusterIndex);
             const keystone = keystonePosition >= 0 ? getSectorKeystones(sector)[keystonePosition] : null;
             for (let nodeIndex = 0; nodeIndex < 8; nodeIndex++) {
-                const nodePosition = offsetPassivePosition(center, 76, branchAngle + 180 + nodeIndex * 45);
+                const nodePosition = offsetPassivePosition(center, 76, roadAngle + layout.side * 28 + nodeIndex * 45);
                 const isPrimary = nodeIndex === 3;
                 const isSecondary = nodeIndex === 7 && PASSIVE_SECOND_NOTABLE_INDEXES.has(clusterIndex);
                 const isKeystone = isPrimary && Boolean(keystone);
                 const type = isKeystone ? 'keystone' : (isPrimary || isSecondary) ? 'notable' : 'minor';
-                const legacyName = isPrimary ? getLegacyNotableName(sector, clusterIndex) : null;
+                const legacyName = (isPrimary || isSecondary)
+                    ? getLegacyNotableNameForNode(sector, clusterIndex, nodeIndex)
+                    : null;
                 const name = isKeystone
                     ? keystone.name
                     : isPrimary
                         ? (legacyName || `${sector.label} ${blueprint.label}`)
                         : isSecondary
-                            ? `${sector.label} ${blueprint.label} Protocol`
+                            ? (legacyName || `${sector.label} ${blueprint.label} Protocol`)
                             : `${sector.label} ${blueprint.label}`;
                 const effects = isKeystone
                     ? keystone.effects
@@ -461,71 +667,85 @@ function createPassiveTree() {
                         ? getClusterNotableEffects(sector, blueprint, clusterIndex, nodeIndex)
                         : getClusterMinorEffects(sector, blueprint, clusterIndex, nodeIndex);
                 const id = `${sectorId}-cluster-${depth}-${nodeIndex + 1}`;
+                const conditionalDescription = blueprint.identity
+                    ? `${blueprint.label} develops ${blueprint.identity} within the ${sector.label} region.`
+                    : `${blueprint.label} develops ${sector.identity.toLowerCase()}`;
                 addNode({
                     id, name,
                     description: isKeystone
                         ? keystone.description
-                        : `${blueprint.label} develops ${sector.identity.toLowerCase()} ${type === 'notable' ? 'This is a major cluster node.' : 'This is a supporting cluster node.'}`,
-                    sector: sectorId, cluster: blueprint.label, type, depth, ...nodePosition, effects
+                        : `${conditionalDescription}${type === 'notable' ? ' This is a major cluster node.' : ''}`,
+                    sector: sectorId, cluster: blueprint.label, specialty: blueprint.category,
+                    target: blueprint.target || null, type, depth, ...nodePosition, effects
                 });
                 ringIds.push(id);
             }
             connectRing(ringIds);
-            link(travelId, ringIds[0]);
-            clusters.push({ id: `${sectorId}-cluster-${depth}`, sector: sectorId, label: blueprint.label, x: center.x, y: center.y, radius: 99 });
-            branchClusterIds[branchIndex].push(ringIds);
-            if (previousRing) link(previousRing[2], ringIds[6]);
+            link(travelIds[clusterIndex], ringIds[0]);
+            if (PASSIVE_TWO_EXIT_CLUSTERS.has(clusterIndex)) {
+                link(ringIds[4], travelIds[Math.min(PASSIVE_ARTERY_LAYOUT.length - 1, clusterIndex + 3)]);
+            }
+            ringGroups.push(ringIds);
+            clusters.push({
+                id: `${sectorId}-cluster-${depth}`, sector: sectorId, label: blueprint.label,
+                specialty: blueprint.category, target: blueprint.target || null,
+                x: center.x, y: center.y, radius: 99
+            });
         });
-
-        for (const branchDepth of [1, 3, 5]) {
-            link(branchClusterIds[0][branchDepth][2], branchClusterIds[1][branchDepth][6]);
-            link(branchClusterIds[1][branchDepth][2], branchClusterIds[2][branchDepth][6]);
-        }
-        link(branchClusterIds[0][4][1], branchClusterIds[2][4][7]);
+        PASSIVE_CLUSTER_LINKS.forEach(([leftIndex, rightIndex]) => link(ringGroups[leftIndex][2], ringGroups[rightIndex][6]));
 
         sector.specialists.forEach((specialistName, wheelIndex) => {
-            const wheelAngle = sector.angle + PASSIVE_BRANCH_ANGLE_OFFSETS[wheelIndex];
-            const center = passivePolarPosition(4320, wheelAngle);
+            const specialistLayout = PASSIVE_SPECIALIST_LAYOUT[wheelIndex];
+            const wheelAngle = sector.angle + specialistLayout.angle + Math.sin((sectorIndex + 1) * (wheelIndex + 2)) * 1.8;
+            const center = passivePolarPosition(specialistLayout.radius + sectorIndex * 13 - wheelIndex * 21, wheelAngle);
             const ringIds = [];
+            const keystone = getSectorKeystones(sector)[wheelIndex + 2];
             for (let nodeIndex = 0; nodeIndex < 10; nodeIndex++) {
                 const nodePosition = offsetPassivePosition(center, 108, wheelAngle + 180 + nodeIndex * 36);
-                const isNotable = nodeIndex === 3 || nodeIndex === 8;
+                const isKeystone = nodeIndex === 3;
+                const isNotable = nodeIndex === 8;
                 const id = `${sectorId}-specialist-${wheelIndex + 1}-${nodeIndex + 1}`;
                 const baseEffects = getSpecialistMinorEffects(sector, wheelIndex, nodeIndex);
                 addNode({
                     id,
-                    name: isNotable
-                        ? `${specialistName} ${nodeIndex === 3 ? 'Core' : 'Doctrine'}`
-                        : specialistName,
-                    description: `${specialistName} is an outer ${sector.label} specialization.${isNotable ? ' This is a major specialist node.' : ''}`,
-                    sector: sectorId, cluster: specialistName, type: isNotable ? 'notable' : 'minor', depth: 19 + wheelIndex,
+                    name: isKeystone
+                        ? keystone.name
+                        : isNotable ? `${specialistName} Doctrine` : specialistName,
+                    description: isKeystone
+                        ? keystone.description
+                        : `${specialistName} is an outer ${sector.label} specialization.${isNotable ? ' This is a major specialist node.' : ''}`,
+                    sector: sectorId, cluster: specialistName,
+                    type: isKeystone ? 'keystone' : isNotable ? 'notable' : 'minor', depth: 19 + wheelIndex,
                     ...nodePosition,
-                    effects: isNotable
-                        ? mergePassiveEffects(baseEffects, baseEffects, getSectorIdentityEffects(sector, nodeIndex))
-                        : baseEffects
+                    effects: isKeystone
+                        ? keystone.effects
+                        : isNotable
+                            ? mergePassiveEffects(baseEffects, baseEffects, getSectorIdentityEffects(sector, nodeIndex))
+                            : baseEffects
                 });
                 ringIds.push(id);
             }
             connectRing(ringIds);
-            link(branchClusterIds[wheelIndex][5][4], ringIds[0]);
-            if (wheelIndex > 0) link(ringIds[7], `${sectorId}-specialist-${wheelIndex}-6`);
+            link(travelIds[15 + wheelIndex], ringIds[0]);
+            specialistGroups.push(ringIds);
             clusters.push({ id: `${sectorId}-specialist-${wheelIndex + 1}`, sector: sectorId, label: specialistName, x: center.x, y: center.y, radius: 137, specialist: true });
         });
-    }
+        link(specialistGroups[0][7], specialistGroups[1][5]);
+        link(specialistGroups[1][7], specialistGroups[2][5]);
+    });
 
     PASSIVE_BRIDGE_DEFINITIONS.forEach((bridge, bridgeIndex) => {
         const [leftSectorId, rightSectorId] = bridge.sectors;
         const leftSector = PASSIVE_SECTOR_DEFINITIONS[leftSectorId];
         const rightSector = PASSIVE_SECTOR_DEFINITIONS[rightSectorId];
-        let angleDelta = rightSector.angle - leftSector.angle;
-        if (angleDelta < 0) angleDelta += 360;
-        const startAngle = leftSector.angle + PASSIVE_BRANCH_ANGLE_OFFSETS[2];
-        const bridgeAngleSpan = angleDelta - (PASSIVE_BRANCH_ANGLE_OFFSETS[2] - PASSIVE_BRANCH_ANGLE_OFFSETS[0]);
+        let startAngle = leftSector.angle + 19;
+        let endAngle = rightSector.angle - 19;
+        while (endAngle <= startAngle) endAngle += 360;
         const ids = [];
         for (let index = 0; index < 17; index++) {
             const progress = (index + 1) / 18;
-            const angle = startAngle + bridgeAngleSpan * progress;
-            const radius = 3670 + Math.sin(progress * Math.PI) * 140;
+            const angle = startAngle + (endAngle - startAngle) * progress + Math.sin(progress * Math.PI * 2) * 1.4;
+            const radius = 2870 + Math.sin(progress * Math.PI) * 560 + Math.sin(progress * Math.PI * 3) * 85;
             const position = passivePolarPosition(radius, angle);
             const isNotable = index === 5 || index === 12;
             const effects = isNotable
@@ -542,8 +762,10 @@ function createPassiveTree() {
             ids.push(id);
             if (index > 0) link(ids[index - 1], id);
         }
-        link(sectorClusterIds[leftSectorId][2][5][4], ids[0]);
-        link(ids[ids.length - 1], sectorClusterIds[rightSectorId][0][5][4]);
+        link(sectorClusterIds[leftSectorId].travelIds[14], ids[0]);
+        link(ids[ids.length - 1], sectorClusterIds[rightSectorId].travelIds[12]);
+        link(ids[6], sectorClusterIds[leftSectorId].ringGroups[13][4]);
+        link(ids[10], sectorClusterIds[rightSectorId].ringGroups[12][4]);
     });
 
     const adjacency = Object.fromEntries(nodes.map(node => [node.id, []]));
@@ -652,6 +874,7 @@ function createEmptyPassiveBonuses() {
         healthRegen: 0,
         precision: 0,
         deflection: 0,
+        armorPenetration: 0,
         armorEfficiency: 0,
         weaponEfficiency: 0,
         bionicEfficiency: 0,
@@ -668,21 +891,25 @@ function createEmptyPassiveBonuses() {
         directDamageMultiplier: 0,
         dotDamageMultiplier: 0,
         damageVsDebuffed: 0,
-        damageTakenReduction: 0
+        damageTakenReduction: 0,
+        weaponFamilyBonuses: {},
+        weaponTagBonuses: {},
+        combatStyleBonuses: {}
     };
 }
 
 function accumulatePassiveEffects(target, effects, multiplier = 1) {
-    for (const [key, value] of Object.entries(effects || {})) {
-        if (value && typeof value === 'object' && !Array.isArray(value)) {
-            target[key] = target[key] || {};
-            for (const [nestedKey, nestedValue] of Object.entries(value)) {
-                target[key][nestedKey] = Number(target[key][nestedKey] || 0) + Number(nestedValue || 0) * multiplier;
+    const accumulateInto = (destination, source) => {
+        for (const [key, value] of Object.entries(source || {})) {
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+                if (!destination[key] || typeof destination[key] !== 'object' || Array.isArray(destination[key])) destination[key] = {};
+                accumulateInto(destination[key], value);
+            } else {
+                destination[key] = Number(destination[key] || 0) + Number(value || 0) * multiplier;
             }
-        } else {
-            target[key] = Number(target[key] || 0) + Number(value || 0) * multiplier;
         }
-    }
+    };
+    accumulateInto(target, effects);
     return target;
 }
 
@@ -714,6 +941,24 @@ function validatePassiveTree() {
     const notableCount = passives.filter(node => node.type === 'notable').length;
     if (keystoneCount < 28 || keystoneCount > 40) errors.push(`tree requires 28-40 keystones; found ${keystoneCount}`);
     if (notableCount < 180 || notableCount > 240) errors.push(`tree requires 180-240 notables; found ${notableCount}`);
+    const travelNodes = passives.filter(node => node.type === 'travel');
+    for (const node of travelNodes) {
+        const roadConnections = node.connections.filter(id => {
+            const target = PASSIVE_NODE_BY_ID.get(id);
+            return target && (target.type === 'travel' || target.type === 'gateway' || target.type === 'bridge');
+        });
+        if (roadConnections.length < 2) errors.push(`${node.id} is a forced rail instead of a pass-by arterial node`);
+    }
+    for (let clusterIndex = 0; clusterIndex < PASSIVE_TREE.clusters.length; clusterIndex++) {
+        const cluster = PASSIVE_TREE.clusters[clusterIndex];
+        for (let comparisonIndex = clusterIndex + 1; comparisonIndex < PASSIVE_TREE.clusters.length; comparisonIndex++) {
+            const comparison = PASSIVE_TREE.clusters[comparisonIndex];
+            const centerDistance = Math.hypot(cluster.x - comparison.x, cluster.y - comparison.y);
+            if (centerDistance < cluster.radius + comparison.radius) {
+                errors.push(`${cluster.id} overlaps ${comparison.id}`);
+            }
+        }
+    }
     for (const sectorId of PASSIVE_TREE_SECTOR_ORDER) {
         const sectorNodes = passives.filter(node => node.sector === sectorId);
         if (sectorNodes.length < 185) errors.push(`${sectorId} sector is undersized`);
@@ -722,6 +967,12 @@ function validatePassiveTree() {
         const shieldNodes = sectorNodes.filter(node => Number(node.effects.flatEnergyShield || 0) > 0 || Number(node.effects.energyShieldPercent || 0) > 0);
         if (lifeNodes.length < 20) errors.push(`${sectorId} does not have enough distributed life access`);
         if (shieldNodes.length < 15) errors.push(`${sectorId} does not have enough distributed Energy Shield access`);
+        const familyTargets = new Set(sectorNodes.filter(node => node.specialty === 'family').map(node => node.target));
+        const tagTargets = new Set(sectorNodes.filter(node => node.specialty === 'tag').map(node => node.target));
+        const styleTargets = new Set(sectorNodes.filter(node => node.specialty === 'style').map(node => node.target));
+        if (familyTargets.size !== PASSIVE_WEAPON_FAMILY_ORDER.length) errors.push(`${sectorId} does not expose every weapon family`);
+        if (tagTargets.size !== PASSIVE_WEAPON_TAG_ORDER.length) errors.push(`${sectorId} does not expose every broad weapon tag`);
+        if (styleTargets.size !== PASSIVE_COMBAT_STYLE_ORDER.length) errors.push(`${sectorId} does not expose every combat style`);
     }
     return {
         valid: errors.length === 0,

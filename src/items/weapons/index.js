@@ -70,6 +70,10 @@ import radiumCarbine from './radiumCarbine.js';
 import isotopeBeamStaff from './isotopeBeamStaff.js';
 import reactorLeakCannon from './reactorLeakCannon.js';
 import singularityIrradiator from './singularityIrradiator.js';
+import {
+  normalizeWeaponTaxonomy,
+  validateWeaponTaxonomy
+} from './taxonomy.js';
 
 // Add all weapons to this array
 const rawWeapons = [
@@ -175,7 +179,12 @@ const weapons = rawWeapons.map((weapon) => {
     // Keep canonical local base and discard legacy duplicate field.
     delete migrated.damageTypes;
   }
-  return migrated;
+  return normalizeWeaponTaxonomy(migrated, { strict: true });
 });
+
+const taxonomyValidation = validateWeaponTaxonomy(weapons);
+if (!taxonomyValidation.valid) {
+  throw new TypeError(`Invalid weapon taxonomy: ${taxonomyValidation.errors.join('; ')}`);
+}
 
 export default weapons;

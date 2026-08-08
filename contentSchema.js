@@ -3,6 +3,13 @@
 const CONTENT_EQUIPMENT_SLOTS = new Set(['mainHand', 'offHand', 'head', 'chest', 'legs', 'feet', 'gloves', 'bionic', 'chip']);
 const CONTENT_ITEM_SLOTS = new Set([...CONTENT_EQUIPMENT_SLOTS, 'material']);
 const CONTENT_DAMAGE_GROUPS = new Set(['physical', 'elemental', 'chemical']);
+const CONTENT_WEAPON_FAMILIES = new Set(['blades', 'impact', 'sidearms', 'rifles', 'projectors', 'ordnance', 'conduits']);
+const CONTENT_WEAPON_TAGS = new Set([
+    'melee', 'ranged', 'oneHanded', 'twoHanded', 'contact', 'projectile',
+    'beam', 'stream', 'area', 'rapid', 'deliberate'
+]);
+const CONTENT_COMBAT_STYLE_IDS = new Set(['balancedStyle', 'heavyStyle', 'twinStyle', 'counterStyle']);
+const CONTENT_CONDITIONAL_PASSIVE_KEYS = new Set(['weaponFamilyBonuses', 'weaponTagBonuses', 'combatStyleBonuses']);
 const CONTENT_PASSIVE_STAT_KEYS = new Set([
     'attackSpeed', 'damageTypes', 'damageGroups', 'healthPercent', 'energyShieldPercent',
     'criticalChance', 'criticalMultiplier', 'flatDamageTypes', 'flatHealth', 'flatEnergyShield',
@@ -10,7 +17,8 @@ const CONTENT_PASSIVE_STAT_KEYS = new Set([
     'weaponEfficiency', 'bionicEfficiency', 'bionicSync', 'comboAttack', 'comboEffectiveness',
     'additionalComboAttacks', 'severedLimbChance', 'maxSeveredLimbs', 'maxSeepingWoundStacks',
     'damageRollFloorBonus', 'debuffChanceBonus', 'debuffDurationBonus', 'directDamageMultiplier',
-    'dotDamageMultiplier', 'damageVsDebuffed', 'damageTakenReduction'
+    'dotDamageMultiplier', 'damageVsDebuffed', 'damageTakenReduction', 'armorPenetration',
+    'attackTimeModifier', ...CONTENT_CONDITIONAL_PASSIVE_KEYS
 ]);
 const CONTENT_STYLE_PROFILE_KEYS = new Set([
     'attackTimeMultiplier', 'damageMultiplier', 'hitCount', 'hitDamageMultipliers',
@@ -26,7 +34,8 @@ const CONTENT_STYLE_MECHANICS = new Set([
     'quickRiposte', 'shieldReprisal', 'perfectParry', 'vengefulLoop', 'unbrokenForm'
 ]);
 const CONTENT_ITEM_TEMPLATE_KEYS = new Set([
-    'name', 'description', 'icon', 'color', 'type', 'slot', 'weaponType', 'levelRequirement',
+    'name', 'description', 'icon', 'color', 'type', 'slot', 'weaponType', 'weaponFamily',
+    'weaponFamilyLabel', 'weaponTags', 'levelRequirement',
     'developerOnly', 'stackable', 'quantity', 'salePrice', 'sellValue', 'isDisassembleable',
     'disassembleResults', 'effects', 'passiveBonuses', 'rollGroups', 'wires',
     'weaponBaseDamage', 'weaponLocalFlatDamage', 'weaponLocalTypeIncrease',
@@ -82,6 +91,46 @@ function validateAuthoredMap(map, allowedKeys, context, errors) {
     }
 }
 
+function validatePassiveEffectContent(effects, passiveName, report, allowConditional = true) {
+    for (const [key, value] of Object.entries(effects || {})) {
+        if (!CONTENT_PASSIVE_STAT_KEYS.has(key)) {
+            report('passive', passiveName, `unknown stat category: ${key}`);
+            continue;
+        }
+        if (CONTENT_CONDITIONAL_PASSIVE_KEYS.has(key)) {
+            if (!allowConditional || !value || typeof value !== 'object' || Array.isArray(value)) {
+                report('passive', passiveName, `${key} must be an object of conditional effect packages`);
+                continue;
+            }
+            const allowedTargets = key === 'weaponFamilyBonuses'
+                ? CONTENT_WEAPON_FAMILIES
+                : key === 'weaponTagBonuses' ? CONTENT_WEAPON_TAGS : CONTENT_COMBAT_STYLE_IDS;
+            for (const [target, packageEffects] of Object.entries(value)) {
+                if (!allowedTargets.has(target)) report('passive', passiveName, `unknown ${key} target: ${target}`);
+                if (!packageEffects || typeof packageEffects !== 'object' || Array.isArray(packageEffects)) {
+                    report('passive', passiveName, `${key}.${target} must be an effect package`);
+                    continue;
+                }
+                validatePassiveEffectContent(packageEffects, passiveName, report, false);
+            }
+        } else if (key === 'damageTypes' || key === 'flatDamageTypes') {
+            for (const type of Object.keys(value || {})) {
+                if (!COMBAT_DAMAGE_TYPES.includes(type)) report('passive', passiveName, `unknown damage type: ${type}`);
+            }
+        } else if (key === 'damageGroups') {
+            for (const group of Object.keys(value || {})) {
+                if (!CONTENT_DAMAGE_GROUPS.has(group)) report('passive', passiveName, `unknown damage group: ${group}`);
+            }
+        } else if (key === 'defenseTypes') {
+            for (const type of Object.keys(value || {})) {
+                if (!COMBAT_RESISTANCE_TYPES.includes(type)) report('passive', passiveName, `unknown resistance type: ${type}`);
+            }
+        } else if (!Number.isFinite(Number(value))) {
+            report('passive', passiveName, `${key} must be numeric`);
+        }
+    }
+}
+
 function validateItemContent(item, context = 'item', options = {}) {
     const errors = [];
     const warnings = [];
@@ -113,6 +162,14 @@ function validateItemContent(item, context = 'item', options = {}) {
             errors.push('weaponBaseDamage is required');
         }
         if (item.damageTypes) errors.push('weapons cannot retain legacy damageTypes beside weaponBaseDamage');
+        if (!CONTENT_WEAPON_FAMILIES.has(item.weaponFamily)) errors.push(`unknown weapon family: ${item.weaponFamily || '(missing)'}`);
+        if (!Array.isArray(item.weaponTags) || item.weaponTags.length === 0) {
+            errors.push('weaponTags are required');
+        } else {
+            for (const tag of item.weaponTags) {
+                if (!CONTENT_WEAPON_TAGS.has(tag)) errors.push(`unknown weapon tag: ${tag}`);
+            }
+        }
     }
     if (item.weaponBaseDamage) validateAuthoredMap(item.weaponBaseDamage, new Set(COMBAT_DAMAGE_TYPES), 'weaponBaseDamage', errors);
     if (item.damageTypes) validateAuthoredMap(item.damageTypes, new Set(COMBAT_DAMAGE_TYPES), 'damageTypes', errors);
@@ -314,24 +371,7 @@ function validateCoreboundContent(registries = {}) {
             if (!passiveIds.has(connection)) report('passive', name, `unknown connection: ${connection}`);
         }
         if (!passive?.effects || typeof passive.effects !== 'object') report('passive', name, 'effects are required');
-        for (const [key, value] of Object.entries(passive?.effects || {})) {
-            if (!CONTENT_PASSIVE_STAT_KEYS.has(key)) report('passive', name, `unknown stat category: ${key}`);
-            if (key === 'damageTypes' || key === 'flatDamageTypes') {
-                for (const type of Object.keys(value || {})) {
-                    if (!COMBAT_DAMAGE_TYPES.includes(type)) report('passive', name, `unknown damage type: ${type}`);
-                }
-            } else if (key === 'damageGroups') {
-                for (const group of Object.keys(value || {})) {
-                    if (!CONTENT_DAMAGE_GROUPS.has(group)) report('passive', name, `unknown damage group: ${group}`);
-                }
-            } else if (key === 'defenseTypes') {
-                for (const type of Object.keys(value || {})) {
-                    if (!COMBAT_RESISTANCE_TYPES.includes(type)) report('passive', name, `unknown resistance type: ${type}`);
-                }
-            } else if (!Number.isFinite(Number(value))) {
-                report('passive', name, `${key} must be numeric`);
-            }
-        }
+        validatePassiveEffectContent(passive?.effects, name, report);
     }
 
     const styleChoiceIds = new Set();

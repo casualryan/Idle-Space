@@ -241,6 +241,11 @@ function resolveSkillProfile(playerObject) {
         profile.mechanics.push(...(choice.mechanics || []));
     }
 
+    const passiveStyleEffects = playerObject?.passiveBonuses?.combatStyleBonuses?.[styleId];
+    if (passiveStyleEffects) {
+        profile.attackTimeMultiplier *= Math.max(0.1, 1 + Number(passiveStyleEffects.attackTimeModifier || 0));
+    }
+
     if (profile.mechanics.includes('aftershock')) {
         profile.hitCount = 2;
         profile.hitDamageMultipliers = [profile.damageMultiplier, profile.damageMultiplier * 0.25];
@@ -478,6 +483,7 @@ function equipCombatSkill(playerObject, styleId) {
     if (!getCombatStyles().some(style => style.id === styleId)) return { ok: false, reason: 'Unknown combat style.' };
     playerObject.equippedSkillId = styleId;
     resetCombatStyleState(playerObject);
+    if (typeof playerObject.calculateStats === 'function') playerObject.calculateStats();
     if (typeof refreshPlayerAttackInterval === 'function') refreshPlayerAttackInterval();
     return { ok: true };
 }

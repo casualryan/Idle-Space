@@ -23,6 +23,19 @@ function isWeaponTooltipItem(item) {
     return (item.type || '').toLowerCase() === 'weapon' || item.slot === 'mainHand' || !!item.weaponType;
 }
 
+function getTooltipWeaponTaxonomy(item) {
+    if (!isWeaponTooltipItem(item)) return null;
+    const resolved = window.coreboundWeaponTaxonomy?.resolveWeapon?.(item);
+    if (resolved) return resolved;
+    if (!item.weaponFamily) return null;
+    return {
+        family: item.weaponFamily,
+        familyLabel: item.weaponFamilyLabel || capitalize(item.weaponFamily),
+        tags: Array.isArray(item.weaponTags) ? item.weaponTags : [],
+        tagLabels: Array.isArray(item.weaponTags) ? item.weaponTags.map(tag => capitalize(tag)) : []
+    };
+}
+
 function normalizeTooltipDamageType(type) {
     if (type === 'mental') return 'slashing';
     if (type === 'magnetic') return 'electric';
@@ -85,6 +98,13 @@ function getItemTooltipContent(item, showRanges = false) {
     content += `<span style="color: #7fdbff;">Type:</span> ${item.type}<br>`;
     if (item.weaponType) {
         content += `<span style=\"color: #7fdbff;\">Weapon Type:</span> ${item.weaponType}<br>`;
+    }
+    const weaponTaxonomy = getTooltipWeaponTaxonomy(item);
+    if (weaponTaxonomy) {
+        content += `<span style=\"color: #7fdbff;\">Weapon Family:</span> <span style=\"color:#e8c77a;\">${weaponTaxonomy.familyLabel}</span><br>`;
+        if (weaponTaxonomy.tagLabels.length > 0) {
+            content += `<span style=\"color: #7fdbff;\">Weapon Tags:</span> <span style=\"color:#b8cee0;\">${weaponTaxonomy.tagLabels.join(' • ')}</span><br>`;
+        }
     }
     if (item.levelRequirement !== undefined) {
         const levelText = formatLevelRequirement(item.levelRequirement, showRanges);

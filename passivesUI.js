@@ -126,7 +126,8 @@ function formatPassiveEffectName(key, nestedKey = null) {
         maxSeepingWoundStacks: 'Maximum Seeping Wound Stacks', damageRollFloorBonus: 'Minimum Damage Roll',
         debuffChanceBonus: 'Status Application Chance', debuffDurationBonus: 'Status Duration',
         directDamageMultiplier: 'Direct Hit Damage', dotDamageMultiplier: 'Damage Over Time',
-        damageVsDebuffed: 'Damage Against Debuffed Targets', damageTakenReduction: 'Damage Taken Reduction'
+        damageVsDebuffed: 'Damage Against Debuffed Targets', damageTakenReduction: 'Damage Taken Reduction',
+        armorPenetration: 'Armor Penetration', attackTimeModifier: 'Total Attack Time'
     };
     if (!nestedKey) return labels[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, letter => letter.toUpperCase());
     const nestedLabels = {
@@ -139,7 +140,7 @@ function formatPassiveEffectName(key, nestedKey = null) {
 function formatPassiveEffectValue(key, value) {
     const percentFractionKeys = new Set([
         'damageRollFloorBonus', 'debuffChanceBonus', 'debuffDurationBonus', 'directDamageMultiplier',
-        'dotDamageMultiplier', 'damageVsDebuffed', 'damageTakenReduction'
+        'dotDamageMultiplier', 'damageVsDebuffed', 'damageTakenReduction', 'attackTimeModifier'
     ]);
     const percentagePointKeys = new Set([
         'attackSpeed', 'healthPercent', 'energyShieldPercent', 'criticalChance', 'damageTypes',
@@ -157,6 +158,26 @@ function formatPassiveEffectValue(key, value) {
 function getPassiveEffectLines(node, rank = 1) {
     const lines = [];
     for (const [key, value] of Object.entries(node?.effects || {})) {
+        if (key === 'weaponFamilyBonuses' || key === 'weaponTagBonuses' || key === 'combatStyleBonuses') {
+            for (const [target, packageEffects] of Object.entries(value || {})) {
+                const targetLabel = key === 'weaponFamilyBonuses'
+                    ? `${PASSIVE_WEAPON_FAMILY_DEFINITIONS[target]?.label || capitalize(target)} weapons`
+                    : key === 'weaponTagBonuses'
+                        ? `${PASSIVE_WEAPON_TAG_DEFINITIONS[target]?.label || capitalize(target)} weapons`
+                        : (PASSIVE_COMBAT_STYLE_DEFINITIONS[target]?.label || capitalize(target));
+                const condition = key === 'combatStyleBonuses' ? `while using ${targetLabel}` : `with ${targetLabel}`;
+                for (const [packageKey, packageValue] of Object.entries(packageEffects || {})) {
+                    if (packageValue && typeof packageValue === 'object') {
+                        for (const [nestedKey, nestedValue] of Object.entries(packageValue)) {
+                            lines.push(`${formatPassiveEffectValue(packageKey, Number(nestedValue) * rank)} ${formatPassiveEffectName(packageKey, nestedKey)} ${condition}`);
+                        }
+                    } else {
+                        lines.push(`${formatPassiveEffectValue(packageKey, Number(packageValue) * rank)} ${formatPassiveEffectName(packageKey)} ${condition}`);
+                    }
+                }
+            }
+            continue;
+        }
         if (value && typeof value === 'object') {
             for (const [nestedKey, nestedValue] of Object.entries(value)) {
                 lines.push(`${formatPassiveEffectValue(key, Number(nestedValue) * rank)} ${formatPassiveEffectName(key, nestedKey)}`);

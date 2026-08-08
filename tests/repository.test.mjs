@@ -12,6 +12,11 @@ import bionics from '../src/items/bionics/index.js';
 import chips from '../src/items/chips/index.js';
 import materials from '../src/items/materials/index.js';
 import weapons from '../src/items/weapons/index.js';
+import {
+  WEAPON_FAMILY_DEFINITIONS,
+  WEAPON_TAG_DEFINITIONS,
+  validateWeaponTaxonomy
+} from '../src/items/weapons/taxonomy.js';
 import { RUNTIME_SCRIPTS } from '../src/runtimeScripts.js';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -82,6 +87,24 @@ test('all registered content has a unique name and required equipment level', ()
     })
     .map(item => item.name);
   assert.deepEqual(missingLevels, [], `equipment without a level requirement: ${missingLevels.join(', ')}`);
+});
+
+test('every weapon has a validated family, mechanical tags, and supported progression', () => {
+  const validation = validateWeaponTaxonomy(weapons);
+  assert.equal(validation.valid, true, validation.errors.join('; '));
+  assert.deepEqual(Object.keys(validation.familyCounts).sort(), Object.keys(WEAPON_FAMILY_DEFINITIONS).sort());
+  assert.equal(weapons.every(weapon => WEAPON_FAMILY_DEFINITIONS[weapon.weaponFamily]), true);
+  assert.equal(weapons.every(weapon => Array.isArray(weapon.weaponTags) && weapon.weaponTags.length >= 3), true);
+  assert.equal(weapons.every(weapon => weapon.weaponTags.every(tag => WEAPON_TAG_DEFINITIONS[tag])), true);
+
+  const playerWeapons = weapons.filter(weapon => !weapon.developerOnly);
+  for (const family of Object.keys(WEAPON_FAMILY_DEFINITIONS)) {
+    const levels = playerWeapons
+      .filter(weapon => weapon.weaponFamily === family)
+      .map(weapon => Number(weapon.levelRequirement?.min ?? weapon.levelRequirement));
+    assert.ok(Math.min(...levels) <= 10, `${family} has no early-game weapon`);
+    assert.ok(Math.max(...levels) >= 40, `${family} has no late-game weapon`);
+  }
 });
 
 test('kinetic and slashing component ladders use dedicated 512px icons', () => {
@@ -234,6 +257,10 @@ test('radial passive tree is connected, stable, and honors allocation/refund rul
         lifeCounts: PASSIVE_TREE_SECTOR_ORDER.map(sector => passives.filter(node => node.sector === sector && (node.effects.flatHealth > 0 || node.effects.healthPercent > 0)).length),
         shieldCounts: PASSIVE_TREE_SECTOR_ORDER.map(sector => passives.filter(node => node.sector === sector && (node.effects.flatEnergyShield > 0 || node.effects.energyShieldPercent > 0)).length),
         keystones: passives.filter(node => node.type === 'keystone').length,
+        travelDegrees: passives.filter(node => node.type === 'travel').map(node => node.connections.length),
+        familyTargets: PASSIVE_TREE_SECTOR_ORDER.map(sector => [...new Set(passives.filter(node => node.sector === sector && node.specialty === 'family').map(node => node.target))]),
+        tagTargets: PASSIVE_TREE_SECTOR_ORDER.map(sector => [...new Set(passives.filter(node => node.sector === sector && node.specialty === 'tag').map(node => node.target))]),
+        styleTargets: PASSIVE_TREE_SECTOR_ORDER.map(sector => [...new Set(passives.filter(node => node.sector === sector && node.specialty === 'style').map(node => node.target))]),
         jewels: passives.filter(node => node.type === 'jewel').length,
         before, blockedOuter, blockedRefund, leafRefund
       };
@@ -241,11 +268,15 @@ test('radial passive tree is connected, stable, and honors allocation/refund rul
   );
   assert.equal(result.validation.valid, true, result.validation.errors.join('; '));
   assert.equal(result.nodeCount, 1478);
-  assert.equal(result.edgeCount, 1806);
+  assert.equal(result.edgeCount, 1862);
   assert.equal(result.clusterCount, 147);
   assert.equal(result.notableCount, 210);
   assert.equal(result.keystones, 35);
   assert.equal(result.jewels, 0);
+  assert.equal(result.travelDegrees.every(degree => degree >= 3), true, 'travel roads still contain forced single-lane rail nodes');
+  assert.equal(result.familyTargets.every(targets => targets.length === 7), true, 'weapon families are not distributed through every sector');
+  assert.equal(result.tagTargets.every(targets => targets.length === 4), true, 'weapon tags are not distributed through every sector');
+  assert.equal(result.styleTargets.every(targets => targets.length === 4), true, 'combat styles are not distributed through every sector');
   assert.equal(result.sectorCounts.every(count => count === 193), true);
   assert.equal(result.lifeCounts.every(count => count >= 20), true, 'life access is not distributed across every sector');
   assert.equal(result.shieldCounts.every(count => count >= 15), true, 'Energy Shield access is not distributed across every sector');
@@ -739,6 +770,68 @@ test('the stat pipeline applies only declared item stats and is idempotent', () 
   assert.equal(result.afterRemoval.damageTypeModifiers.kinetic, undefined, 'removed equipment left a typed contribution behind');
 });
 
+test('weapon-family, weapon-tag, and combat-style passives react to live loadout changes', () => {
+  const result = evaluateClassic(
+    ['combatSchema.js', 'stats.js', 'skills.js', 'skillResolver.js'],
+    `(() => {
+      const playerObject = {
+        level: 30,
+        baseStats: {
+          maxHealth: 100, maxEnergyShield: 0, healthRegen: 0,
+          criticalChance: 0, criticalMultiplier: 1, precision: 0, deflection: 0,
+          damageTypes: {}, defenseTypes: { physicalResistance: 0, elementalResistance: 0, chemicalResistance: 0 }
+        },
+        equipment: {
+          mainHand: {
+            name: 'Taxonomy Blade', type: 'Weapon', slot: 'mainHand', weaponType: 'Sword',
+            weaponFamily: 'blades', weaponTags: ['melee', 'oneHanded', 'contact'],
+            bAttackSpeed: 1, weaponBaseDamage: { kinetic: 100 }
+          },
+          offHand: null, head: null, chest: null, legs: null, feet: null, gloves: null, bionicSlots: []
+        },
+        passiveBonuses: {
+          flatDamageTypes: {}, defenseTypes: {}, damageTypes: {}, damageGroups: {},
+          weaponFamilyBonuses: { blades: { directDamageMultiplier: 0.1, precision: 5 } },
+          weaponTagBonuses: {
+            melee: { armorPenetration: 4 },
+            oneHanded: { attackSpeed: 10 },
+            ranged: { damageRollFloorBonus: 0.05 }
+          },
+          combatStyleBonuses: {
+            heavyStyle: { defenseTypes: { physicalResistance: 7 } },
+            balancedStyle: { attackTimeModifier: -0.1 }
+          }
+        },
+        equippedSkillId: 'heavyStyle', combatStyleAllocations: {}, combatStyleVersion: 2,
+        unlockedSkillIds: ['balancedStyle', 'heavyStyle', 'twinStyle', 'counterStyle'],
+        activeBuffs: [], activeDebuffs: [], gatheringSkills: {}, currentHealth: null, currentShield: null
+      };
+      const bladeHeavy = calculatePlayerStats(playerObject);
+      playerObject.equipment.mainHand = {
+        ...playerObject.equipment.mainHand,
+        name: 'Taxonomy Rifle', weaponType: 'Rifle', weaponFamily: 'rifles',
+        weaponTags: ['ranged', 'twoHanded', 'projectile']
+      };
+      const rifleHeavy = calculatePlayerStats(playerObject);
+      playerObject.equippedSkillId = 'balancedStyle';
+      const rifleBalanced = calculatePlayerStats(playerObject);
+      const balancedProfile = resolveSkillProfile(playerObject);
+      return { bladeHeavy, rifleHeavy, rifleBalanced, balancedProfile };
+    })()`
+  );
+
+  assert.equal(result.bladeHeavy.precision, 5);
+  assert.equal(result.bladeHeavy.directDamageMultiplier, 1.1);
+  assert.equal(result.bladeHeavy.attackSpeed, 1.1);
+  assert.equal(result.bladeHeavy.armorPenetration, 4);
+  assert.equal(result.bladeHeavy.defenseTypes.physicalResistance, 7);
+  assert.equal(result.rifleHeavy.precision, 0, 'blade bonuses survived a weapon-family swap');
+  assert.equal(result.rifleHeavy.attackSpeed, 1, 'one-handed tag bonuses survived a tag swap');
+  assert.equal(result.rifleHeavy.damageRollFloorBonus, 0.05);
+  assert.equal(result.rifleBalanced.defenseTypes.physicalResistance, 0, 'Heavy Style bonuses survived a style swap');
+  assert.equal(result.balancedProfile.attackTimeMultiplier, 0.9);
+});
+
 test('ordered save migrations preserve rolls and produce a valid current snapshot', () => {
   const result = evaluateClassic(
     'saveSchema.js',
@@ -783,8 +876,8 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   );
 
   assert.equal(result.beforeUnchanged, true, 'migration mutated the parsed legacy payload');
-  assert.equal(result.migrated.toVersion, 13);
-  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+  assert.equal(result.migrated.toVersion, 14);
+  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
   assert.equal(result.migrated.state.inventory.length, 0, 'legacy material stacks still occupy ordinary slots');
   assert.equal(result.migrated.state.materialInventory['Scrap Metal'], 20);
   assert.equal(result.migrated.state.materialInventory['Wire Bundle'], 7);
@@ -800,7 +893,7 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   assert.equal(result.migrated.state.player.equipment.bionicSlots[0].defenseTypes.chemicalResistance, 3);
   assert.equal(result.migrated.state.player.equipment.bionicSlots.length, 4);
   assert.equal(result.migrated.state.player.passives.gearBonuses, undefined);
-  assert.equal(result.migrated.state.player.passives.treeVersion, 3);
+  assert.equal(result.migrated.state.player.passives.treeVersion, 4);
   assert.equal(result.migrated.state.player.passives.points, 24, 'retired ranks and two-points-per-level catch-up were not applied');
   assert.equal(Object.keys(result.migrated.state.player.passives.allocations).length, 0);
   assert.equal(result.migrated.state.player.combatStyles.version, 2);
@@ -834,8 +927,8 @@ test('v2 passive saves are refunded and caught up to two points per level', () =
     })()`
   );
 
-  assert.deepEqual([...result.appliedVersions], [13]);
-  assert.equal(result.state.player.passives.treeVersion, 3);
+  assert.deepEqual([...result.appliedVersions], [13, 14]);
+  assert.equal(result.state.player.passives.treeVersion, 4);
   assert.deepEqual(Object.keys(result.state.player.passives.allocations), []);
   assert.equal(result.state.player.passives.points, 38);
 });
