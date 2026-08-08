@@ -3010,10 +3010,20 @@ hr {
     box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.7);
 }
 
+#passive-tree-canvas,
 #passive-tree-svg {
+    position: absolute;
+    inset: 0;
     display: block;
     width: 100%;
     height: 100%;
+}
+
+#passive-tree-canvas {
+    pointer-events: none;
+}
+
+#passive-tree-svg {
     cursor: grab;
     user-select: none;
     touch-action: none;
@@ -3021,43 +3031,6 @@ hr {
 
 #passive-tree-svg.is-dragging {
     cursor: grabbing;
-}
-
-.passive-tree-edge {
-    fill: none;
-    stroke: rgba(78, 117, 139, 0.28);
-    stroke-width: 5;
-    stroke-linecap: round;
-    pointer-events: none;
-}
-
-.passive-tree-edge.is-available {
-    stroke: rgba(84, 176, 199, 0.5);
-}
-
-.passive-tree-edge.is-active {
-    stroke: #00dcb5;
-    stroke-width: 7;
-}
-
-.passive-tree-clusters,
-.passive-tree-edges,
-.passive-tree-labels {
-    pointer-events: none;
-}
-
-.passive-tree-cluster {
-    fill: color-mix(in srgb, var(--sector-color) 4%, transparent);
-    stroke: color-mix(in srgb, var(--sector-color) 20%, transparent);
-    stroke-width: 2;
-    stroke-dasharray: 5 7;
-    pointer-events: none;
-}
-
-.passive-tree-cluster.is-specialist {
-    fill: color-mix(in srgb, var(--sector-color) 7%, transparent);
-    stroke: color-mix(in srgb, var(--sector-color) 42%, transparent);
-    stroke-width: 3;
 }
 
 .passive-tree-node {
@@ -3127,7 +3100,6 @@ hr {
     stroke-width: 6;
 }
 
-.passive-sector-label,
 .passive-node-gear {
     fill: #dff8ff;
     paint-order: stroke;
@@ -3138,39 +3110,23 @@ hr {
     pointer-events: none;
 }
 
-.passive-sector-label {
-    fill: var(--sector-color);
-    font-size: 42px;
-    font-weight: bold;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-}
-
 .passive-node-gear {
     fill: #ffd166;
     font-size: 15px;
     font-weight: bold;
 }
 
-#passive-tree-svg[data-detail="overview"] .passive-tree-edge { stroke-width: 11; }
-#passive-tree-svg[data-detail="overview"] .passive-tree-edge.is-active { stroke-width: 17; }
 #passive-tree-svg[data-detail="overview"] .passive-tree-node circle { stroke-width: 10; }
 #passive-tree-svg[data-detail="overview"] .passive-tree-node.node-travel circle,
 #passive-tree-svg[data-detail="overview"] .passive-tree-node.node-bridge circle { stroke-width: 7; }
 #passive-tree-svg[data-detail="overview"] .passive-tree-node.node-notable circle { stroke-width: 12; }
 #passive-tree-svg[data-detail="overview"] .passive-tree-node.node-keystone circle { stroke-width: 14; }
-#passive-tree-svg[data-detail="overview"] .passive-tree-cluster { stroke-width: 8; }
-#passive-tree-svg[data-detail="overview"] .passive-tree-cluster.is-specialist { stroke-width: 11; }
 
-#passive-tree-svg[data-detail="medium"] .passive-tree-edge { stroke-width: 6; }
-#passive-tree-svg[data-detail="medium"] .passive-tree-edge.is-active { stroke-width: 9; }
 #passive-tree-svg[data-detail="medium"] .passive-tree-node circle { stroke-width: 5; }
 #passive-tree-svg[data-detail="medium"] .passive-tree-node.node-travel circle,
 #passive-tree-svg[data-detail="medium"] .passive-tree-node.node-bridge circle { stroke-width: 4; }
 #passive-tree-svg[data-detail="medium"] .passive-tree-node.node-notable circle { stroke-width: 7; }
 #passive-tree-svg[data-detail="medium"] .passive-tree-node.node-keystone circle { stroke-width: 9; }
-#passive-tree-svg[data-detail="medium"] .passive-tree-cluster { stroke-width: 4; }
-#passive-tree-svg[data-detail="medium"] .passive-tree-cluster.is-specialist { stroke-width: 6; }
 
 .passive-node-tooltip {
     --sector-color: #5d91ad;

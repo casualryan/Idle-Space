@@ -261,13 +261,13 @@ test('passive tree uses immediate viewport tooltips instead of persistent node l
   assert.doesNotMatch(uiSource, /passive-node-label/, 'persistent node labels returned to the passive graph');
   assert.doesNotMatch(uiSource, /<title>/, 'native delayed SVG tooltips returned to passive nodes');
   assert.match(uiSource, /id="passive-node-tooltip"[^>]*role="tooltip"/, 'passive tooltip layer is missing');
-  assert.match(uiSource, /addEventListener\('pointerover'[\s\S]*?showPassiveNodeTooltip/, 'passive tooltip is not shown immediately on hover');
+  assert.match(uiSource, /schedulePassiveTreePointerHover[\s\S]*?requestAnimationFrame[\s\S]*?hitTestPassiveCanvasNode/, 'passive tooltip hit testing is not frame-coalesced');
   assert.match(uiSource, /addEventListener\('focusin'/, 'keyboard focus does not expose passive details');
   assert.doesNotMatch(uiSource, /querySelectorAll\('\[data-node-id\]'\)/, 'thousands of passive nodes received individual event listeners');
   assert.match(styles, /\.passive-node-tooltip\s*\{[\s\S]*?pointer-events:\s*none/, 'tooltip can interfere with node hover');
 });
 
-test('passive tree renderer batches, culls, and incrementally updates the large graph', () => {
+test('passive tree renderer uses a culled canvas graph with an incremental SVG interaction layer', () => {
   const uiSource = read('passivesUI.js');
   const styles = read('style.css');
   const passiveStyles = styles.slice(styles.indexOf('/* Radial passive tree v2 */'), styles.indexOf('/* Glow effect for the entire tier container */'));
@@ -277,17 +277,72 @@ test('passive tree renderer batches, culls, and incrementally updates the large 
 
   assert.equal(overviewNodeCount, 484, 'overview detail unexpectedly includes the full minor-node population');
   assert.ok(overviewNodeCount < passiveDefinitions.length / 2, 'overview detail does not substantially reduce live node count');
+  assert.match(uiSource, /id="passive-tree-canvas"/, 'passive graph canvas layer is missing');
+  assert.match(uiSource, /canvas\.getContext\('2d'\)/, 'passive graph does not initialize a 2D canvas renderer');
+  assert.match(uiSource, /drawPassiveCanvasEdges[\s\S]*?PASSIVE_TREE\.edges/, 'connections are not painted on canvas');
+  assert.match(uiSource, /drawPassiveCanvasNode[\s\S]*?context\.arc/, 'ordinary passive nodes are not painted on canvas');
+  assert.match(uiSource, /PASSIVE_TREE_SVG_TYPES\s*=\s*new Set\(\['origin', 'notable', 'keystone'\]\)/, 'SVG interaction layer is not limited to priority node types');
+  assert.match(uiSource, /hitTestPassiveCanvasNode[\s\S]*?visibleNodeIds/, 'canvas nodes cannot be interacted with');
   assert.doesNotMatch(uiSource, /svg\.innerHTML/, 'passive graph still destroys and recreates the SVG scene');
   assert.doesNotMatch(uiSource, /createPassiveSvgElement\('line'/, 'connections are still individual SVG line elements');
-  assert.match(uiSource, /edgePaths\s*=\s*\{[\s\S]*?inactive:[\s\S]*?available:[\s\S]*?active:/, 'connection state is not batched into three paths');
+  assert.doesNotMatch(uiSource, /passive-tree-edge/, 'connection SVG elements still exist in the hybrid renderer');
   assert.match(uiSource, /PASSIVE_TREE_RENDER_BUFFER[\s\S]*?passiveTreeBoundsContainView/, 'buffered viewport culling is missing');
   assert.match(uiSource, /PASSIVE_TREE_OVERVIEW_TYPES[\s\S]*?detailLevel === 'overview'/, 'zoom-dependent overview detail is missing');
   assert.match(uiSource, /requestAnimationFrame\(\(\) => \{[\s\S]*?passiveTreePendingView/, 'pan and zoom are not frame-coalesced');
   assert.match(uiSource, /PASSIVE_TREE_SEARCH_DELAY_MS[\s\S]*?setTimeout/, 'search input is not debounced');
-  assert.match(uiSource, /updatePassiveTreeNodeElementState\(previousNodeId[\s\S]*?updatePassiveTreeNodeElementState\(nodeId/, 'selection still refreshes the entire graph');
+  assert.match(uiSource, /syncPassiveTreeInteractiveNode\(previousNodeId[\s\S]*?syncPassiveTreeInteractiveNode\(nodeId/, 'selection still refreshes the entire graph');
   assert.doesNotMatch(passiveStyles, /vector-effect:\s*non-scaling-stroke/, 'passive SVG still forces every stroke to remain screen-sized');
-  assert.match(passiveStyles, /\.passive-tree-edges[\s\S]*?pointer-events:\s*none/, 'decorative connections still participate in hit testing');
+  assert.match(passiveStyles, /#passive-tree-canvas\s*\{[\s\S]*?pointer-events:\s*none/, 'canvas background can interfere with SVG hit testing');
   assert.doesNotMatch(passiveStyles, /\.passive-tree-node\.is-active circle\s*\{[^}]*filter:/, 'every allocated node still owns an expensive glow filter');
+});
+
+test('passive canvas maps pointer coordinates and paints at a capped device pixel ratio', () => {
+  const result = evaluateClassic(
+    ['passives.js', 'passivesUI.js'],
+    `(() => {
+      const home = getPassiveTreeHomeView();
+      const origin = getPassiveNode(PASSIVE_TREE_ORIGIN_ID);
+      const rect = { left: 0, top: 0, width: 800, height: 600 };
+      const calls = { arcs: 0, lines: 0, transforms: 0 };
+      const context = {
+        setTransform: () => { calls.transforms++; }, clearRect: () => {}, beginPath: () => {},
+        arc: () => { calls.arcs++; }, fill: () => {}, stroke: () => {}, save: () => {}, restore: () => {},
+        setLineDash: () => {}, moveTo: () => { calls.lines++; }, lineTo: () => {}, closePath: () => {},
+        strokeText: () => {}, fillText: () => {}
+      };
+      const canvas = { width: 0, height: 0 };
+      const svg = { getBoundingClientRect: () => rect };
+      passiveTreeView = home;
+      passiveTreeRenderer = {
+        canvas, context, svg, visibleNodeIds: new Set(passives.map(node => node.id)),
+        renderedNodeIds: new Set(), renderBounds: getPassiveTreeRenderBounds(home),
+        detailLevel: 'overview', viewportRect: rect
+      };
+      window.devicePixelRatio = 3;
+      const scale = Math.min(rect.width / home.width, rect.height / home.height);
+      const clientX = (rect.width - home.width * scale) / 2 + (origin.x - home.x) * scale;
+      const clientY = (rect.height - home.height * scale) / 2 + (origin.y - home.y) * scale;
+      const hitNodeId = hitTestPassiveCanvasNode(clientX, clientY, svg);
+      drawPassiveTreeCanvas(home, getPassiveTreeManualActiveSet());
+      return { hitNodeId, canvasWidth: canvas.width, canvasHeight: canvas.height, calls };
+    })()`,
+    {
+      player: {
+        passiveTreeVersion: 3, passiveAllocations: {}, passivePoints: 2, gearPassiveBonuses: {}, level: 1,
+        totalStats: { health: 100, energyShield: 0 }, currentHealth: 100, currentShield: 0,
+        calculateStats: () => {}
+      },
+      document: { getElementById: () => null },
+      requestAnimationFrame: () => 0,
+      cancelAnimationFrame: () => {}
+    }
+  );
+  assert.equal(result.hitNodeId, 'core-origin', 'canvas hit testing is not aligned with the SVG viewBox');
+  assert.equal(result.canvasWidth, 1600, 'canvas backing width did not cap device pixel ratio at 2x');
+  assert.equal(result.canvasHeight, 1200, 'canvas backing height did not cap device pixel ratio at 2x');
+  assert.ok(result.calls.arcs > 1478, 'canvas did not paint nodes and cluster rings');
+  assert.ok(result.calls.lines > 0, 'canvas did not paint graph connections');
+  assert.ok(result.calls.transforms >= 2, 'canvas transform was not reset and reapplied');
 });
 
 test('level progression awards two passive points and starts level one with two', () => {
