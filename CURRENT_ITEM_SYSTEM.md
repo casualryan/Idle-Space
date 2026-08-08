@@ -46,9 +46,13 @@ Generator/Drop Rules (Implemented)
   - conversions use `weaponDamageConversion`
 
 Save/Load Migration (Implemented)
-- On item restore:
-  - weapon-like items with only legacy `damageTypes` get migrated to `weaponBaseDamage`.
-  - if both exist, `weaponBaseDamage` is preferred and legacy `damageTypes` is ignored to prevent duplicate base application.
+- `saveSchema.js` runs ordered, pure migrations before live state is changed.
+- Weapon-like items with only legacy `damageTypes` migrate to `weaponBaseDamage`.
+- If both exist, `weaponBaseDamage` wins and the legacy duplicate is removed.
+- Generated rolls, rolled modifiers, wires, and socketed chips are normalized in
+  place without rerolling them.
+- Derived totals are not trusted from the save; the stat/passive pipelines rebuild
+  them from the restored equipment and permanent progression state.
 
 Tooltip Rules (Implemented)
 - Weapon tooltip includes:

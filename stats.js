@@ -179,9 +179,121 @@ function computeWeaponLocalProfile(item) {
 
 window.computeWeaponLocalProfile = computeWeaponLocalProfile;
 
+const ITEM_SCALAR_STAT_RULES = Object.freeze({
+    healthBonus: { bionicSync: true },
+    energyShieldBonus: { bionicSync: true },
+    healthBonusPercent: { bionicSync: true },
+    energyShieldBonusPercent: { bionicSync: true },
+    criticalChanceModifier: { target: 'criticalChance', bionicSync: true },
+    criticalMultiplierModifier: { target: 'criticalMultiplier', bionicSync: true },
+    precision: { bionicSync: true },
+    deflection: { bionicSync: true },
+    healthRegen: { bionicSync: true },
+    armorEfficiency: { bionicSync: true },
+    weaponEfficiency: { bionicSync: true },
+    bionicEfficiency: { bionicSync: true },
+    bionicSync: { bionicSync: false },
+    comboAttack: { bionicSync: true },
+    comboEffectiveness: { bionicSync: true },
+    additionalComboAttacks: { bionicSync: true },
+    kineticMastery: { bionicSync: true },
+    slashingMastery: { bionicSync: true },
+    severedLimbChance: { bionicSync: true },
+    maxSeveredLimbs: { bionicSync: false },
+    maxSeepingWoundStacks: { bionicSync: false }
+});
+
+const RESERVED_ITEM_STAT_KEYS = Object.freeze(['armorPenetration']);
+const ITEM_NON_APPLIED_MODIFIER_KEYS = new Set([
+    'damageTypes',
+    'damageGroups',
+    'attackSpeedModifier',
+    ...RESERVED_ITEM_STAT_KEYS
+]);
+
+function readItemScalarStat(item, key) {
+    if (!item || typeof item !== 'object') return 0;
+    const rawValue = item[key] !== undefined ? item[key] : item.statModifiers?.[key];
+    const value = Number(rawValue);
+    return Number.isFinite(value) ? value : 0;
+}
+
+function getUnknownItemStatModifierKeys(item) {
+    if (!item?.statModifiers || typeof item.statModifiers !== 'object') return [];
+    return Object.keys(item.statModifiers).filter(key => (
+        !ITEM_SCALAR_STAT_RULES[key] && !ITEM_NON_APPLIED_MODIFIER_KEYS.has(key)
+    ));
+}
+
+function validatePlayerStatSnapshot(stats) {
+    const errors = [];
+    if (!stats || typeof stats !== 'object') return { valid: false, errors: ['stats must be an object'] };
+    const requiredFinite = [
+        'health', 'energyShield', 'attackSpeed', 'criticalChance', 'criticalMultiplier',
+        'precision', 'deflection', 'healthRegen', 'armorEfficiency', 'weaponEfficiency',
+        'bionicEfficiency', 'bionicSync', 'comboAttack', 'comboEffectiveness',
+        'additionalComboAttacks', 'maxSeveredLimbs', 'maxSeepingWoundStacks'
+    ];
+    for (const key of requiredFinite) {
+        if (!Number.isFinite(Number(stats[key]))) errors.push(`${key} must be finite`);
+    }
+    if (!(Number(stats.health) >= 1)) errors.push('health must be at least one');
+    if (!(Number(stats.energyShield) >= 0)) errors.push('energyShield cannot be negative');
+    if (!(Number(stats.attackSpeed) >= 0.1 && Number(stats.attackSpeed) <= 10)) {
+        errors.push('attackSpeed must be between 0.1 and 10');
+    }
+    for (const [type, amount] of Object.entries(stats.damageTypes || {})) {
+        if (!DAMAGE_TYPE_TO_GROUP[type]) errors.push(`unknown damage type: ${type}`);
+        if (!Number.isFinite(Number(amount))) errors.push(`${type} damage must be finite`);
+    }
+    for (const [type, amount] of Object.entries(stats.defenseTypes || {})) {
+        if (!COMBAT_RESISTANCE_TYPES.includes(type)) errors.push(`unknown resistance type: ${type}`);
+        if (!Number.isFinite(Number(amount))) errors.push(`${type} resistance must be finite`);
+    }
+    return { valid: errors.length === 0, errors };
+}
+
+function assertPlayerStatSnapshot(stats, context = 'player totalStats') {
+    const validation = validatePlayerStatSnapshot(stats);
+    if (!validation.valid) throw new TypeError(`Invalid ${context}: ${validation.errors.join('; ')}`);
+    return stats;
+}
+
+function scaleBionicStaticStats(item, multiplier) {
+    const enhanced = JSON.parse(JSON.stringify(item || {}));
+    const scale = Number.isFinite(Number(multiplier)) && Number(multiplier) > 0 ? Number(multiplier) : 1;
+    if (scale === 1) return enhanced;
+
+    const scaleMap = map => {
+        if (!map || typeof map !== 'object') return;
+        for (const key of Object.keys(map)) {
+            if (Number.isFinite(Number(map[key]))) map[key] = Number(map[key]) * scale;
+        }
+    };
+
+    scaleMap(enhanced.damageTypes);
+    scaleMap(enhanced.defenseTypes);
+    scaleMap(enhanced.statModifiers?.damageTypes);
+    scaleMap(enhanced.statModifiers?.damageGroups);
+
+    for (const [key, rule] of Object.entries(ITEM_SCALAR_STAT_RULES)) {
+        if (!rule.bionicSync) continue;
+        if (Number.isFinite(Number(enhanced[key]))) enhanced[key] = Number(enhanced[key]) * scale;
+        if (Number.isFinite(Number(enhanced.statModifiers?.[key]))) {
+            enhanced.statModifiers[key] = Number(enhanced.statModifiers[key]) * scale;
+        }
+    }
+    if (Number.isFinite(Number(enhanced.attackSpeedModifier))) {
+        enhanced.attackSpeedModifier = Number(enhanced.attackSpeedModifier) * scale;
+    }
+    if (Number.isFinite(Number(enhanced.statModifiers?.attackSpeedModifier))) {
+        enhanced.statModifiers.attackSpeedModifier = Number(enhanced.statModifiers.attackSpeedModifier) * scale;
+    }
+    return enhanced;
+}
+
 // Function to apply item modifiers to stats object
 function applyItemModifiers(stats, item, options = {}) {
-    // Apply flat damage types
     if (!stats || !item) return;
     const includeDamageTypes = options.includeDamageTypes !== false;
     const includeDamageModifiers = options.includeDamageModifiers !== false;
@@ -251,108 +363,23 @@ function applyItemModifiers(stats, item, options = {}) {
         }
     }
 
-    // Health Bonus
-    if (item.healthBonus !== undefined) {
-        stats.healthBonus = (stats.healthBonus || 0) + item.healthBonus;
-    }
-    // Energy Shield Bonus
-    if (item.energyShieldBonus !== undefined) {
-        stats.energyShieldBonus = (stats.energyShieldBonus || 0) + item.energyShieldBonus;
-    }
-    // Percentage Health Bonus
-    if (item.healthBonusPercent !== undefined) {
-        stats.healthBonusPercent = (stats.healthBonusPercent || 0) + item.healthBonusPercent;
-    }
-    // Percentage Energy Shield Bonus
-    if (item.energyShieldBonusPercent !== undefined) {
-        stats.energyShieldBonusPercent = (stats.energyShieldBonusPercent || 0) + item.energyShieldBonusPercent;
-    }
-    // Attack Speed Modifier (flat percentage; e.g., 0.5 means +50%)
-    // Note: This is handled separately in calculatePlayerStats for base speed calculation
-    // if (item.attackSpeedModifier !== undefined) {
-    //     stats.attackSpeedMultiplier *= (1 + item.attackSpeedModifier);
-    // }
-    // Critical Chance Modifier
-    if (item.criticalChanceModifier !== undefined) {
-        stats.criticalChance = (stats.criticalChance || 0) + item.criticalChanceModifier;
-    }
-    // Critical Multiplier Modifier
-    if (item.criticalMultiplierModifier !== undefined) {
-        // Note: Crit multiplier bonuses should likely be additive, not multiplicative with each other
-        stats.criticalMultiplier = (stats.criticalMultiplier || 1.5) + item.criticalMultiplierModifier;
-    }
-    // Precision and Deflection
-    if (item.precision !== undefined) {
-        stats.precision = (stats.precision || 0) + item.precision;
-    }
-    if (item.deflection !== undefined) {
-        stats.deflection = (stats.deflection || 0) + item.deflection;
-    }
-    if (item.healthRegen) {
-        stats.healthRegen = (stats.healthRegen || 0) + item.healthRegen;
-    }
-    
-    // New stats - Efficiency (check both direct properties and statModifiers)
-    const armorEff = item.armorEfficiency !== undefined ? item.armorEfficiency : (item.statModifiers?.armorEfficiency || 0);
-    if (armorEff > 0) stats.armorEfficiency = (stats.armorEfficiency || 0) + armorEff;
-    
-    const weaponEff = item.weaponEfficiency !== undefined ? item.weaponEfficiency : (item.statModifiers?.weaponEfficiency || 0);
-    if (weaponEff > 0) stats.weaponEfficiency = (stats.weaponEfficiency || 0) + weaponEff;
-    
-    const bionicEff = item.bionicEfficiency !== undefined ? item.bionicEfficiency : (item.statModifiers?.bionicEfficiency || 0);
-    if (bionicEff > 0) stats.bionicEfficiency = (stats.bionicEfficiency || 0) + bionicEff;
-    
-    // Bionic Sync
-    const bionicSync = item.bionicSync !== undefined ? item.bionicSync : (item.statModifiers?.bionicSync || 0);
-    if (bionicSync > 0) stats.bionicSync = (stats.bionicSync || 0) + bionicSync;
-    
-    // Combo Attack stats
-    const comboAttack = item.comboAttack !== undefined ? item.comboAttack : (item.statModifiers?.comboAttack || 0);
-    if (comboAttack > 0) stats.comboAttack = (stats.comboAttack || 0) + comboAttack;
-    
-    const comboEffectiveness = item.comboEffectiveness !== undefined ? item.comboEffectiveness : (item.statModifiers?.comboEffectiveness || 0);
-    if (comboEffectiveness > 0) stats.comboEffectiveness = (stats.comboEffectiveness || 0) + comboEffectiveness;
-    
-    const additionalCombo = item.additionalComboAttacks !== undefined ? item.additionalComboAttacks : (item.statModifiers?.additionalComboAttacks || 0);
-    if (additionalCombo > 0) stats.additionalComboAttacks = (stats.additionalComboAttacks || 0) + additionalCombo;
-    
-    // Mastery stats
-    const kineticMastery = item.kineticMastery !== undefined ? item.kineticMastery : (item.statModifiers?.kineticMastery || 0);
-    if (kineticMastery > 0) stats.kineticMastery = (stats.kineticMastery || 0) + kineticMastery;
-    
-    const slashingMastery = item.slashingMastery !== undefined ? item.slashingMastery : (item.statModifiers?.slashingMastery || 0);
-    if (slashingMastery > 0) stats.slashingMastery = (stats.slashingMastery || 0) + slashingMastery;
-    
-    // Severed limb stats
-    const severedLimbChance = item.severedLimbChance !== undefined ? item.severedLimbChance : (item.statModifiers?.severedLimbChance || 0);
-    if (severedLimbChance > 0) stats.severedLimbChance = (stats.severedLimbChance || 0) + severedLimbChance;
-    
-    const maxSeveredLimbs = item.maxSeveredLimbs !== undefined ? item.maxSeveredLimbs : (item.statModifiers?.maxSeveredLimbs || 0);
-    if (maxSeveredLimbs > 0) stats.maxSeveredLimbs = (stats.maxSeveredLimbs || 1) + maxSeveredLimbs;
-
-    // Apply other stat modifiers
-    if (item.statModifiers) {
-        for (let stat in item.statModifiers) {
-            // Skip stats that are already handled or could conflict
-            const handledStats = [
-                'damageTypes', 'defenseTypes', 'damageTypeModifiers', 'damageGroupModifiers',
-                'attackSpeedModifier', 'criticalChanceModifier', 'criticalMultiplierModifier',
-                'healthBonus', 'energyShieldBonus', 'healthBonusPercent', 'energyShieldBonusPercent',
-                'precision', 'deflection', 'healthRegen',
-                'armorEfficiency', 'weaponEfficiency', 'bionicEfficiency', 'bionicSync',
-                'comboAttack', 'comboEffectiveness', 'additionalComboAttacks',
-                'kineticMastery', 'slashingMastery', 'severedLimbChance', 'maxSeveredLimbs'
-            ];
-            if (handledStats.includes(stat)) {
-                continue;
-            } else if (stats.hasOwnProperty(stat)) {
-                 stats[stat] += item.statModifiers[stat];
-            } else {
-                 stats[stat] = item.statModifiers[stat];
-            }
-        }
+    for (const [sourceKey, rule] of Object.entries(ITEM_SCALAR_STAT_RULES)) {
+        const contribution = readItemScalarStat(item, sourceKey);
+        if (contribution === 0) continue;
+        const targetKey = rule.target || sourceKey;
+        stats[targetKey] = Number(stats[targetKey] || 0) + contribution;
     }
 }
+
+window.coreboundStatPipeline = Object.freeze({
+    scalarStatRules: ITEM_SCALAR_STAT_RULES,
+    reservedStatKeys: RESERVED_ITEM_STAT_KEYS,
+    readItemScalarStat,
+    getUnknownItemStatModifierKeys,
+    scaleBionicStaticStats,
+    validatePlayerStatSnapshot,
+    assertPlayerStatSnapshot
+});
 
 // Calculate player's total stats based on base, passives, gear, and buffs
 function calculatePlayerStats(playerObject) {
@@ -485,71 +512,7 @@ function calculatePlayerStats(playerObject) {
                 equipmentASBonus += bionic.attackSpeedModifier * bionicSyncMultiplier;
             }
             
-            // Create enhanced bionic stats for other modifiers
-            const enhancedBionic = JSON.parse(JSON.stringify(bionic));
-            
-            // Apply bionic sync to all numeric stat modifiers
-            if (enhancedBionic.healthBonus !== undefined) {
-                enhancedBionic.healthBonus *= bionicSyncMultiplier;
-            }
-            if (enhancedBionic.energyShieldBonus !== undefined) {
-                enhancedBionic.energyShieldBonus *= bionicSyncMultiplier;
-            }
-            if (enhancedBionic.healthBonusPercent !== undefined) {
-                enhancedBionic.healthBonusPercent *= bionicSyncMultiplier;
-            }
-            if (enhancedBionic.energyShieldBonusPercent !== undefined) {
-                enhancedBionic.energyShieldBonusPercent *= bionicSyncMultiplier;
-            }
-            if (enhancedBionic.criticalChanceModifier !== undefined) {
-                enhancedBionic.criticalChanceModifier *= bionicSyncMultiplier;
-            }
-            if (enhancedBionic.criticalMultiplierModifier !== undefined) {
-                enhancedBionic.criticalMultiplierModifier *= bionicSyncMultiplier;
-            }
-            if (enhancedBionic.precision !== undefined) {
-                enhancedBionic.precision *= bionicSyncMultiplier;
-            }
-            if (enhancedBionic.deflection !== undefined) {
-                enhancedBionic.deflection *= bionicSyncMultiplier;
-            }
-            if (enhancedBionic.healthRegen !== undefined) {
-                enhancedBionic.healthRegen *= bionicSyncMultiplier;
-            }
-            
-            // Apply bionic sync to damage types
-            if (enhancedBionic.damageTypes) {
-                for (let damageType in enhancedBionic.damageTypes) {
-                    enhancedBionic.damageTypes[damageType] *= bionicSyncMultiplier;
-                }
-            }
-            
-            // Apply bionic sync to defense types
-            if (enhancedBionic.defenseTypes) {
-                for (let defenseType in enhancedBionic.defenseTypes) {
-                    enhancedBionic.defenseTypes[defenseType] *= bionicSyncMultiplier;
-                }
-            }
-            
-            // Apply bionic sync to new stats
-            if (enhancedBionic.armorEfficiency !== undefined) {
-                enhancedBionic.armorEfficiency *= bionicSyncMultiplier;
-            }
-            if (enhancedBionic.weaponEfficiency !== undefined) {
-                enhancedBionic.weaponEfficiency *= bionicSyncMultiplier;
-            }
-            if (enhancedBionic.bionicEfficiency !== undefined) {
-                enhancedBionic.bionicEfficiency *= bionicSyncMultiplier;
-            }
-            if (enhancedBionic.comboAttack !== undefined) {
-                enhancedBionic.comboAttack *= bionicSyncMultiplier;
-            }
-            if (enhancedBionic.comboEffectiveness !== undefined) {
-                enhancedBionic.comboEffectiveness *= bionicSyncMultiplier;
-            }
-            if (enhancedBionic.additionalComboAttacks !== undefined) {
-                enhancedBionic.additionalComboAttacks *= bionicSyncMultiplier;
-            }
+            const enhancedBionic = scaleBionicStaticStats(bionic, bionicSyncMultiplier);
             
             applyItemModifiers(stats, enhancedBionic); // Apply enhanced bionic stats
             // If bionics ever support wires, also apply slotted chip stats
@@ -658,6 +621,8 @@ function calculatePlayerStats(playerObject) {
         stats.damageMultipliers = stats.damageMultipliers || {};
         stats.damageMultipliers.severedLimb = Math.pow(0.75, Math.max(1, Number(severedLimb.stacks) || 1));
     }
+
+    assertPlayerStatSnapshot(stats);
 
     // Assign the newly calculated stats back to the player object
     playerObject.totalStats = stats;

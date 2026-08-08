@@ -20,7 +20,7 @@ export default {
         criticalChanceModifierRange: { min: 10, max: 15 },
         criticalMultiplierModifierRange: { min: 20, max: 30 },
         defenseTypes: {
-            cryo: { min: 10, max: 15 }
+            elementalResistance: { min: 10, max: 15 }
         },
         slot: 'mainHand',
         isDisassembleable: true,

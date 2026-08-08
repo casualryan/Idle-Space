@@ -2,6 +2,7 @@
 // They are loaded sequentially by main.js so their dependencies are explicit.
 export const RUNTIME_SCRIPTS = [
   'combatSchema.js',
+  'saveSchema.js',
   'stats.js',
   'recipes.js',
   'passives.js',
@@ -24,6 +25,7 @@ export const RUNTIME_SCRIPTS = [
   'lootPools.js',
   'lootHandler.js',
   'debuffs.js',
+  'contentSchema.js',
   'combatState.js',
   'combatController.js',
   'combatEffects.js',

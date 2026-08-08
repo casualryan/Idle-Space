@@ -39,6 +39,11 @@ Bertha, test-only equipment and shops, and developer tools. Visit the URL with
   applies the developer-mode content filter, and starts the classic runtime.
 - `src/runtimeScripts.js` is the single authoritative load order for the classic
   scripts that have not yet been migrated to modules.
+- `saveSchema.js` owns the current save version, ordered migrations, and snapshot
+  validation. Derived combat stats and gear-granted passive totals are rebuilt
+  from authoritative player/equipment state after load.
+- `contentSchema.js` validates cross-registry references and authored stat keys at
+  startup, so typos and disconnected content fail with a useful message.
 - `src/items/` contains one module per item and category index files.
 - `src/enemies/` contains enemy templates and their category index.
 - Root-level runtime files contain the remaining game systems, including combat,
@@ -49,9 +54,15 @@ Bertha, test-only equipment and shops, and developer tools. Visit the URL with
 ## Adding content
 
 Create the item or enemy in its matching `src/` folder, then import and register
-it in that folder's `index.js`. Equipment needs a numeric `levelRequirement`.
+it in that folder's `index.js`. Equipment needs a positive numeric
+`levelRequirement` (a numeric range is also valid for generated equipment).
 Enemy rewards must use `lootConfig` and named pools from `lootPools.js`; even a
 single unique boss reward belongs in a weighted loot table.
+
+Item scalar bonuses are an explicit schema, not arbitrary object properties. Add
+new live stats to `ITEM_SCALAR_STAT_RULES` in `stats.js` and their validation
+coverage before authoring them on content. `armorPenetration` remains reserved and
+will produce a warning until combat resolution implements it.
 
 Effect `chance` values are authored as percentages (`25` means 25%). Ordinary
 base equipment should differ through its core stats, not bespoke effects, unless

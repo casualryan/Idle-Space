@@ -19,7 +19,7 @@ The combat runtime remains classic-script compatible, but it no longer has a sin
 
 ## Dependency direction
 
-The schema loads before stat calculation. State loads before controllers. Controllers and rules may call rendering adapters, but they never access `document` directly. Reward and delve sequence modules are independent of their renderers. The UI modules load before the bootstrap, and `combat.js` starts the initial render only after every dependency exists.
+The combat and save schemas load before stat calculation. State loads before controllers. The cross-registry content schema loads after authored registries and before bootstrap validation. Controllers and rules may call rendering adapters, but they never access `document` directly. Reward and delve sequence modules are independent of their renderers. The UI modules load before the bootstrap, and `combat.js` starts the initial render only after every dependency exists.
 
 The state object is available as `window.coreboundCombatState`. Its property accessors preserve the existing unqualified names such as `enemy`, `isCombatActive`, and `delveBag`; this compatibility layer allows incremental ES-module conversion without changing save behavior or game mechanics.
 

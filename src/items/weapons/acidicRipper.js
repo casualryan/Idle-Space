@@ -22,7 +22,7 @@ export default {
         attackSpeedModifierRange: { min: 25, max: 40 },
         criticalChanceModifierRange: { min: 15, max: 25 },
         defenseTypes: {
-            corrosive: { min: 20, max: 30 }
+            chemicalResistance: { min: 20, max: 30 }
         },
         slot: 'mainHand',
         isDisassembleable: true,

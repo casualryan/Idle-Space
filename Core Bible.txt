@@ -46,6 +46,12 @@ Primary runtime modules:
 - combatSchema.js
   Defines and validates canonical combatants, damage packets, damage results,
   debuff definitions, and item-triggered combat effects.
+- saveSchema.js
+  Owns the current save version, ordered pure migrations, legacy item
+  normalization, and validation before a snapshot may alter live state.
+- contentSchema.js
+  Validates items, recipes, loot pools, enemies, locations, shops, passives, and
+  roll-group paths against their authoritative registries during bootstrap.
 - global.js
   Owns player state, save/load/reset, autosave, shared UI refresh hooks.
 - combatState.js + combatController.js
@@ -59,7 +65,8 @@ Primary runtime modules:
 - combat.js
   Bootstrap only; it contains no combat rules or rendering implementation.
 - stats.js
-  Owns player/enemy stat construction and typed damage calculation logic.
+  Owns player/enemy stat construction, the explicit item-stat schema, bionic
+  scaling, stat snapshot validation, and typed damage calculation logic.
 - skills.js + skillResolver.js
   Owns Combat Styles definitions, profile resolution, and hit-context rules.
 - passives.js + passivesUI.js
@@ -397,7 +404,7 @@ Combat/delve interactions:
 ================================================================================
 
 Snapshot/version:
-- buildGameStateSnapshot includes meta.version = 4.
+- buildGameStateSnapshot includes meta.version = 8.
 - Includes combat styles, gathering progress, and fabrication reservation state.
 
 Slot model:
@@ -406,12 +413,20 @@ Slot model:
   slot (not arbitrary UI selection).
 
 Restore and normalization behaviors:
-- restoreItem performs key migrations for damage/defense legacy fields.
+- saveSchema.js applies every required migration in ascending version order to a
+  cloned snapshot before global state or active systems are changed.
+- Current-version migration is idempotent; running it twice does not reroll or
+  otherwise change a generated item instance.
 - Weapon restore migration:
   legacy damageTypes -> weaponBaseDamage when canonical field missing.
   if both exist, canonical wins and legacy duplicate is removed.
 - Legacy skills save shape maps into combat styles structure.
-- normalizeGatheringSkills and normalizeCombatStylesState invoked on load.
+- Legacy damage and defense aliases are canonicalized across inventory,
+  equipment, delve rewards, and socketed chips.
+- Future-version and structurally invalid saves are rejected before live state is
+  touched. References to retired items are preserved with a warning.
+- Gear passive totals and all calculated stats are derived after restore rather
+  than trusted from serialized totals.
 
 Reset behavior:
 - resetGame restores baseline player state, equipment, slots, styles, and currency.
@@ -440,6 +455,11 @@ Equipment constraints:
 
 Persistence:
 - Generated item instance rolls persist across save/load (no reroll on restore).
+- Save migrations are ordered, non-destructive to their input, and idempotent at
+  the current schema version.
+- Equipment and passive contributions have one authoritative rebuild path; an
+  unchanged rebuild cannot stack a contribution twice.
+- Cross-registry content references and supported stat keys validate at startup.
 
 ================================================================================
 15. IMPLEMENTED VS PROTOTYPE VS PLANNED MATRIX
@@ -452,7 +472,7 @@ Persistence:
 - Passive allocation and application.
 - Typed debuff and status systems.
 - Wires/chips socketing and black-chip uniqueness.
-- Save v3 snapshot and restore migrations.
+- Save v8 snapshot, ordered migrations, and pre-load validation.
 - Activity manager plus mining integration.
 
 [PROTOTYPE]

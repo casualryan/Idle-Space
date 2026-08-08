@@ -504,8 +504,7 @@ function buildGameStateSnapshot() {
             maxInventorySlots: player.maxInventorySlots,
             passives: {
                 allocations: player.passiveAllocations,
-                points: player.passivePoints,
-                gearBonuses: player.gearPassiveBonuses
+                points: player.passivePoints
             },
             combatStyles: {
                 equipped: player.equippedSkillId,
@@ -530,7 +529,7 @@ function buildGameStateSnapshot() {
             : [],
         meta: {
             savedAt: Date.now(),
-            version: 7
+            version: COREBOUND_SAVE_VERSION
         }
     };
 }
@@ -540,6 +539,9 @@ function saveGame(isAutoSave = false, slotIndex = null) {
     try {
         const targetSlot = slotIndex == null ? getAutosaveTargetSlot() : sanitizeSaveSlotIndex(slotIndex);
         const gameState = buildGameStateSnapshot();
+        assertGameStateSnapshot(gameState, {
+            knownItemNames: new Set((window.items || []).map(item => item.name))
+        });
 
         // Convert to JSON and save to selected slot
         localStorage.setItem(getSaveKeyForSlot(targetSlot), JSON.stringify(gameState));
@@ -560,56 +562,6 @@ function saveGame(isAutoSave = false, slotIndex = null) {
     }
 }
 
-// Helper: migrate a single defenseTypes object to new keys
-function migrateDefenseTypesObject(defenseTypes) {
-    if (!defenseTypes) return false;
-    const hasLegacy = defenseTypes.toughness !== undefined ||
-                      defenseTypes.fortitude !== undefined ||
-                      defenseTypes.heatResistance !== undefined ||
-                      defenseTypes.immunity !== undefined ||
-                      defenseTypes.antimagnet !== undefined;
-    if (!hasLegacy) return false;
-
-    if (defenseTypes.physicalResistance === undefined) defenseTypes.physicalResistance = 0;
-    if (defenseTypes.elementalResistance === undefined) defenseTypes.elementalResistance = 0;
-    if (defenseTypes.chemicalResistance === undefined) defenseTypes.chemicalResistance = 0;
-
-    if (defenseTypes.toughness !== undefined) {
-        defenseTypes.physicalResistance += defenseTypes.toughness;
-        delete defenseTypes.toughness;
-    }
-    if (defenseTypes.fortitude !== undefined) {
-        defenseTypes.physicalResistance += defenseTypes.fortitude / 2;
-        delete defenseTypes.fortitude;
-    }
-    if (defenseTypes.heatResistance !== undefined) {
-        defenseTypes.elementalResistance += defenseTypes.heatResistance;
-        delete defenseTypes.heatResistance;
-    }
-    if (defenseTypes.antimagnet !== undefined) {
-        defenseTypes.elementalResistance += defenseTypes.antimagnet;
-        delete defenseTypes.antimagnet;
-    }
-    if (defenseTypes.immunity !== undefined) {
-        defenseTypes.chemicalResistance += defenseTypes.immunity;
-        delete defenseTypes.immunity;
-    }
-    return true;
-}
-
-// Function to migrate from old defense types to new ones
-function migrateDefenseTypes(entity) {
-    if (!entity) return;
-    let migrated = false;
-    if (entity.baseStats && entity.baseStats.defenseTypes) {
-        migrated = migrateDefenseTypesObject(entity.baseStats.defenseTypes) || migrated;
-    }
-    if (entity.totalStats && entity.totalStats.defenseTypes) {
-        migrated = migrateDefenseTypesObject(entity.totalStats.defenseTypes) || migrated;
-    }
-    if (migrated) console.log("Defense types migrated to new system");
-}
-
 function loadGame(slotIndex = null) {
     const targetSlot = slotIndex == null ? getAutosaveTargetSlot() : sanitizeSaveSlotIndex(slotIndex);
     const saveKey = getSaveKeyForSlot(targetSlot);
@@ -624,6 +576,14 @@ function loadGame(slotIndex = null) {
     }
 
     try {
+        const parsedState = JSON.parse(savedState);
+        const migration = migrateGameStateSnapshot(parsedState);
+        const gameState = migration.state;
+        const saveValidation = assertGameStateSnapshot(gameState, {
+            knownItemNames: new Set((window.items || []).map(item => item.name))
+        });
+        saveValidation.warnings.forEach(warning => console.warn(`Save warning: ${warning}`));
+
         // Stop any active systems before loading
         if (typeof stopCombat === 'function' && (isCombatActive || isDelveInProgress)) {
             stopCombat('gameLoad');
@@ -635,11 +595,6 @@ function loadGame(slotIndex = null) {
         }
         if (typeof window.clearFabricationsOnLoad === 'function') {
             window.clearFabricationsOnLoad();
-        }
-
-        const gameState = JSON.parse(savedState);
-        if (!gameState || typeof gameState !== 'object' || !gameState.player || typeof gameState.player !== 'object') {
-            throw new Error('Invalid save payload');
         }
 
         const savedPlayer = gameState.player;
@@ -674,15 +629,6 @@ function loadGame(slotIndex = null) {
         // Apply restored data only after successful parsing of all pieces.
         player.baseStats = restoredBaseStats;
 
-        // Migrate new stats if they're missing from old saves
-        if (player.baseStats.armorEfficiency === undefined) player.baseStats.armorEfficiency = 0;
-        if (player.baseStats.weaponEfficiency === undefined) player.baseStats.weaponEfficiency = 0;
-        if (player.baseStats.bionicEfficiency === undefined) player.baseStats.bionicEfficiency = 0;
-        if (player.baseStats.bionicSync === undefined) player.baseStats.bionicSync = 0;
-        if (player.baseStats.comboAttack === undefined) player.baseStats.comboAttack = 0;
-        if (player.baseStats.comboEffectiveness === undefined) player.baseStats.comboEffectiveness = 0;
-        if (player.baseStats.additionalComboAttacks === undefined) player.baseStats.additionalComboAttacks = 0;
-
         player.currentHealth = savedPlayer.currentHealth;
         player.currentShield = savedPlayer.currentShield;
         player.experience = Number(savedPlayer.experience || 0);
@@ -699,15 +645,9 @@ function loadGame(slotIndex = null) {
         if (savedPlayer.passives) {
             player.passiveAllocations = savedPlayer.passives.allocations || {};
             player.passivePoints = savedPlayer.passives.points || 0;
-            player.gearPassiveBonuses = savedPlayer.passives.gearBonuses || {};
         } else {
             player.passiveAllocations = {};
             player.passivePoints = 1;
-            player.gearPassiveBonuses = {};
-        }
-        applyAllPassivesToPlayer();
-        if (typeof window.recomputePlayerEffects === 'function') {
-            window.recomputePlayerEffects();
         }
 
         player.equippedSkillId = restoredEquippedStyle;
@@ -760,10 +700,9 @@ function loadGame(slotIndex = null) {
             window.restoreGatheringActivity(gameState.activityState.currentActivity);
         }
 
-        // Apply migration for the new defense system
-        migrateDefenseTypes(player);
-
-        player.calculateStats();
+        resetGearPassiveBonuses();
+        applyAllPassivesToPlayer();
+        if (typeof window.recomputePlayerEffects === 'function') window.recomputePlayerEffects();
         updatePlayerStatsDisplay();
         updateInventoryDisplay();
         updateEquipmentDisplay();
@@ -783,11 +722,19 @@ function loadGame(slotIndex = null) {
             }, 0);
         }
 
+        if (migration.appliedVersions.length > 0) {
+            console.log(`Save slot ${targetSlot} migrated from version ${migration.fromVersion} to ${migration.toVersion}.`);
+        }
         console.log(`Game loaded successfully from slot ${targetSlot}.`);
         logMessage(`Game loaded from slot ${targetSlot}.`);
         const event = new CustomEvent('gameLoaded', { detail: { slot: targetSlot, loaded: true } });
         window.dispatchEvent(event);
-        return { ok: true };
+        return {
+            ok: true,
+            migratedFrom: migration.appliedVersions.length > 0 ? migration.fromVersion : null,
+            version: migration.toVersion,
+            warnings: saveValidation.warnings
+        };
     } catch (error) {
         console.error(`Error loading save slot ${targetSlot}:`, error);
         logMessage(`Failed to load save slot ${targetSlot}.`);
@@ -797,109 +744,19 @@ function loadGame(slotIndex = null) {
     }
 }
 
-// Function to migrate item defense types
-function migrateItemDefenseTypes(item) {
-    if (!item || !item.defenseTypes) return item;
-
-    const hasLegacy = item.defenseTypes.toughness !== undefined ||
-                     item.defenseTypes.fortitude !== undefined ||
-                     item.defenseTypes.heatResistance !== undefined ||
-                     item.defenseTypes.immunity !== undefined ||
-                     item.defenseTypes.antimagnet !== undefined;
-
-    if (!hasLegacy) return item;
-
-    // Initialize new resistance keys
-    if (item.defenseTypes.physicalResistance === undefined) item.defenseTypes.physicalResistance = 0;
-    if (item.defenseTypes.elementalResistance === undefined) item.defenseTypes.elementalResistance = 0;
-    if (item.defenseTypes.chemicalResistance === undefined) item.defenseTypes.chemicalResistance = 0;
-
-    // Migrate legacy stats to new keys
-    if (item.defenseTypes.toughness !== undefined) {
-        item.defenseTypes.physicalResistance += item.defenseTypes.toughness;
-        delete item.defenseTypes.toughness;
-    }
-    if (item.defenseTypes.fortitude !== undefined) {
-        item.defenseTypes.physicalResistance += Math.ceil(item.defenseTypes.fortitude / 2);
-        delete item.defenseTypes.fortitude;
-    }
-    if (item.defenseTypes.heatResistance !== undefined) {
-        item.defenseTypes.elementalResistance += item.defenseTypes.heatResistance;
-        delete item.defenseTypes.heatResistance;
-    }
-    if (item.defenseTypes.antimagnet !== undefined) {
-        item.defenseTypes.elementalResistance += item.defenseTypes.antimagnet;
-        delete item.defenseTypes.antimagnet;
-    }
-    if (item.defenseTypes.immunity !== undefined) {
-        item.defenseTypes.chemicalResistance += item.defenseTypes.immunity;
-        delete item.defenseTypes.immunity;
-    }
-
-    return item;
-}
-
 function restoreItem(savedItem) {
     if (!savedItem) return null;
-    
-    console.log(`Trying to restore item: ${savedItem.name}`);
-    
-    // Migrate defense types if needed
-    savedItem = migrateItemDefenseTypes(savedItem);
-    
-    // Migrate damage type keys on legacy fields
-    if (savedItem.damageTypes) {
-        // Check for and convert old damage types to new ones
-        if (savedItem.damageTypes.mental !== undefined) {
-            savedItem.damageTypes.slashing = savedItem.damageTypes.mental;
-            delete savedItem.damageTypes.mental;
-        }
-        
-        if (savedItem.damageTypes.magnetic !== undefined) {
-            savedItem.damageTypes.electric = savedItem.damageTypes.magnetic;
-            delete savedItem.damageTypes.magnetic;
-        }
-        
-        if (savedItem.damageTypes.chemical !== undefined) {
-            savedItem.damageTypes.corrosive = savedItem.damageTypes.chemical;
-            delete savedItem.damageTypes.chemical;
-        }
-    }
-
-    // Weapon local base migration: one-way fallback from legacy damageTypes.
-    const isWeaponLike = ((savedItem.type || '').toLowerCase() === 'weapon') || savedItem.slot === 'mainHand' || savedItem.weaponType;
-    if (isWeaponLike) {
-        if (!savedItem.weaponBaseDamage && savedItem.damageTypes && typeof savedItem.damageTypes === 'object') {
-            savedItem.weaponBaseDamage = JSON.parse(JSON.stringify(savedItem.damageTypes));
-            delete savedItem.damageTypes;
-        } else if (savedItem.weaponBaseDamage && savedItem.damageTypes) {
-            console.warn(`Weapon ${savedItem.name} has both weaponBaseDamage and legacy damageTypes. Ignoring legacy damageTypes to avoid duplication.`);
-            delete savedItem.damageTypes;
-        }
-        if (savedItem.weaponBaseDamage) {
-            if (savedItem.weaponBaseDamage.mental !== undefined) {
-                savedItem.weaponBaseDamage.slashing = savedItem.weaponBaseDamage.mental;
-                delete savedItem.weaponBaseDamage.mental;
-            }
-            if (savedItem.weaponBaseDamage.magnetic !== undefined) {
-                savedItem.weaponBaseDamage.electric = savedItem.weaponBaseDamage.magnetic;
-                delete savedItem.weaponBaseDamage.magnetic;
-            }
-            if (savedItem.weaponBaseDamage.chemical !== undefined) {
-                savedItem.weaponBaseDamage.corrosive = savedItem.weaponBaseDamage.chemical;
-                delete savedItem.weaponBaseDamage.chemical;
-            }
-        }
-    }
+    const normalizedItem = normalizeSavedItemData(savedItem);
+    console.log(`Trying to restore item: ${normalizedItem.name}`);
     
     // Find the template for this item
-    const itemTemplate = window.items.find(item => item.name === savedItem.name);
+    const itemTemplate = window.items.find(item => item.name === normalizedItem.name);
     
     if (itemTemplate) {
-        console.log(`Template found for ${savedItem.name}, type: ${itemTemplate.type}`);
+        console.log(`Template found for ${normalizedItem.name}, type: ${itemTemplate.type}`);
 
         // Preserve saved generated values exactly (avoid reroll drift on load)
-        const itemInstance = JSON.parse(JSON.stringify(savedItem));
+        const itemInstance = JSON.parse(JSON.stringify(normalizedItem));
 
         // Keep selected template metadata current without altering rolled stats
         if (itemTemplate.icon) {
@@ -909,22 +766,35 @@ function restoreItem(savedItem) {
             itemInstance.effects = JSON.parse(JSON.stringify(itemTemplate.effects));
         }
 
+        for (const key of ['type', 'slot', 'weaponType', 'levelRequirement', 'stackable', 'color']) {
+            if (itemInstance[key] === undefined && itemTemplate[key] !== undefined) {
+                itemInstance[key] = JSON.parse(JSON.stringify(itemTemplate[key]));
+            }
+        }
+        if (typeof validateItemContent === 'function') {
+            const validation = validateItemContent(itemInstance, 'restored item', { allowInstanceFields: true });
+            if (!validation.valid) {
+                throw new TypeError(`Invalid restored item ${itemInstance.name}: ${validation.errors.join('; ')}`);
+            }
+            validation.warnings.forEach(warning => console.warn(`Restored item warning for ${itemInstance.name}: ${warning}`));
+        }
+
         return itemInstance;
     } else {
-        console.warn(`Item template not found for ${savedItem.name}`);
+        console.warn(`Item template not found for ${normalizedItem.name}`);
         console.log(`Available weapons: ${window.weapons ? window.weapons.length : 'no weapons'}`);
         if (window.weapons && window.weapons.length > 0) {
             console.log(`First few weapon names: ${window.weapons.slice(0, 3).map(w => w.name).join(', ')}`);
             // Check if the name exists but has a slight mismatch
             const similarWeapon = window.weapons.find(w => 
-                w.name.toLowerCase().includes(savedItem.name.toLowerCase()) || 
-                savedItem.name.toLowerCase().includes(w.name.toLowerCase())
+                w.name.toLowerCase().includes(normalizedItem.name.toLowerCase()) ||
+                normalizedItem.name.toLowerCase().includes(w.name.toLowerCase())
             );
             if (similarWeapon) {
-                console.log(`Found similar weapon name: "${similarWeapon.name}" vs "${savedItem.name}"`);
+                console.log(`Found similar weapon name: "${similarWeapon.name}" vs "${normalizedItem.name}"`);
             }
         }
-        return savedItem; // Return the saved item as is
+        return normalizedItem;
     }
 }
 

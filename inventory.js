@@ -383,11 +383,7 @@ function equipItem(item) {
     
     // Reset and reapply all passive bonuses from gear
     resetGearPassiveBonuses();
-    
-    // Recalculate player stats
-    player.calculateStats();
-    
-    // Reapply passives since gear bonuses may have changed
+    // Passive application owns the single authoritative stat rebuild.
     applyAllPassivesToPlayer();
     
     updateInventoryDisplay();
@@ -902,11 +898,7 @@ function unequipItem(slotName) {
 
     // Reset and reapply all passive bonuses from gear
     resetGearPassiveBonuses();
-    
-    // Recalculate player stats after unequipping the item
-    player.calculateStats();
-    
-    // Reapply passives since gear bonuses changed
+    // Passive application owns the single authoritative stat rebuild.
     applyAllPassivesToPlayer();
     recomputePlayerEffects();
 

@@ -7,12 +7,12 @@ export default {
         icon: "icons/scorpion_sword.png",
         damageTypes: {
             kinetic: { min: 30, max: 40 },
-            chemical: { min: 15, max: 25 }
+            corrosive: { min: 15, max: 25 }
         },
         statModifiers: {
             damageTypes: {
                 kinetic: { min: 19, max: 30 },
-                chemical: { min: 15, max: 25 }
+                corrosive: { min: 15, max: 25 }
             },
         },
         attackSpeedModifierRange: { min: 15, max: 25 },

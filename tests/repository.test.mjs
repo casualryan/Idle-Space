@@ -390,6 +390,203 @@ test('debuffs and item-triggered effects satisfy the authoritative combat schema
   );
 });
 
+test('the stat pipeline applies only declared item stats and is idempotent', () => {
+  const result = evaluateClassic(
+    ['combatSchema.js', 'stats.js'],
+    `(() => {
+      const directStats = {
+        precision: 0,
+        maxSeveredLimbs: 1,
+        maxSeepingWoundStacks: 5,
+        damageTypes: {},
+        damageTypeModifiers: {},
+        damageGroupModifiers: { physical: 1, elemental: 1, chemical: 1 },
+        defenseTypes: {}
+      };
+      applyItemModifiers(directStats, {
+        precision: 5,
+        statModifiers: {
+          precision: 99,
+          maxSeveredLimbs: 1,
+          maxSeepingWoundStacks: 5,
+          precison: 500
+        }
+      });
+
+      const playerObject = {
+        baseStats: {
+          maxHealth: 100,
+          maxEnergyShield: 0,
+          healthRegen: 0,
+          criticalChance: 0,
+          criticalMultiplier: 1,
+          precision: 0,
+          deflection: 0,
+          damageTypes: {},
+          defenseTypes: {}
+        },
+        equipment: {
+          mainHand: null, offHand: null, head: null, chest: null, legs: null, feet: null, gloves: null,
+          bionicSlots: [{
+            name: 'Synced Bionic', slot: 'bionic',
+            precision: 10,
+            statModifiers: { damageTypes: { kinetic: 20 } }
+          }]
+        },
+        passiveBonuses: {
+          flatHealth: 0, flatEnergyShield: 0, healthRegen: 0, precision: 0, deflection: 0,
+          healthPercent: 0, energyShieldPercent: 0, criticalChance: 0, criticalMultiplier: 0,
+          flatDamageTypes: {}, defenseTypes: {}, damageTypes: {}, damageGroups: {}
+        },
+        passiveAttackSpeedBonus: 0,
+        activeBuffs: [], activeDebuffs: [], gatheringSkills: {}, currentHealth: null, currentShield: null
+      };
+      playerObject.baseStats.bionicSync = 50;
+      const first = calculatePlayerStats(playerObject);
+      const firstJson = JSON.stringify(first);
+      const second = calculatePlayerStats(playerObject);
+      playerObject.equipment.bionicSlots = [null, null, null, null];
+      const afterRemoval = calculatePlayerStats(playerObject);
+      return {
+        directStats,
+        unknownKeys: getUnknownItemStatModifierKeys({ statModifiers: { precison: 5 } }),
+        first,
+        afterRemoval,
+        unchanged: firstJson === JSON.stringify(second)
+      };
+    })()`
+  );
+
+  assert.equal(result.directStats.precision, 5, 'top-level and nested aliases were both applied');
+  assert.equal(result.directStats.maxSeveredLimbs, 2);
+  assert.equal(result.directStats.maxSeepingWoundStacks, 10);
+  assert.equal(result.directStats.precison, undefined);
+  assert.deepEqual([...result.unknownKeys], ['precison']);
+  assert.equal(result.first.precision, 15, 'Bionic Sync did not amplify a bionic static stat');
+  assert.equal(result.first.damageTypeModifiers.kinetic, 1.3, 'Bionic Sync did not amplify bionic damage modifiers');
+  assert.equal(result.unchanged, true, 'recalculating unchanged equipment changed totalStats');
+  assert.equal(result.afterRemoval.precision, 0, 'removed equipment left a scalar contribution behind');
+  assert.equal(result.afterRemoval.damageTypeModifiers.kinetic, undefined, 'removed equipment left a typed contribution behind');
+});
+
+test('ordered save migrations preserve rolls and produce a valid current snapshot', () => {
+  const result = evaluateClassic(
+    'saveSchema.js',
+    `(() => {
+      const original = {
+        player: {
+          level: 12,
+          experience: 55,
+          baseStats: { defenseTypes: { toughness: 8, heatResistance: 4 } },
+          equipment: {
+            mainHand: {
+              name: 'Legacy Blade', type: 'Weapon', slot: 'mainHand', level: 9,
+              damageTypes: { mental: 17 }, rolledModifiers: [{ id: 'preserved-roll', value: 17 }]
+            },
+            bionicSlots: [{ name: 'Legacy Bionic', type: 'Bionic', slot: 'bionic', defenseTypes: { immunity: 3 } }]
+          },
+          passives: { allocations: {}, points: 4, gearBonuses: { GhostPassive: 99 } },
+          skills: { equipped: 'legacyStyle' }
+        },
+        inventory: [],
+        meta: { version: 0 }
+      };
+      const before = JSON.stringify(original);
+      const migrated = migrateGameStateSnapshot(original);
+      const validation = validateGameStateSnapshot(migrated.state);
+      const repeated = migrateGameStateSnapshot(migrated.state);
+      return {
+        beforeUnchanged: before === JSON.stringify(original),
+        migrated,
+        validation,
+        repeatUnchanged: JSON.stringify(migrated.state) === JSON.stringify(repeated.state)
+      };
+    })()`
+  );
+
+  assert.equal(result.beforeUnchanged, true, 'migration mutated the parsed legacy payload');
+  assert.equal(result.migrated.toVersion, 8);
+  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.equal(result.migrated.state.player.equipment.mainHand.weaponBaseDamage.slashing, 17);
+  assert.equal(result.migrated.state.player.equipment.mainHand.rolledModifiers[0].value, 17);
+  assert.equal(result.migrated.state.player.equipment.mainHand.levelRequirement, 9);
+  assert.equal(result.migrated.state.player.baseStats.defenseTypes.physicalResistance, 8);
+  assert.equal(result.migrated.state.player.baseStats.defenseTypes.elementalResistance, 4);
+  assert.equal(result.migrated.state.player.equipment.bionicSlots[0].defenseTypes.chemicalResistance, 3);
+  assert.equal(result.migrated.state.player.equipment.bionicSlots.length, 4);
+  assert.equal(result.migrated.state.player.passives.gearBonuses, undefined);
+  assert.equal(result.validation.valid, true);
+  assert.equal(result.repeatUnchanged, true, 'current save migration was not idempotent');
+
+  assert.throws(
+    () => evaluateClassic('saveSchema.js', 'migrateGameStateSnapshot({ meta: { version: 99 } })'),
+    /newer than supported version/,
+    'a future-version save was accepted'
+  );
+});
+
+test('content validation rejects unsupported item stats and roll paths', () => {
+  const validation = evaluateClassic(
+    ['combatSchema.js', 'stats.js', 'contentSchema.js'],
+    `validateCoreboundContent({
+      items: [{
+        name: 'Broken Authoring Test', type: 'Bionic', slot: 'bionic', levelRequirement: 1,
+        defelction: 10,
+        statModifiers: { precison: 10 },
+        rollGroups: [{ pick: 1, from: [{ path: 'statModifiers.damageTypes.poison', value: '1-4' }] }]
+      }],
+      enemies: [], recipes: [], shops: [], locations: [], passives: [], lootPools: {}, lootTiers: {}
+    })`,
+    { window: { coreboundConfig: { developerMode: true }, registerCoreboundInitializer: () => {} } }
+  );
+
+  assert.equal(validation.valid, false);
+  assert.ok(validation.errors.some(error => /unknown item field: defelction/.test(error)));
+  assert.ok(validation.errors.some(error => /unknown statModifiers key: precison/.test(error)));
+  assert.ok(validation.errors.some(error => /unknown roll-group path.*poison/.test(error)));
+});
+
+test('all authored registries satisfy the unified content contract', () => {
+  const validateRegistries = (developerMode) => evaluateClassic(
+    ['combatSchema.js', 'stats.js', 'recipes.js', 'npcshops.js', 'passives.js', 'lootPools.js', 'locations.js', 'contentSchema.js'],
+    `validateCoreboundContent({
+      items: testItems,
+      enemies: testEnemies,
+      recipes: window.recipes,
+      shops: npcs,
+      locations,
+      passives,
+      lootPools: LOOT_POOLS,
+      lootTiers: LOOT_TIERS,
+      developerMode: ${developerMode}
+    })`,
+    {
+      testItems: allItems.filter(item => developerMode || !item.developerOnly),
+      testEnemies: enemies.filter(enemy => developerMode || !enemy.developerOnly),
+      window: {
+        coreboundConfig: { developerMode },
+        registerCoreboundInitializer: () => {}
+      },
+      document: {
+        getElementById: () => null,
+        querySelectorAll: () => []
+      },
+      player: { level: 1 },
+      playerCurrency: 0,
+      items: allItems,
+      logMessage: () => {}
+    }
+  );
+  const developmentValidation = validateRegistries(true);
+  const playerValidation = validateRegistries(false);
+
+  assert.deepEqual([...developmentValidation.errors], []);
+  assert.equal(developmentValidation.valid, true);
+  assert.deepEqual([...playerValidation.errors], []);
+  assert.equal(playerValidation.valid, true);
+  assert.ok(developmentValidation.warnings.some(warning => /armorPenetration.*reserved/i.test(warning)));
+});
+
 test('damage packets carry explicit actors and application returns a structured result', () => {
   const result = evaluateClassic(
     ['combatSchema.js', 'combatEffects.js'],
