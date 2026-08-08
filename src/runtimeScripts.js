@@ -23,6 +23,14 @@ export const RUNTIME_SCRIPTS = [
   'lootPools.js',
   'lootHandler.js',
   'debuffs.js',
+  'combatState.js',
+  'combatController.js',
+  'combatEffects.js',
+  'combatResolution.js',
+  'delveRewards.js',
+  'delveManager.js',
+  'combatUI.js',
+  'delveUI.js',
   'combat.js',
   'codex.js'
 ];

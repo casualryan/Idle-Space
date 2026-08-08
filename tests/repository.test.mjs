@@ -23,6 +23,22 @@ function read(relativePath) {
   return fs.readFileSync(path.join(repositoryRoot, relativePath), 'utf8');
 }
 
+const COMBAT_RUNTIME_FILES = [
+  'combatState.js',
+  'combatController.js',
+  'combatEffects.js',
+  'combatResolution.js',
+  'delveRewards.js',
+  'delveManager.js',
+  'combatUI.js',
+  'delveUI.js',
+  'combat.js'
+];
+
+function readCombatRuntime() {
+  return COMBAT_RUNTIME_FILES.map(read).join('\n');
+}
+
 function evaluateClassic(relativePath, expression, extraGlobals = {}) {
   const quietConsole = Object.fromEntries(
     ['log', 'warn', 'error', 'info', 'debug'].map(method => [method, () => {}])
@@ -254,6 +270,43 @@ test('classic runtime load order has no missing files or duplicate top-level lex
   assert.deepEqual(duplicateFunctions, [], `classic scripts silently override functions: ${duplicateFunctions.join(', ')}`);
 });
 
+test('combat runtime keeps state, rules, sequencing, rewards, and rendering in explicit owners', () => {
+  const runtimeCombatFiles = RUNTIME_SCRIPTS.filter(file => COMBAT_RUNTIME_FILES.includes(file));
+  assert.deepEqual(runtimeCombatFiles, COMBAT_RUNTIME_FILES, 'combat subsystem dependency order changed');
+
+  const logicFiles = [
+    'combatState.js',
+    'combatController.js',
+    'combatEffects.js',
+    'combatResolution.js',
+    'delveRewards.js',
+    'delveManager.js'
+  ];
+  for (const file of logicFiles) {
+    assert.doesNotMatch(read(file), /\bdocument\./, `${file} reaches into the DOM instead of its UI adapter`);
+  }
+
+  const expectedOwners = new Map([
+    ['combatController.js', ['startCombat', 'stopCombat']],
+    ['combatResolution.js', ['playerAttack', 'enemyAttack']],
+    ['combatEffects.js', ['applyDamage']],
+    ['delveManager.js', ['startAdventure', 'beginNextMonsterInSequence']],
+    ['delveRewards.js', ['finalizeDelveLoot']],
+    ['delveUI.js', ['displayAdventureLocations', 'updateDelveBagUI']]
+  ]);
+  for (const [file, functions] of expectedOwners) {
+    const source = read(file);
+    for (const name of functions) {
+      assert.match(source, new RegExp(`function\\s+${name}\\s*\\(`), `${name} is no longer owned by ${file}`);
+    }
+  }
+
+  const bootstrap = read('combat.js');
+  assert.ok(bootstrap.split('\n').length <= 15, 'combat bootstrap accumulated subsystem behavior');
+  assert.doesNotMatch(bootstrap, /\bdocument\./, 'combat bootstrap contains rendering behavior');
+  assert.match(read('combatState.js'), /window\.coreboundCombatState\s*=\s*combatState/);
+});
+
 test('classic runtime evaluates in its declared order', () => {
     const storage = new Map();
     const runtimeInitializers = [];
@@ -429,7 +482,7 @@ test('consumable combat debuffs carry the approved mechanics', () => {
 });
 
 test('incoming-hit debuffs consume on player, enemy, and combo hit paths', () => {
-  const combatSource = read('combat.js');
+  const combatSource = readCombatRuntime();
   const incomingHookCalls = [...combatSource.matchAll(/runIncomingHitDebuffs\(/g)].length;
   assert.ok(incomingHookCalls >= 4, 'incoming-hit hooks are not wired into every damage path');
 
@@ -584,7 +637,7 @@ test('max-level areas form four ordered endgame tiers', () => {
 });
 
 test('delve visibility and endgame clears are persistent progression', () => {
-  const combat = read('combat.js');
+  const combat = readCombatRuntime();
   const global = read('global.js');
 
   assert.match(combat, /function getVisibleDelveLocations/);
@@ -624,15 +677,16 @@ test('balance simulation preserves the authored difficulty curve', () => {
 });
 
 test('new-character, fabrication, empowered reward, and claim-cache rules remain wired', () => {
+  const combat = readCombatRuntime();
   assert.match(read('global.js'), /const STARTING_CREDITS = 1000/);
   assert.match(read('fabrication.js'), /Object\.keys\(ongoingFabrications\)\.length > 0/);
-  assert.match(read('combat.js'), /enemy\.isEmpowered = true/);
-  assert.match(read('combat.js'), /xp = Math\.floor\(xp \* 1\.5\)/);
-  assert.match(read('combat.js'), /Starting a new delve destroyed/);
-  assert.match(read('combat.js'), /Auto re-deploy paused until the Delve Claim Cache is cleared/);
+  assert.match(combat, /enemy\.isEmpowered = true/);
+  assert.match(combat, /xp = Math\.floor\(xp \* 1\.5\)/);
+  assert.match(combat, /Starting a new delve destroyed/);
+  assert.match(combat, /Auto re-deploy paused until the Delve Claim Cache is cleared/);
   assert.match(read('global.js'), /delveClaimCache/);
-  assert.match(read('combat.js'), /function preparePlayerForCombat/);
-  assert.doesNotMatch(read('combat.js'), /player\.baseStats = JSON\.parse\(JSON\.stringify\(playerBaseStats\)\)/);
+  assert.match(combat, /function preparePlayerForCombat/);
+  assert.doesNotMatch(combat, /player\.baseStats = JSON\.parse\(JSON\.stringify\(playerBaseStats\)\)/);
   assert.match(read('buffs.js'), /damageTypes:\s*\{\s*kinetic: 5/);
 });
 

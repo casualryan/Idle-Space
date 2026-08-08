@@ -45,8 +45,16 @@ Hard account/system constants:
 Primary runtime modules:
 - global.js
   Owns player state, save/load/reset, autosave, shared UI refresh hooks.
+- combatState.js + combatController.js
+  Own canonical combat/delve state, lifecycle timers, spawning, and transitions.
+- combatResolution.js + combatEffects.js
+  Own attack resolution, hit hooks, applyDamage, healing, and effect processing.
+- delveManager.js + delveRewards.js
+  Own delve sequencing/progression and the temporary reward/claim-cache model.
+- combatUI.js + delveUI.js
+  Own all combat/delve DOM rendering and controller-facing UI adapters.
 - combat.js
-  Owns combat and delve runtime loops, attack resolution flow, applyDamage path.
+  Bootstrap only; it contains no combat rules or rendering implementation.
 - stats.js
   Owns player/enemy stat construction and typed damage calculation logic.
 - skills.js + skillResolver.js
