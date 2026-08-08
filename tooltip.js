@@ -1051,7 +1051,7 @@ function debugTooltip(message, data = {}) {
 }
 
 // This creates a single global tooltip that moves around instead of creating multiple tooltips
-document.addEventListener('DOMContentLoaded', () => {
+window.registerCoreboundInitializer(() => {
     debugTooltip('Initializing global tooltip system');
 
     // Prefer reusing an existing global tooltip if one was already created.

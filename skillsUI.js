@@ -359,7 +359,7 @@ function displaySkillsScreen() {
     renderCombatStylesScreen();
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+window.registerCoreboundInitializer(() => {
     const menuItem = document.querySelector('li[data-screen="skills-screen"]');
     if (menuItem) {
         menuItem.addEventListener('click', () => {

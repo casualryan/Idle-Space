@@ -253,7 +253,8 @@ test('classic runtime load order has no missing files or duplicate top-level lex
 });
 
 test('classic runtime evaluates in its declared order', () => {
-  const storage = new Map();
+    const storage = new Map();
+    const runtimeInitializers = [];
   const document = {
     addEventListener: () => {},
     removeEventListener: () => {},
@@ -300,6 +301,7 @@ test('classic runtime evaluates in its declared order', () => {
   sandbox.addEventListener = () => {};
   sandbox.removeEventListener = () => {};
   sandbox.dispatchEvent = () => true;
+  sandbox.registerCoreboundInitializer = initializer => runtimeInitializers.push(initializer);
   sandbox.coreboundConfig = { developerMode: false, missingIcon: 'icons/default-icon.png' };
   sandbox.weapons = weapons;
   sandbox.materials = materials;
@@ -313,6 +315,23 @@ test('classic runtime evaluates in its declared order', () => {
   for (const relativePath of RUNTIME_SCRIPTS) {
     vm.runInContext(read(relativePath), sandbox, { filename: relativePath });
   }
+
+  assert.ok(runtimeInitializers.length > 0, 'classic runtime did not register its startup work');
+});
+
+test('async runtime loading cannot miss the one-time DOMContentLoaded event', () => {
+  const mainSource = read('src/main.js');
+  assert.match(mainSource, /window\.registerCoreboundInitializer/);
+  assert.match(mainSource, /await documentReady/);
+
+  const directDomReadyListeners = RUNTIME_SCRIPTS.filter(relativePath =>
+    /document\.addEventListener\(['"]DOMContentLoaded['"]/.test(read(relativePath))
+  );
+  assert.deepEqual(
+    directDomReadyListeners,
+    [],
+    `late-loaded runtime files still subscribe directly to DOMContentLoaded: ${directDomReadyListeners.join(', ')}`
+  );
 });
 
 test('Codex sources live enemy, loot, and debuff registries', () => {

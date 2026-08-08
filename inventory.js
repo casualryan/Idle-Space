@@ -303,7 +303,7 @@ function updateInventoryDisplay() {
 }
 
 // Wire up inventory controls events (search/filter/sort)
-document.addEventListener('DOMContentLoaded', () => {
+window.registerCoreboundInitializer(() => {
     const s = document.getElementById('inv-search');
     const f = document.getElementById('inv-filter');
     const o = document.getElementById('inv-sort');

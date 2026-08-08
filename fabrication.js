@@ -50,11 +50,7 @@ const DAMAGE_FOCUS_OPTIONS = [
 const DAMAGE_FOCUS_CATEGORIES = new Set(['Weapons', 'Off-Hands']);
 const missingDamageFocusWarnings = new Set();
 
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOMContentLoaded event fired in fabricating.js');
-    console.log('window.inventory inside DOMContentLoaded:', window.inventory);
-    console.log('addInventoryChangeListener inside DOMContentLoaded:', typeof addInventoryChangeListener);
-
+window.registerCoreboundInitializer(() => {
     // Add the inventory change listener
     addInventoryChangeListener(() => {
         if (currentScreen === 'fabrication-screen') {

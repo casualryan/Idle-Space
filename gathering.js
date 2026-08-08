@@ -262,7 +262,7 @@ window.addEventListener('screenChanged', function(event) {
     }
 });
 
-document.addEventListener('DOMContentLoaded', function() {
+window.registerCoreboundInitializer(function() {
     normalizeGatheringSkills(player);
 
     const stopButton = document.getElementById('stop-mining');
@@ -619,7 +619,7 @@ function updateGatheringSkillDisplay(skillName) {
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+window.registerCoreboundInitializer(() => {
     normalizeGatheringSkills(player);
     if (typeof player.calculateStats === 'function') {
         player.calculateStats();

@@ -418,7 +418,7 @@ function cleanupShopUI() {
 }
 
     // Initialize shops
-    document.addEventListener('DOMContentLoaded', () => {
+    window.registerCoreboundInitializer(() => {
         // Listen for screen changes so we can show NPC list and clean up shop UI
     window.addEventListener('screenChanged', (e) => {
         if (e.detail.screenId === 'shops-screen') {

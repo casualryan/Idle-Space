@@ -26,7 +26,7 @@ let interFightPauseTimer = null;
 let delveBag = { items: [], credits: 0 };
 let delveClaimCache = { items: [], credits: 0 };
 
-document.addEventListener('DOMContentLoaded', () => {
+window.registerCoreboundInitializer(() => {
     updatePlayerStatsDisplay();
     initializeEnemyStatsDisplay();
     displayAdventureLocations();

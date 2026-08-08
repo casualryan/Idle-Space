@@ -52,6 +52,30 @@ window.loadItems = function loadItems() {
 
 window.loadItems();
 
+// Runtime files are still classic scripts, but they are loaded asynchronously by
+// this module. Register their startup work here instead of subscribing directly
+// to DOMContentLoaded: top-level await does not guarantee that late-loaded
+// scripts will see the browser's one-time DOMContentLoaded event.
+const runtimeInitializers = [];
+let runtimeInitializationComplete = false;
+
+window.registerCoreboundInitializer = function registerCoreboundInitializer(initializer) {
+  if (typeof initializer !== 'function') {
+    throw new TypeError('Corebound runtime initializer must be a function.');
+  }
+
+  if (runtimeInitializationComplete) {
+    queueMicrotask(initializer);
+    return;
+  }
+
+  runtimeInitializers.push(initializer);
+};
+
+const documentReady = document.readyState === 'loading'
+  ? new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }))
+  : Promise.resolve();
+
 // A missing bespoke image should never render as the browser's broken-image icon.
 document.addEventListener('error', (event) => {
   const image = event.target;
@@ -74,6 +98,23 @@ function loadClassicScript(path) {
 
 for (const path of RUNTIME_SCRIPTS) {
   await loadClassicScript(path);
+}
+
+await documentReady;
+runtimeInitializationComplete = true;
+
+const initializationFailures = [];
+for (const initialize of runtimeInitializers) {
+  try {
+    initialize();
+  } catch (error) {
+    initializationFailures.push(error);
+    console.error('Corebound runtime initialization failed:', error);
+  }
+}
+
+if (initializationFailures.length > 0) {
+  throw new AggregateError(initializationFailures, 'One or more Corebound systems failed to initialize.');
 }
 
 window.dispatchEvent(new CustomEvent('coreboundReady', {

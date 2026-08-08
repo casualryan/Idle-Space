@@ -207,7 +207,7 @@
         draw();
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
+    window.registerCoreboundInitializer(() => {
         const screen = document.getElementById('codex-screen');
         if (!screen) return;
         screen.replaceChildren();

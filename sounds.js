@@ -124,7 +124,7 @@ function setupUISounds() {
 }
 
 // Initialize everything on page load
-document.addEventListener('DOMContentLoaded', () => {
+window.registerCoreboundInitializer(() => {
     initAudioSystem();
     
     // Wait a bit for the DOM to fully initialize before setting up UI sounds
@@ -160,4 +160,4 @@ function playLevelUpSound() {
 
 // Expose functions
 window.playSound = playSound;
-window.toggleSound = toggleSound; 
+window.toggleSound = toggleSound;

@@ -1069,7 +1069,7 @@ function resetGame(slotIndex = null) {
 setInterval(() => saveGame(true, getAutosaveTargetSlot()), 5000);
 
 // Event listeners
-document.addEventListener('DOMContentLoaded', () => {
+window.registerCoreboundInitializer(() => {
     const developerMode = Boolean(window.coreboundConfig?.developerMode);
     const devNav = document.querySelector('[data-settings-panel="dev"]');
     const devPanel = document.getElementById('settings-panel-dev');
