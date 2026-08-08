@@ -72,7 +72,8 @@ Core Fields
 - type: "Weapon" | "Armor" | "Bionic" | "Material" | "Component"
 - icon: string (path to icon)
 - slot: equipment slot for equippable items (e.g., 'mainHand', 'offHand', 'head', 'chest', 'legs', 'feet', 'gloves', 'bionic')
-- stackable: boolean (usually for materials)
+- stackable: boolean (legacy compatibility for materials; runtime material
+  quantities live in fixed-slot dedicated storage capped at 50,000 each)
 - levelRequirement: { min: number, max: number } (rolled by the generator; used to gate equipping/buying)
 
 Wires (Sockets)

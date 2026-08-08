@@ -449,7 +449,8 @@ function startFabrication(recipe) {
         return;
     }
 
-    if (!hasInventorySpace(1)) {
+    const outputTemplate = getRecipeItemTemplate(recipe);
+    if (!isMaterialItem(outputTemplate) && !hasInventorySpace(1)) {
         if (typeof showWarningPopup === 'function') {
             showWarningPopup('Your inventory is full. Free up space before starting fabrication.');
         } else {
@@ -495,7 +496,7 @@ function completeFabrication(recipe) {
         try {
             const craftedItem = generateItemInstance(itemTemplate);
 
-            if (!hasInventorySpace(1)) {
+            if (!isMaterialItem(craftedItem) && !hasInventorySpace(1)) {
                 if (typeof showWarningPopup === 'function') {
                     showWarningPopup('Your inventory is full. Crafted item cannot be added. Materials have been refunded.');
                 }
@@ -768,21 +769,14 @@ function createRecipeCard(recipe) {
 
 // Helper function to check if the player has a specific material
 function hasRequiredMaterial(itemName, quantity) {
-    // Find all instances of the item in inventory
-    const items = window.inventory.filter(item => item.name === itemName);
-    
-    // Calculate total quantity
-    const totalQuantity = items.reduce((sum, item) => sum + (item.quantity || 0), 0);
-    
-    return totalQuantity >= quantity;
+    return getMaterialQuantity(itemName) >= quantity;
 }
 
 // Function to check if player has required materials
 function hasRequiredMaterials(ingredients) {
     for (let materialName in ingredients) {
         const requiredQuantity = ingredients[materialName];
-        const inventoryItem = window.inventory.find(item => item.name === materialName);
-        const playerQuantity = inventoryItem && inventoryItem.quantity ? inventoryItem.quantity : 0;
+        const playerQuantity = getMaterialQuantity(materialName);
         if (playerQuantity < requiredQuantity) {
             return false;
         }
@@ -800,24 +794,8 @@ function removeMaterialsFromInventory(ingredients) {
 
 // Function to remove a specific quantity of an item from inventory
 function removeItemQuantityFromInventory(itemName, quantity) {
-    const inventoryItem = window.inventory.find(item => item.name === itemName);
-    if (inventoryItem) {
-        if (inventoryItem.stackable) {
-            inventoryItem.quantity -= quantity;
-            if (inventoryItem.quantity <= 0) {
-                const index = window.inventory.indexOf(inventoryItem);
-                if (index > -1) {
-                    window.inventory.splice(index, 1);
-                }
-            }
-        } else {
-            const index = window.inventory.indexOf(inventoryItem);
-            if (index > -1) {
-                window.inventory.splice(index, 1);
-            }
-        }
-    } else {
-        console.warn(`Attempted to remove ${itemName} which is not in inventory.`);
+    if (!removeMaterialFromStorage(itemName, quantity)) {
+        console.warn(`Attempted to remove ${quantity} ${itemName}, but material storage contains ${getMaterialQuantity(itemName)}.`);
     }
     updateInventoryDisplay();
     notifyInventoryChange();

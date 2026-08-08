@@ -416,9 +416,7 @@ function performGatheringAction(skillName, activity) {
             };
         }
 
-        const totalQuantity = inventory
-            .filter(item => item.name === activity.item.name)
-            .reduce((sum, item) => sum + item.quantity, 0);
+        const totalQuantity = getMaterialQuantity(activity.item.name);
 
         displayGatheringLootPopup(`You gathered ${activity.item.name}. (${totalQuantity})`);
     } else {

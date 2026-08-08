@@ -1,6 +1,7 @@
 // Ordered, non-destructive migrations and validation for persisted game snapshots.
 
-const COREBOUND_SAVE_VERSION = 10;
+const COREBOUND_SAVE_VERSION = 11;
+const SAVE_MATERIAL_STACK_CAP = 50000;
 const SAVE_PASSIVE_TREE_VERSION = 2;
 const SAVE_COMBAT_STYLE_VERSION = 2;
 const SAVE_DAMAGE_TYPE_ALIASES = Object.freeze({
@@ -106,6 +107,13 @@ function normalizeSavedItemData(savedItem) {
         });
     }
     return item;
+}
+
+function normalizeSavedMaterialInventory(source) {
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+    return Object.fromEntries(Object.entries(source)
+        .map(([name, quantity]) => [name, Math.min(SAVE_MATERIAL_STACK_CAP, Math.max(0, Math.floor(Number(quantity) || 0)))])
+        .filter(([, quantity]) => quantity > 0));
 }
 
 function mapSavedEquipment(equipment, mapper) {
@@ -236,6 +244,24 @@ const SAVE_MIGRATIONS = Object.freeze([
         combatStyles.unlocked = [];
         combatStyles.version = SAVE_COMBAT_STYLE_VERSION;
         state.player.combatStyles = combatStyles;
+    },
+    function migrateToVersion11(state) {
+        const materialInventory = normalizeSavedMaterialInventory(state.materialInventory);
+        const ordinaryInventory = [];
+        for (const item of Array.isArray(state.inventory) ? state.inventory : []) {
+            if (String(item?.type || '').toLowerCase() !== 'material') {
+                if (item) ordinaryInventory.push(item);
+                continue;
+            }
+            const itemName = String(item.name || '');
+            if (!itemName) continue;
+            const current = Math.max(0, Number(materialInventory[itemName]) || 0);
+            const quantity = Math.max(1, Math.floor(Number(item.quantity) || 1));
+            const next = Math.min(SAVE_MATERIAL_STACK_CAP, current + quantity);
+            if (next > 0) materialInventory[itemName] = next;
+        }
+        state.inventory = ordinaryInventory;
+        state.materialInventory = materialInventory;
     }
 ]);
 
@@ -278,6 +304,18 @@ function validateGameStateSnapshot(state, options = {}) {
     if (!state.player || typeof state.player !== 'object') errors.push('player object is required');
     if (getSaveVersion(state) !== COREBOUND_SAVE_VERSION) errors.push(`save version must be ${COREBOUND_SAVE_VERSION}`);
     if (!Array.isArray(state.inventory)) errors.push('inventory must be an array');
+    if (!state.materialInventory || typeof state.materialInventory !== 'object' || Array.isArray(state.materialInventory)) {
+        errors.push('material inventory must be an object');
+    } else {
+        for (const [name, quantity] of Object.entries(state.materialInventory)) {
+            if (!name || !Number.isInteger(Number(quantity)) || Number(quantity) <= 0 || Number(quantity) > SAVE_MATERIAL_STACK_CAP) {
+                errors.push(`material inventory quantity is invalid: ${name || '(unnamed)'}`);
+            }
+        }
+    }
+    if (Array.isArray(state.inventory) && state.inventory.some(item => String(item?.type || '').toLowerCase() === 'material')) {
+        errors.push('ordinary inventory cannot contain materials');
+    }
     if (!state.player?.equipment || typeof state.player.equipment !== 'object') errors.push('player equipment is required');
     if (!Array.isArray(state.player?.equipment?.bionicSlots) || state.player.equipment.bionicSlots.length !== 4) {
         errors.push('player equipment must contain exactly four bionic slots');
@@ -327,6 +365,9 @@ function validateGameStateSnapshot(state, options = {}) {
             else if (!knownItemNames.has(item.name)) warnings.push(`${context} references retired item: ${item.name}`);
         };
         state.inventory.forEach((item, index) => inspectItem(item, `inventory[${index}]`));
+        Object.keys(state.materialInventory || {}).forEach(name => {
+            if (!knownItemNames.has(name)) warnings.push(`material inventory references retired item: ${name}`);
+        });
         for (const slot of SAVE_EQUIPMENT_SLOTS) {
             if (state.player.equipment[slot]) inspectItem(state.player.equipment[slot], `equipment.${slot}`);
         }
@@ -348,5 +389,6 @@ window.coreboundSaveSchema = Object.freeze({
     migrateGameStateSnapshot,
     validateGameStateSnapshot,
     assertGameStateSnapshot,
-    normalizeSavedItemData
+    normalizeSavedItemData,
+    normalizeSavedMaterialInventory
 });

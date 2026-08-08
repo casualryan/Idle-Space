@@ -14,7 +14,7 @@ function notifyInventoryChange() {
 
 // Function to get current number of used inventory slots
 function getUsedInventorySlots() {
-    return window.inventory.length;
+    return window.inventory.filter(item => !isMaterialItem(item)).length;
 }
 
 // Determine sale price for an item. Fallback to material defaults.
@@ -43,6 +43,18 @@ function hasInventorySpace(slotsNeeded = 1) {
 // Function to add an item to the inventory, handling stackable items
 function addItemToInventory(newItem) {
     console.log('Adding item to inventory:', newItem);
+
+    // Materials belong to their own fixed-slot, capacity-free storage and are
+    // accepted even when the ordinary inventory is full.
+    if (isMaterialItem(newItem)) {
+        const added = addMaterialToStorage(newItem, newItem?.quantity);
+        if (!added) return false;
+        if (currentScreen === 'fabrication-screen') displayFabricationRecipes();
+        updateInventoryDisplay();
+        notifyInventoryChange();
+        if (window.playSound && !window.isSilentItemAdd) playSound('ITEM_PICKUP', 0.2);
+        return true;
+    }
 
     // Chips should never stack. Split into individual entries and force quantity = 1
     if (newItem && newItem.type === 'Chip') {
@@ -99,6 +111,16 @@ function addItemToInventory(newItem) {
 
 // Function to remove an item from the inventory
 function removeItemFromInventory(itemOrName, quantity = 1) {
+    const possibleMaterialName = typeof itemOrName === 'string' ? itemOrName : itemOrName?.name;
+    if (isMaterialName(possibleMaterialName)) {
+        const removed = removeMaterialFromStorage(possibleMaterialName, quantity);
+        if (!removed) console.warn(`Unable to remove ${quantity} ${possibleMaterialName} from material storage.`);
+        if (window.currentScreen === 'fabrication-screen') displayFabricationRecipes();
+        updateInventoryDisplay();
+        notifyInventoryChange();
+        return removed;
+    }
+
     // Support removing by object reference or by name
     if (itemOrName && typeof itemOrName === 'object') {
         const idx = window.inventory.indexOf(itemOrName);
@@ -164,6 +186,7 @@ function updateInventoryDisplay() {
     // Check if inventory is an array
     if (!Array.isArray(inventory)) {
         console.error('Inventory is not an array:', inventory);
+        updateMaterialInventoryDisplay();
         return;
     }
 
@@ -172,7 +195,7 @@ function updateInventoryDisplay() {
     const filterType = (document.getElementById('inv-filter')?.value || 'all');
     const sortBy = (document.getElementById('inv-sort')?.value || 'none');
 
-    let itemsToShow = window.inventory.slice();
+    let itemsToShow = window.inventory.filter(item => !isMaterialItem(item));
     if (filterType !== 'all') {
         itemsToShow = itemsToShow.filter(it => (it && it.type === filterType));
     }
@@ -300,6 +323,8 @@ function updateInventoryDisplay() {
             console.warn('Undefined item found in inventory. Skipping...');
         }
     });
+
+    updateMaterialInventoryDisplay();
 }
 
 // Wire up inventory controls events (search/filter/sort)

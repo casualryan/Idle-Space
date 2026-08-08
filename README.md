@@ -84,6 +84,9 @@ facts in UI copy.
 - Fabrication reserves materials immediately, takes five seconds, allows one
   active job, and refunds the reservation when cancelled. Every ingredient has a
   documented source available no later than the level of the recipe using it.
+- Materials use categorized, fixed-position storage below the ordinary
+  inventory. They do not consume ordinary slots, stack to 50,000 each, and old
+  save stacks migrate into the dedicated store on load.
 - Health persists between encounters inside a delve. Energy Shield is restored
   to its current maximum after each victory before the next enemy appears.
 - Successful delve rewards enter a persistent claim cache. Starting another

@@ -99,6 +99,10 @@ Non-body attachment system:
 
 Default inventory capacity:
 - maxInventorySlots = 30 (saved and restorable).
+- Materials never consume those slots. They occupy deterministic positions in
+  four categorized material-storage grids and stack to 50,000 per material.
+- Save version 11 migrates legacy material stacks out of the ordinary inventory
+  and merges them into dedicated storage on load.
 
 Combat style equip model:
 - One active style equipped at a time via player.equippedSkillId.

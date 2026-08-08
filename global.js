@@ -494,6 +494,7 @@ function buildGameStateSnapshot() {
             }
         },
         inventory: window.inventory,
+        materialInventory: normalizeMaterialStorage(window.materialInventory),
         componentDropCounts: window.componentDropCounts || {},
         isDelveInProgress: (typeof isDelveInProgress !== 'undefined') ? isDelveInProgress : false,
         currentDelveLocation: (typeof currentDelveLocation !== 'undefined') ? currentDelveLocation : null,
@@ -645,7 +646,8 @@ function loadGame(slotIndex = null) {
             normalizeCombatStylesState(player);
         }
 
-        window.inventory = restoredInventory;
+        window.materialInventory = normalizeMaterialStorage(gameState.materialInventory);
+        window.inventory = migrateLooseMaterialsToStorage(restoredInventory);
         window.componentDropCounts = gameState.componentDropCounts && typeof gameState.componentDropCounts === 'object'
             ? { ...gameState.componentDropCounts }
             : {};
@@ -890,6 +892,7 @@ function resetGame(slotIndex = null) {
 
         // Clear inventory
         window.inventory = []; // Start with an empty inventory
+        window.materialInventory = {};
         window.componentDropCounts = {};
 
         if (typeof delveClaimCache !== 'undefined') {

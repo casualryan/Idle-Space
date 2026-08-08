@@ -637,7 +637,11 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
           passives: { allocations: { 'Swift Strikes': 3 }, points: 4, gearBonuses: { GhostPassive: 99 } },
           skills: { equipped: 'legacyStyle' }
         },
-        inventory: [],
+        inventory: [
+          { name: 'Scrap Metal', type: 'Material', quantity: 12, stackable: true },
+          { name: 'Scrap Metal', type: 'Material', quantity: 8, stackable: true },
+          { name: 'Wire Bundle', type: 'Material', quantity: 3, stackable: true }
+        ],
         meta: { version: 0 }
       };
       const before = JSON.stringify(original);
@@ -654,8 +658,11 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   );
 
   assert.equal(result.beforeUnchanged, true, 'migration mutated the parsed legacy payload');
-  assert.equal(result.migrated.toVersion, 10);
-  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.equal(result.migrated.toVersion, 11);
+  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  assert.equal(result.migrated.state.inventory.length, 0, 'legacy material stacks still occupy ordinary slots');
+  assert.equal(result.migrated.state.materialInventory['Scrap Metal'], 20);
+  assert.equal(result.migrated.state.materialInventory['Wire Bundle'], 3);
   assert.equal(result.migrated.state.player.equipment.mainHand.weaponBaseDamage.slashing, 17);
   assert.equal(result.migrated.state.player.equipment.mainHand.rolledModifiers[0].value, 17);
   assert.equal(result.migrated.state.player.equipment.mainHand.levelRequirement, 9);
@@ -677,6 +684,53 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
     /newer than supported version/,
     'a future-version save was accepted'
   );
+});
+
+test('material storage has deterministic slots, capped stacks, and actionable source tooltips', () => {
+  const result = evaluateClassic(
+    ['lootPools.js', 'locations.js', 'materialStorage.js'],
+    `(() => {
+      addMaterialToStorage('Scrap Metal', 49999);
+      addMaterialToStorage('Scrap Metal', 99);
+      const capped = getMaterialQuantity('Scrap Metal');
+      const removed = removeMaterialFromStorage('Scrap Metal', 17);
+      const sources = getMaterialDropSourceRows('Scrap Metal');
+      const tooltip = getMaterialStorageTooltipContent('Scrap Metal', 'Raw Salvage & Alloys');
+      return {
+        groups: MATERIAL_STORAGE_GROUPS.map(group => ({ id: group.id, materials: [...group.materials] })),
+        capped,
+        removed,
+        remaining: getMaterialQuantity('Scrap Metal'),
+        sources,
+        tooltip
+      };
+    })()`,
+    {
+      window: {
+        coreboundConfig: { developerMode: false },
+        enemies,
+        materials,
+        materialInventory: {}
+      }
+    }
+  );
+
+  const slottedNames = result.groups.flatMap(group => group.materials);
+  assert.equal(new Set(slottedNames).size, materials.length, 'material slots contain duplicates or omit catalog entries');
+  assert.deepEqual(new Set(slottedNames), new Set(materials.map(material => material.name)));
+  assert.equal(result.capped, 50000);
+  assert.equal(result.removed, true);
+  assert.equal(result.remaining, 49983);
+  assert.equal(result.sources[0].enemy, 'Scrapmite Drone');
+  assert.equal(result.sources[0].location, 'Scrap Intake Yard');
+  assert.match(result.tooltip, /49,983 \/ 50,000/);
+  assert.match(result.tooltip, /Known enemy drops/);
+  assert.match(result.tooltip, /Scrapmite Drone/);
+  assert.match(result.tooltip, /Scrap Intake Yard/);
+
+  const inventorySource = read('inventory.js');
+  assert.match(inventorySource, /if \(isMaterialItem\(newItem\)\)[\s\S]*?addMaterialToStorage/);
+  assert.match(inventorySource, /getUsedInventorySlots\(\)[\s\S]*?!isMaterialItem/);
 });
 
 test('content validation rejects unsupported item stats and roll paths', () => {

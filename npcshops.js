@@ -277,7 +277,7 @@ function displayNPCShop(npc) {
                 const doBuy = () => buyItemFromNPC(npc, invItem, 1);
 
                 // Only block on inventory space for non-service items
-                if (!isService) {
+                if (!isService && !isMaterialItem(itemTemplate)) {
                     if (!hasInventorySpace(1)) {
                         if (typeof showWarningPopup === 'function') {
                             showWarningPopup('Your inventory is full. Free up space before purchasing this item.');
@@ -391,7 +391,7 @@ function buyItemFromNPC(npc, itemOrIndex, quantity) {
             const purchasedItem = generateItemInstance(itemTemplate);
             purchasedItem.quantity = quantity;
             // Inventory capacity check again just in case
-            if (!hasInventorySpace(1)) {
+            if (!isMaterialItem(purchasedItem) && !hasInventorySpace(1)) {
                 if (typeof showWarningPopup === 'function') {
                     showWarningPopup('Your inventory is full. Purchase cancelled.');
                 }

@@ -12,6 +12,7 @@ export const RUNTIME_SCRIPTS = [
   'tooltip.js',
   'activityManager.js',
   'global.js',
+  'materialStorage.js',
   'inventory.js',
   'gathering.js',
   'fabrication.js',
