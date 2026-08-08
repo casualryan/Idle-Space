@@ -16,9 +16,10 @@ function refreshDelveClaimCacheUI(reopenPopup = false) {
         } catch (error) { /* localStorage may be unavailable */ }
     }
 }
-function showDelveClaimCachePopup() {
+function showDelveClaimCachePopup(warningMessage = '') {
     closeDelveClaimCachePopup();
     if (!hasDelveClaimCacheRewards()) return;
+    const visibleWarning = typeof warningMessage === 'string' ? warningMessage : '';
 
     const overlay = document.createElement('div');
     overlay.id = 'delve-claim-cache-overlay';
@@ -39,6 +40,7 @@ function showDelveClaimCachePopup() {
 
     popup.innerHTML = `
         <h2 id="delve-claim-cache-title">Delve Claim Cache</h2>
+        ${visibleWarning ? `<p class="delve-claim-cache-full-warning">${visibleWarning}</p>` : ''}
         <p class="delve-claim-cache-warning">Unclaimed rewards disappear when you start another delve.</p>
         <div class="delve-claim-cache-credits">Credits waiting: ${delveClaimCache.credits}</div>
         <ul class="delve-claim-cache-list">${rows || '<li class="delve-claim-cache-empty">No items waiting.</li>'}</ul>
@@ -70,7 +72,7 @@ function appendDelveClaimCacheAccess(container) {
         <span class="delve-claim-cache-warning">Starting another delve destroys them.</span>
         <button type="button">Open Claim Cache</button>
     `;
-    panel.querySelector('button').addEventListener('click', showDelveClaimCachePopup);
+    panel.querySelector('button').addEventListener('click', () => showDelveClaimCachePopup());
     container.appendChild(panel);
 }
 
@@ -284,18 +286,35 @@ function displayAdventureLocations() {
         interfaceContainer.style.overflow = 'hidden'; // For the scanner effect
         adventureDiv.appendChild(interfaceContainer);
 
-        // Auto re-deploy toggle
+        // Delve automation toggles
         const autoRow = document.createElement('div');
-        autoRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:10px;';
+        autoRow.className = 'delve-automation-options';
+
+        const redeployOption = document.createElement('label');
+        redeployOption.className = 'delve-automation-option';
         const autoChk = document.createElement('input');
         autoChk.type = 'checkbox';
         autoChk.checked = localStorage.getItem('autoRedeploy') === 'true';
         autoChk.addEventListener('change', ()=> localStorage.setItem('autoRedeploy', autoChk.checked ? 'true' : 'false'));
         const autoLbl = document.createElement('span');
         autoLbl.textContent = 'Auto re-deploy after delve completion';
-        autoLbl.style.cssText = 'color:#cfe6ff;';
-        autoRow.appendChild(autoChk);
-        autoRow.appendChild(autoLbl);
+        redeployOption.appendChild(autoChk);
+        redeployOption.appendChild(autoLbl);
+        autoRow.appendChild(redeployOption);
+
+        const claimOption = document.createElement('label');
+        claimOption.className = 'delve-automation-option';
+        claimOption.title = 'Materials and credits are always claimed. This also claims every item when the ordinary inventory has enough room.';
+        const claimChk = document.createElement('input');
+        claimChk.type = 'checkbox';
+        claimChk.checked = localStorage.getItem('autoClaimAllItems') === 'true';
+        claimChk.addEventListener('change', () => localStorage.setItem('autoClaimAllItems', claimChk.checked ? 'true' : 'false'));
+        const claimLbl = document.createElement('span');
+        claimLbl.textContent = 'Auto-claim all items';
+        claimOption.appendChild(claimChk);
+        claimOption.appendChild(claimLbl);
+        autoRow.appendChild(claimOption);
+
         interfaceContainer.appendChild(autoRow);
         appendDelveClaimCacheAccess(interfaceContainer);
 

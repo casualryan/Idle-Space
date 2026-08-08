@@ -161,6 +161,9 @@ Delve outcomes:
 
 Auto-redeploy:
 - Controlled by localStorage key autoRedeploy.
+- Materials and credits are collected automatically when a delve succeeds.
+- localStorage key autoClaimAllItems claims the complete ordinary-item batch only
+  when every item fits; otherwise the intact batch remains in the claim cache.
 
 Empowered enemies:
 - Spawn-time roll per enemy entry.

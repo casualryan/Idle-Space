@@ -1371,6 +1371,105 @@ test('new-character, fabrication, empowered reward, and claim-cache rules remain
   assert.match(read('buffs.js'), /damageTypes:\s*\{\s*kinetic: 5/);
 });
 
+test('delve completion auto-claims materials and atomically claims optional item batches', () => {
+  const result = JSON.parse(evaluateClassic(
+    'delveRewards.js',
+    `JSON.stringify((() => {
+      function runScenario({ autoClaim, usedSlots, maxSlots, items, credits }) {
+        const storedMaterials = [];
+        const popupWarnings = [];
+        const messages = [];
+        window.inventory = Array.from({ length: usedSlots }, (_, index) => ({ name: 'Owned ' + index }));
+        globalThis.player = { maxInventorySlots: maxSlots };
+        globalThis.playerCurrency = 10;
+        globalThis.delveBag = { items: items.map(item => ({ ...item })), credits };
+        globalThis.delveClaimCache = { items: [], credits: 0 };
+        globalThis.isDelveInProgress = true;
+        globalThis.localStorage = {
+          getItem: key => key === 'autoClaimAllItems' && autoClaim ? 'true' : 'false'
+        };
+        globalThis.isMaterialItem = item => item?.type === 'Material';
+        globalThis.getUsedInventorySlots = () => window.inventory.length;
+        globalThis.addItemToInventory = item => {
+          if (isMaterialItem(item)) {
+            storedMaterials.push({ name: item.name, quantity: item.quantity || 1 });
+            return true;
+          }
+          const copies = item.type === 'Chip' ? Math.max(1, Number(item.quantity) || 1) : 1;
+          for (let index = 0; index < copies; index++) window.inventory.push({ ...item, quantity: 1 });
+          return true;
+        };
+        globalThis.clearBuffs = () => {};
+        globalThis.updateDelveBagUI = () => {};
+        globalThis.logMessage = message => messages.push(message);
+        globalThis.showDelveClaimCachePopup = warning => popupWarnings.push(warning);
+        globalThis.setTimeout = callback => { callback(); return 0; };
+
+        finalizeDelveLoot();
+        return {
+          storedMaterials,
+          popupWarnings,
+          messages,
+          inventoryCount: window.inventory.length,
+          cacheNames: delveClaimCache.items.map(item => item.name),
+          cacheCredits: delveClaimCache.credits,
+          playerCurrency
+        };
+      }
+
+      return {
+        materialsOnly: runScenario({
+          autoClaim: false, usedSlots: 30, maxSlots: 30, credits: 7,
+          items: [{ name: 'Scrap Metal', type: 'Material', quantity: 4, stackable: true }]
+        }),
+        autoFits: runScenario({
+          autoClaim: true, usedSlots: 28, maxSlots: 30, credits: 5,
+          items: [
+            { name: 'Copper Ore', type: 'Material', quantity: 2, stackable: true },
+            { name: 'Test Sword', type: 'Weapon' },
+            { name: 'Test Armor', type: 'Armor' }
+          ]
+        }),
+        autoOverflows: runScenario({
+          autoClaim: true, usedSlots: 29, maxSlots: 30, credits: 3,
+          items: [
+            { name: 'Iron Ore', type: 'Material', quantity: 3, stackable: true },
+            { name: 'First Item', type: 'Weapon' },
+            { name: 'Second Item', type: 'Armor' }
+          ]
+        }),
+        manualClaim: runScenario({
+          autoClaim: false, usedSlots: 0, maxSlots: 30, credits: 0,
+          items: [{ name: 'Saved Item', type: 'Weapon' }]
+        })
+      };
+    })())`
+  ));
+
+  assert.deepEqual(result.materialsOnly.storedMaterials, [{ name: 'Scrap Metal', quantity: 4 }]);
+  assert.equal(result.materialsOnly.inventoryCount, 30, 'materials consumed an ordinary inventory slot');
+  assert.deepEqual(result.materialsOnly.cacheNames, []);
+  assert.deepEqual(result.materialsOnly.popupWarnings, []);
+  assert.equal(result.materialsOnly.playerCurrency, 17, 'delve credits were not collected automatically');
+
+  assert.equal(result.autoFits.inventoryCount, 30);
+  assert.deepEqual(result.autoFits.cacheNames, []);
+  assert.deepEqual(result.autoFits.popupWarnings, []);
+
+  assert.equal(result.autoOverflows.inventoryCount, 29, 'an overflowing auto-claim partially moved ordinary items');
+  assert.deepEqual(result.autoOverflows.cacheNames, ['First Item', 'Second Item']);
+  assert.deepEqual(result.autoOverflows.popupWarnings, ['Your inventory is full.']);
+  assert.equal(result.autoOverflows.playerCurrency, 13);
+  assert.deepEqual(result.autoOverflows.storedMaterials, [{ name: 'Iron Ore', quantity: 3 }]);
+
+  assert.deepEqual(result.manualClaim.cacheNames, ['Saved Item']);
+  assert.deepEqual(result.manualClaim.popupWarnings, ['']);
+
+  const uiSource = read('delveUI.js');
+  assert.match(uiSource, /Auto-claim all items/);
+  assert.match(uiSource, /localStorage\.setItem\('autoClaimAllItems'/);
+});
+
 test('Exposed maximizes the roll and Zapped adds 50% critical damage', () => {
   const baseEntity = {
     name: 'Test Entity',

@@ -89,9 +89,10 @@ facts in UI copy.
   save stacks migrate into the dedicated store on load.
 - Health persists between encounters inside a delve. Energy Shield is restored
   to its current maximum after each victory before the next enemy appears.
-- Successful delve rewards enter a persistent claim cache. Starting another
-  delve destroys anything left there; auto re-deploy waits for the cache to be
-  claimed or sold.
+- Successful delves automatically collect materials and credits. Ordinary items
+  enter the persistent claim cache unless Auto-claim all items is enabled and
+  the complete item batch fits. Starting another delve destroys anything left
+  there; auto re-deploy waits for the cache to be claimed or sold.
 - Recipes are all available during the current baseline. A future blueprint
   progression system will permanently teach a recipe when its blueprint is
   read; learned recipes will remain reusable without consuming the blueprint.

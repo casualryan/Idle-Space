@@ -35,8 +35,8 @@
         'delve': {
             title: 'Delves',
             sections: [
-                ['Temporary Loot', 'Drops and credits remain in the Delve Bag until the entire delve is completed. Successful-delve rewards then move to the Delve Claim Cache, where exact rolled items can be claimed individually or all at once.'],
-                ['Claim Cache', 'Inventory overflow remains in the cache. Remaining items may be sold or discarded, but starting another delve permanently destroys every unclaimed item and credit. Auto re-deploy pauses while rewards are waiting.'],
+                ['Temporary Loot', 'Drops and credits remain in the Delve Bag until the entire delve is completed. On success, materials and credits are collected automatically. Ordinary items move to the Delve Claim Cache unless automatic claiming is enabled and the entire batch fits.'],
+                ['Claim Cache', 'When an automatic item claim would overflow the inventory, the complete ordinary-item batch remains in the cache. Remaining items may be claimed, sold, or discarded, but starting another delve permanently destroys them. Auto re-deploy pauses while rewards are waiting.'],
                 ['Failure and Fleeing', 'Death and voluntary retreat both end the delve and destroy everything in its temporary bag.'],
                 ['Saving During a Delve', 'Loading a save restarts the current encounter with a fresh enemy while preserving completed encounters and the exact contents of the Delve Bag.']
             ]

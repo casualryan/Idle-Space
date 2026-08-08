@@ -3,6 +3,41 @@
 function hasDelveClaimCacheRewards() {
     return delveClaimCache.items.length > 0 || delveClaimCache.credits > 0;
 }
+
+function isAutoClaimAllItemsEnabled() {
+    try {
+        return localStorage.getItem('autoClaimAllItems') === 'true';
+    } catch (error) {
+        return false;
+    }
+}
+
+function getInventorySlotsRequiredForItems(items = []) {
+    const existingStackNames = new Set((window.inventory || [])
+        .filter(item => item && item.type !== 'Chip' && item.stackable === true && !isMaterialItem(item))
+        .map(item => item.name));
+    let requiredSlots = 0;
+
+    for (const item of items) {
+        if (!item || isMaterialItem(item)) continue;
+        if (item.type === 'Chip') {
+            requiredSlots += Math.max(1, Math.floor(Number(item.quantity) || 1));
+        } else if (item.stackable === true) {
+            if (!existingStackNames.has(item.name)) {
+                existingStackNames.add(item.name);
+                requiredSlots++;
+            }
+        } else {
+            requiredSlots++;
+        }
+    }
+
+    return requiredSlots;
+}
+
+function canClaimAllItemsToInventory(items = []) {
+    return getUsedInventorySlots() + getInventorySlotsRequiredForItems(items) <= player.maxInventorySlots;
+}
 function getDelveClaimCacheSaleValue() {
     return delveClaimCache.items.reduce((total, item) => {
         const quantity = item?.stackable ? Math.max(1, Number(item.quantity) || 1) : 1;
@@ -127,15 +162,60 @@ function finalizeDelveLoot() {
 
     clearBuffs(player);
 
-    logMessage("You successfully cleared the delve. Your spoils are waiting in the Delve Claim Cache.");
+    const completedItems = delveBag.items.slice();
+    const completedCredits = Math.max(0, Number(delveBag.credits) || 0);
+    const ordinaryItems = [];
+    const remainingItems = [];
+    let storedMaterialUnits = 0;
 
-    delveClaimCache = {
-        items: delveBag.items.slice(),
-        credits: delveBag.credits
-    };
+    for (const item of completedItems) {
+        if (!isMaterialItem(item)) {
+            ordinaryItems.push(item);
+            continue;
+        }
+        if (addItemToInventory(item)) {
+            storedMaterialUnits += Math.max(1, Number(item.quantity) || 1);
+        } else {
+            remainingItems.push(item);
+        }
+    }
+
+    if (completedCredits > 0) {
+        playerCurrency += completedCredits;
+        logMessage(`Automatically claimed ${completedCredits} delve credits.`);
+    }
+    if (storedMaterialUnits > 0) {
+        logMessage(`Automatically stored ${storedMaterialUnits} delve material${storedMaterialUnits === 1 ? '' : 's'}.`);
+    }
+
+    let inventoryWasFull = false;
+    if (ordinaryItems.length > 0 && isAutoClaimAllItemsEnabled()) {
+        if (canClaimAllItemsToInventory(ordinaryItems)) {
+            for (const item of ordinaryItems) {
+                if (addItemToInventory(item)) {
+                    logMessage(`Automatically claimed ${item.quantity || 1} x ${item.name}.`);
+                } else {
+                    remainingItems.push(item);
+                }
+            }
+        } else {
+            inventoryWasFull = true;
+            remainingItems.push(...ordinaryItems);
+        }
+    } else {
+        remainingItems.push(...ordinaryItems);
+    }
+
+    delveClaimCache = { items: remainingItems, credits: 0 };
     delveBag = { items: [], credits: 0 };
-    updateDelveBagUI(); // Update UI when loot is finalized
-    setTimeout(showDelveClaimCachePopup, 0);
+    updateDelveBagUI();
+
+    if (hasDelveClaimCacheRewards()) {
+        logMessage("You successfully cleared the delve. Unclaimed items are waiting in the Delve Claim Cache.");
+        setTimeout(() => showDelveClaimCachePopup(inventoryWasFull ? 'Your inventory is full.' : ''), 0);
+    } else {
+        logMessage("You successfully cleared the delve. Your rewards were claimed automatically.");
+    }
 }
 
 function stopDelveWithFailure() {

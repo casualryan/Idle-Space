@@ -4268,6 +4268,38 @@ hr {
     font-weight: 700;
 }
 
+.delve-claim-cache-full-warning {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1px solid #ff6464;
+    border-radius: 5px;
+    background: rgba(120, 15, 25, 0.42);
+    color: #ff9b9b;
+    font-weight: 700;
+}
+
+.delve-automation-options {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 22px;
+    margin-bottom: 10px;
+    position: relative;
+    z-index: 2;
+}
+
+.delve-automation-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #cfe6ff;
+    cursor: pointer;
+}
+
+.delve-automation-option input {
+    accent-color: #00d9ff;
+}
+
 .delve-claim-cache-overlay {
     position: fixed;
     inset: 0;
