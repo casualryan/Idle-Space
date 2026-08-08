@@ -374,10 +374,12 @@
 
                 <div id="settings-panel-save" class="settings-panel" hidden>
                     <p id="active-save-slot-label" class="active-save-slot-label">Autosave writes to slot 1</p>
+                    <p id="save-system-status" class="save-system-status" aria-live="polite">Save protection is starting...</p>
                     <div id="save-slots-list" class="save-slots-grid save-slots-scroll"></div>
                     <div class="settings-action-grid" id="save-settings-actions">
                         <button type="button" id="save-game" class="settings-btn settings-btn-primary">Save</button>
                         <button type="button" id="load-game" class="settings-btn settings-btn-primary">Load</button>
+                        <button type="button" id="restore-save-backup" class="settings-btn settings-btn-secondary">Restore Previous</button>
                         <button type="button" id="reset-game" class="settings-btn settings-btn-danger">Reset</button>
                         <button type="button" id="toggle-sound" class="settings-btn settings-btn-secondary">Sound: ON</button>
                     </div>
@@ -417,6 +419,15 @@
     <!-- Popups -->
     <div id="damage-popups-container"></div>
     <div id="loot-popups-container"></div>
+
+    <div id="save-owner-overlay" class="save-owner-overlay" hidden role="alertdialog" aria-modal="true" aria-labelledby="save-owner-title">
+        <div class="save-owner-card">
+            <h2 id="save-owner-title">Corebound is active in another tab</h2>
+            <p>This copy has been made read-only so it cannot overwrite newer progress. Close this tab, or reload the newest save here and make this the active tab.</p>
+            <button type="button" id="save-owner-takeover" class="settings-btn settings-btn-primary">Reload Latest Save &amp; Use This Tab</button>
+        </div>
+    </div>
+    <div id="save-error-alert" class="save-error-alert" hidden role="alert" aria-live="assertive"></div>
 
 </body>
 </html>

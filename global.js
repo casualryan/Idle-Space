@@ -12,6 +12,9 @@ const SAVE_SLOT_COUNT = 5;
 /** Slot that receives periodic autosave (last explicit Save or Load only). */
 const AUTOSAVE_TARGET_SLOT_KEY = 'idleCombatGameSave_activeSlot';
 const SAVE_SLOT_KEY_PREFIX = 'idleCombatGameSave_slot_';
+const saveCoordinator = window.coreboundSaveCoordinator || null;
+let saveRuntimeReady = false;
+let lastSaveFailure = null;
 
 // Helper function to cleanly remove and reapply all passive bonuses from gear
 function resetGearPassiveBonuses() {
@@ -319,6 +322,123 @@ function setAutosaveTargetSlot(slotIndex) {
     return safeSlot;
 }
 
+function ownsSaveWriterLease() {
+    return !saveCoordinator || saveCoordinator.isWriter();
+}
+
+function setSaveFailure(error, isAutoSave) {
+    const message = error instanceof Error ? error.message : String(error || 'Unknown save error');
+    const signature = `${isAutoSave ? 'auto' : 'manual'}:${message}`;
+    const shouldLog = lastSaveFailure?.signature !== signature;
+    lastSaveFailure = { message, isAutoSave: Boolean(isAutoSave), signature, failedAt: Date.now() };
+    if (shouldLog) {
+        logMessage(`${isAutoSave ? 'Autosave' : 'Save'} failed: ${message}`);
+    }
+    renderSaveProtectionState();
+}
+
+function clearSaveFailure() {
+    if (!lastSaveFailure) return;
+    lastSaveFailure = null;
+    renderSaveProtectionState();
+}
+
+function getLatestBackupPreview(slotIndex) {
+    const backup = saveCoordinator?.getBackups(slotIndex)?.[0];
+    if (!backup) return null;
+    const level = Math.max(1, Math.floor(Number(backup.state?.player?.level) || 1));
+    const savedAt = Number(backup.state?.meta?.savedAt || 0);
+    return {
+        ...backup,
+        level,
+        savedAt: Number.isFinite(savedAt) && savedAt > 0 ? savedAt : null
+    };
+}
+
+function renderSaveProtectionState() {
+    const ownsLease = ownsSaveWriterLease();
+    const overlay = document.getElementById('save-owner-overlay');
+    if (overlay) overlay.hidden = ownsLease;
+
+    const errorAlert = document.getElementById('save-error-alert');
+    if (errorAlert) {
+        errorAlert.hidden = !lastSaveFailure || !ownsLease;
+        if (lastSaveFailure && ownsLease) {
+            errorAlert.textContent = `Saving has stopped: ${lastSaveFailure.message}. Your current progress is not safely stored.`;
+        }
+    }
+
+    const status = document.getElementById('save-system-status');
+    if (!status) return;
+    status.classList.remove('is-healthy', 'is-error', 'is-blocked');
+    if (!ownsLease) {
+        status.classList.add('is-blocked');
+        status.textContent = 'Read-only duplicate tab · Saving is blocked';
+    } else if (lastSaveFailure) {
+        status.classList.add('is-error');
+        status.textContent = `Saving stopped · ${lastSaveFailure.message}`;
+    } else {
+        status.classList.add('is-healthy');
+        status.textContent = 'Protected autosave active · This is the active save tab';
+    }
+}
+
+function takeSaveControlAndReload() {
+    if (!saveCoordinator?.takeControl()) {
+        setSaveFailure(new Error('Could not acquire save ownership.'), false);
+        return { ok: false, reason: 'ownership_failed' };
+    }
+
+    const targetSlot = getAutosaveTargetSlot();
+    const result = loadGame(targetSlot);
+    if (!result.ok) {
+        saveCoordinator.relinquishOwnership();
+        setSaveFailure(new Error(`Could not reload slot ${targetSlot}; this tab remains read-only.`), false);
+        return result;
+    }
+
+    clearSaveFailure();
+    renderSaveProtectionState();
+    logMessage(`This tab now owns autosave slot ${targetSlot}.`);
+    return { ok: true, slot: targetSlot };
+}
+
+function restoreLatestSaveBackup(slotIndex = null) {
+    const targetSlot = slotIndex == null ? getUiSelectedSaveSlot() : sanitizeSaveSlotIndex(slotIndex);
+    if (!ownsSaveWriterLease()) {
+        setSaveFailure(new Error('Another Corebound tab owns saving.'), false);
+        return { ok: false, reason: 'duplicate_tab' };
+    }
+
+    const backup = getLatestBackupPreview(targetSlot);
+    if (!backup) {
+        logMessage(`No recovery save is available for slot ${targetSlot}.`);
+        return { ok: false, reason: 'no_backup' };
+    }
+
+    const dateLabel = backup.savedAt ? new Date(backup.savedAt).toLocaleString() : 'an unknown time';
+    if (!confirm(`Restore slot ${targetSlot} to its Level ${backup.level} recovery save from ${dateLabel}?`)) {
+        return { ok: false, reason: 'cancelled' };
+    }
+
+    try {
+        const saveKey = getSaveKeyForSlot(targetSlot);
+        const currentRaw = localStorage.getItem(saveKey);
+        if (currentRaw) saveCoordinator.backupCurrentSave(targetSlot, currentRaw, { force: true });
+        localStorage.setItem(saveKey, backup.raw);
+        const loadResult = loadGame(targetSlot);
+        if (!loadResult.ok) throw new Error(`Recovery save for slot ${targetSlot} could not be loaded.`);
+        clearSaveFailure();
+        renderSaveSlots();
+        logMessage(`Restored slot ${targetSlot} from its previous recovery save.`);
+        return { ok: true, slot: targetSlot };
+    } catch (error) {
+        console.error(`Error restoring save slot ${targetSlot}:`, error);
+        setSaveFailure(error, false);
+        return { ok: false, reason: 'restore_error', error };
+    }
+}
+
 function getUiSelectedSaveSlot() {
     const selectedInput = document.querySelector('input[name="save-slot-select"]:checked');
     if (selectedInput) {
@@ -456,6 +576,16 @@ function renderSaveSlots() {
         activeLabel.textContent = `Autosave writes to slot ${autosaveSlot} (last Save or Load)`;
     }
 
+    const restoreButton = document.getElementById('restore-save-backup');
+    if (restoreButton) {
+        const backup = getLatestBackupPreview(selectedSlot);
+        restoreButton.disabled = !backup || !ownsSaveWriterLease();
+        restoreButton.title = backup
+            ? `Restore Level ${backup.level} from ${backup.savedAt ? new Date(backup.savedAt).toLocaleString() : 'an unknown time'}`
+            : 'No recovery save is available for this slot yet.';
+    }
+    renderSaveProtectionState();
+
     listEl.querySelectorAll('input[name="save-slot-select"]').forEach((input) => {
         input.addEventListener('change', () => {
             if (!input.checked) return;
@@ -518,16 +648,31 @@ function buildGameStateSnapshot() {
 
 // Save game function
 function saveGame(isAutoSave = false, slotIndex = null) {
+    const targetSlot = slotIndex == null ? getAutosaveTargetSlot() : sanitizeSaveSlotIndex(slotIndex);
+    if (!ownsSaveWriterLease()) {
+        const error = new Error('Another Corebound tab owns saving.');
+        if (!isAutoSave) setSaveFailure(error, false);
+        return { ok: false, reason: 'duplicate_tab', slot: targetSlot };
+    }
+
     try {
-        const targetSlot = slotIndex == null ? getAutosaveTargetSlot() : sanitizeSaveSlotIndex(slotIndex);
         const gameState = buildGameStateSnapshot();
         assertGameStateSnapshot(gameState, {
             knownItemNames: new Set((window.items || []).map(item => item.name))
         });
 
-        // Convert to JSON and save to selected slot
-        localStorage.setItem(getSaveKeyForSlot(targetSlot), JSON.stringify(gameState));
+        const saveKey = getSaveKeyForSlot(targetSlot);
+        const previousRaw = localStorage.getItem(saveKey);
+        if (previousRaw && saveCoordinator) {
+            try {
+                saveCoordinator.backupCurrentSave(targetSlot, previousRaw, { force: !isAutoSave });
+            } catch (backupError) {
+                console.warn(`Could not update recovery saves for slot ${targetSlot}:`, backupError);
+            }
+        }
+        localStorage.setItem(saveKey, JSON.stringify(gameState));
         console.log(`Game saved successfully in slot ${targetSlot}.`);
+        clearSaveFailure();
         
         // Play save sound unless it's an auto-save
         if (window.playSound && !isAutoSave) {
@@ -535,12 +680,11 @@ function saveGame(isAutoSave = false, slotIndex = null) {
         }
         
         // Only show the message if it's a manual save
-        /* if (!isAutoSave) {
-            logMessage('Game saved successfully.');
-        } */
+        return { ok: true, slot: targetSlot, savedAt: gameState.meta.savedAt };
     } catch (e) {
         console.error('Error saving game:', e);
-        logMessage('Error saving game!');
+        setSaveFailure(e, isAutoSave);
+        return { ok: false, reason: 'save_error', slot: targetSlot, error: e };
     }
 }
 
@@ -828,6 +972,10 @@ function restoreEquipment(savedEquipment) {
 // Reset game function
 function resetGame(slotIndex = null) {
     const targetSlot = slotIndex == null ? getUiSelectedSaveSlot() : sanitizeSaveSlotIndex(slotIndex);
+    if (!ownsSaveWriterLease()) {
+        setSaveFailure(new Error('Another Corebound tab owns saving.'), false);
+        return { ok: false, reason: 'duplicate_tab' };
+    }
     if (confirm(`Are you sure you want to reset save slot ${targetSlot}? This action cannot be undone.`)) {
         if (typeof stopCombat === 'function' && (
             (typeof isCombatActive !== 'undefined' && isCombatActive) ||
@@ -844,6 +992,7 @@ function resetGame(slotIndex = null) {
 
         // Clear localStorage for selected slot only
         localStorage.removeItem(getSaveKeyForSlot(targetSlot));
+        if (saveCoordinator) saveCoordinator.clearBackups(targetSlot);
 
         // Reset player, inventory, and equipped items to initial state
         player.baseStats = JSON.parse(JSON.stringify(playerBaseStats));
@@ -932,15 +1081,34 @@ function resetGame(slotIndex = null) {
         
         renderSaveSlots();
         logMessage(`Save slot ${targetSlot} has been reset.`);
+        return { ok: true, slot: targetSlot };
     } else {
         console.log('Reset cancelled.');
         logMessage('Reset cancelled.');
+        return { ok: false, reason: 'cancelled' };
     }
 }
 
 
-// Auto-save interval (saves every 5 seconds)
-setInterval(() => saveGame(true, getAutosaveTargetSlot()), 5000);
+// Auto-save interval (saves every 5 seconds). Only the active tab may write.
+setInterval(() => {
+    if (!saveRuntimeReady || !ownsSaveWriterLease()) return;
+    saveGame(true, getAutosaveTargetSlot());
+}, 5000);
+
+if (saveCoordinator) {
+    saveCoordinator.onOwnershipChange(() => {
+        renderSaveProtectionState();
+        renderSaveSlots();
+    });
+}
+
+window.addEventListener('beforeunload', () => {
+    if (saveRuntimeReady && ownsSaveWriterLease()) {
+        saveGame(true, getAutosaveTargetSlot());
+    }
+    if (saveCoordinator) saveCoordinator.relinquishOwnership();
+});
 
 // Event listeners
 window.registerCoreboundInitializer(() => {
@@ -952,10 +1120,12 @@ window.registerCoreboundInitializer(() => {
     
     document.getElementById('save-game').addEventListener('click', () => {
         const slot = getUiSelectedSaveSlot();
-        saveGame(false, slot);
-        setAutosaveTargetSlot(slot);
-        renderSaveSlots();
-        logMessage(`Saved to slot ${slot}. Autosave will use this slot.`);
+        const result = saveGame(false, slot);
+        if (result.ok) {
+            setAutosaveTargetSlot(slot);
+            renderSaveSlots();
+            logMessage(`Saved to slot ${slot}. Autosave will use this slot.`);
+        }
     });
     document.getElementById('load-game').addEventListener('click', () => {
         const slot = getUiSelectedSaveSlot();
@@ -964,6 +1134,12 @@ window.registerCoreboundInitializer(() => {
     document.getElementById('reset-game').addEventListener('click', () => {
         const slot = getUiSelectedSaveSlot();
         resetGame(slot);
+    });
+    document.getElementById('restore-save-backup').addEventListener('click', () => {
+        restoreLatestSaveBackup(getUiSelectedSaveSlot());
+    });
+    document.getElementById('save-owner-takeover').addEventListener('click', () => {
+        takeSaveControlAndReload();
     });
     wireSidebarNavigation();
 
@@ -1088,6 +1264,9 @@ window.registerCoreboundInitializer(() => {
         player.currentShield = player.totalStats.energyShield;
         logMessage('New character initialized with a Broken Phase Sword and 1,000 credits.');
     }
+    saveRuntimeReady = true;
+    renderSaveProtectionState();
+    renderSaveSlots();
     startGlobalStatusBannerUpdates();
 
     // Initial display updates

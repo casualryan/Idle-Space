@@ -1055,6 +1055,75 @@ test('classic runtime evaluates in its declared order', () => {
   assert.ok(runtimeInitializers.length > 0, 'classic runtime did not register its startup work');
 });
 
+test('save coordinator enforces one writer and keeps rotating recovery snapshots', () => {
+  const storageData = new Map();
+  const localStorage = {
+    getItem: key => storageData.get(key) ?? null,
+    setItem: (key, value) => storageData.set(key, String(value)),
+    removeItem: key => storageData.delete(key)
+  };
+  const result = evaluateClassic(
+    'saveCoordinator.js',
+    `(() => {
+      const first = window.coreboundSaveCoordinator;
+      const second = window.createCoreboundSaveCoordinator({
+        storage: localStorage,
+        eventTarget: { addEventListener: () => {} },
+        autoClaim: false,
+        tabId: 'second-tab',
+        now: () => 2000,
+        setIntervalFn: () => 0,
+        clearIntervalFn: () => {}
+      });
+      const firstInitiallyOwned = first.isWriter();
+      const secondTookControl = second.takeControl();
+      const firstAfterTakeover = first.isWriter();
+
+      const level14 = JSON.stringify({ player: { level: 14 }, meta: { savedAt: 1000 } });
+      const level15 = JSON.stringify({ player: { level: 15 }, meta: { savedAt: 2000 } });
+      const level19 = JSON.stringify({ player: { level: 19 }, meta: { savedAt: 70000 } });
+      const firstBackup = second.backupCurrentSave(4, level14, { force: true });
+      const skippedNearDuplicate = second.backupCurrentSave(4, level15);
+      const laterBackup = second.backupCurrentSave(4, level19);
+      const backupLevels = second.getBackups(4).map(entry => entry.state.player.level);
+      second.clearBackups(4);
+
+      return {
+        firstInitiallyOwned,
+        secondTookControl,
+        firstAfterTakeover,
+        secondOwns: second.isWriter(),
+        firstBackup,
+        skippedNearDuplicate,
+        laterBackup,
+        backupLevels,
+        backupsAfterClear: second.getBackups(4).length
+      };
+    })()`,
+    { localStorage }
+  );
+
+  assert.equal(result.firstInitiallyOwned, true);
+  assert.equal(result.secondTookControl, true);
+  assert.equal(result.firstAfterTakeover, false, 'the previous tab remained a writer');
+  assert.equal(result.secondOwns, true);
+  assert.equal(result.firstBackup, true);
+  assert.equal(result.skippedNearDuplicate, false, 'five-second autosaves should not consume every recovery slot');
+  assert.equal(result.laterBackup, true);
+  assert.deepEqual([...result.backupLevels], [19, 14]);
+  assert.equal(result.backupsAfterClear, 0);
+});
+
+test('save UI only reports manual success after a confirmed write', () => {
+  const source = read('global.js');
+  assert.match(source, /const result = saveGame\(false, slot\);\s*if \(result\.ok\)/);
+  assert.match(source, /if \(!saveRuntimeReady \|\| !ownsSaveWriterLease\(\)\) return;/);
+  assert.match(source, /backupCurrentSave\(targetSlot, previousRaw/);
+  assert.match(source, /return \{ ok: false, reason: 'save_error'/);
+  assert.match(read('index.html'), /id="save-owner-overlay"/);
+  assert.match(read('index.html'), /id="restore-save-backup"/);
+});
+
 test('async runtime loading cannot miss the one-time DOMContentLoaded event', () => {
   const mainSource = read('src/main.js');
   assert.match(mainSource, /window\.registerCoreboundInitializer/);
