@@ -107,6 +107,19 @@ body, body * {
     font-size: 0.8em;
 }
 
+.chip-conflict-warning {
+    display: none;
+    margin: 0 0 10px;
+    padding: 9px 12px;
+    border: 1px solid #ff5d73;
+    border-radius: 6px;
+    background: rgba(92, 0, 18, 0.72);
+    color: #ffd7dd;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    box-shadow: 0 0 12px rgba(255, 93, 115, 0.18);
+}
+
 .global-status-left {
     color: #cfe9ff;
     white-space: nowrap;

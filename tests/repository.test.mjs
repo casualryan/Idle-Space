@@ -49,7 +49,16 @@ function evaluateClassic(relativePath, expression, extraGlobals = {}) {
   const quietConsole = Object.fromEntries(
     ['log', 'warn', 'error', 'info', 'debug'].map(method => [method, () => {}])
   );
-  const window = { coreboundConfig: { developerMode: true } };
+  const suppliedWindow = extraGlobals.window || {};
+  const window = {
+    bionics,
+    chips,
+    ...suppliedWindow,
+    coreboundConfig: {
+      developerMode: true,
+      ...(suppliedWindow.coreboundConfig || {})
+    }
+  };
   const sandbox = {
     window,
     console: quietConsole,
@@ -59,7 +68,8 @@ function evaluateClassic(relativePath, expression, extraGlobals = {}) {
     clearTimeout: () => {},
     setInterval: () => 0,
     clearInterval: () => {},
-    ...extraGlobals
+    ...extraGlobals,
+    window
   };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
@@ -984,8 +994,8 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   );
 
   assert.equal(result.beforeUnchanged, true, 'migration mutated the parsed legacy payload');
-  assert.equal(result.migrated.toVersion, 15);
-  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+  assert.equal(result.migrated.toVersion, 16);
+  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
   assert.equal(result.migrated.state.inventory.length, 0, 'legacy material stacks still occupy ordinary slots');
   assert.equal(result.migrated.state.materialInventory['Scrap Metal'], 20);
   assert.equal(result.migrated.state.materialInventory['Wire Bundle'], 7);
@@ -1035,7 +1045,7 @@ test('v2 passive saves are refunded and caught up to two points per level', () =
     })()`
   );
 
-  assert.deepEqual([...result.appliedVersions], [13, 14, 15]);
+  assert.deepEqual([...result.appliedVersions], [13, 14, 15, 16]);
   assert.equal(result.state.player.passives.treeVersion, 6);
   assert.deepEqual(Object.keys(result.state.player.passives.allocations), []);
   assert.equal(result.state.player.passives.points, 38);
@@ -1060,11 +1070,41 @@ test('v14 saves with stale passive treeVersion are refunded to tree version 6', 
     })()`
   );
 
-  assert.deepEqual([...result.appliedVersions], [15]);
-  assert.equal(result.toVersion, 15);
+  assert.deepEqual([...result.appliedVersions], [15, 16]);
+  assert.equal(result.toVersion, 16);
   assert.equal(result.state.player.passives.treeVersion, 6);
   assert.deepEqual(Object.keys(result.state.player.passives.allocations), []);
   assert.equal(result.state.player.passives.points, 20);
+});
+
+test('v16 migration converts retired single-type bionic boosters into grouped boosters', () => {
+  const result = evaluateClassic(
+    'saveSchema.js',
+    `migrateGameStateSnapshot({
+      player: {
+        level: 20,
+        equipment: {
+          mainHand: null, offHand: null, head: null, chest: null, legs: null, feet: null, gloves: null,
+          bionicSlots: [{
+            name: 'Pyro Booster', type: 'Bionic', slot: 'bionic',
+            statModifiers: { damageTypes: { pyro: 17 } }
+          }]
+        },
+        passives: { allocations: {}, points: 40, treeVersion: 6 },
+        combatStyles: { version: 2, allocations: {} }
+      },
+      inventory: [{
+        name: 'Kinetic Booster', type: 'Bionic', slot: 'bionic',
+        statModifiers: { damageTypes: { kinetic: 13 } }
+      }],
+      meta: { version: 15 }
+    })`
+  );
+  assert.deepEqual([...result.appliedVersions], [16]);
+  assert.equal(result.state.player.equipment.bionicSlots[0].name, 'Elemental Booster');
+  assert.equal(result.state.player.equipment.bionicSlots[0].statModifiers.damageGroups.elemental, 17);
+  assert.equal(result.state.inventory[0].name, 'Physical Booster');
+  assert.equal(result.state.inventory[0].statModifiers.damageGroups.physical, 13);
 });
 
 test('material storage has deterministic slots, capped stacks, and actionable source tooltips', () => {
@@ -1156,6 +1196,8 @@ test('all authored registries satisfy the unified content contract', () => {
       testEnemies: enemies.filter(enemy => developerMode || !enemy.developerOnly),
       window: {
         coreboundConfig: { developerMode },
+        bionics,
+        chips,
         registerCoreboundInitializer: () => {}
       },
       document: {
@@ -1191,7 +1233,7 @@ test('random affix pools preserve slot identities and restrained late-game count
         chest: ids({ name: 'Test Chest', type: 'Armor', slot: 'chest', levelRequirement: 50 }),
         gloves: ids({ name: 'Thermal Test Gloves', type: 'Armor', slot: 'gloves', levelRequirement: 50 }),
         feet: ids({ name: 'Test Boots', type: 'Armor', slot: 'feet', levelRequirement: 50 }),
-        bionic: ids({ name: 'Pyro Booster', type: 'Bionic', slot: 'bionic', levelRequirement: 50, statModifiers: { damageTypes: { pyro: 10 } } }),
+        bionic: ids({ name: 'Elemental Booster', type: 'Bionic', slot: 'bionic', levelRequirement: 50, statModifiers: { damageGroups: { elemental: 10 } } }),
         generated: Array.from({ length: 25 }, () => {
           const item = generateItemInstance({
             name: 'Generated Test Chest', type: 'Armor', slot: 'chest',
@@ -1224,11 +1266,145 @@ test('random affix pools preserve slot identities and restrained late-game count
   assert.ok(pools.gloves.includes('criticalChance'));
   assert.ok(pools.gloves.includes('statusApplicationChance'));
   assert.ok(pools.feet.includes('comboAttackChance'));
-  assert.ok(pools.bionic.includes('globalDamageTypePercent_pyro'));
+  assert.ok(pools.bionic.includes('globalDamageGroupPercent_elemental'));
+  assert.equal(pools.bionic.includes('globalDamageTypePercent_pyro'), false);
   assert.ok(pools.bionic.includes('bionicEfficiency'));
   assert.equal(pools.familiesUnique, true);
   assert.equal(pools.generated.every(sample => sample.count >= 3 && sample.count <= 4), true);
   assert.equal(pools.generated.every(sample => sample.unique), true);
+});
+
+test('bionics use grouped boosters, four progression bands, and a smaller affix budget', () => {
+  const names = new Set(bionics.map(item => item.name));
+  for (const name of ['Physical Booster', 'Elemental Booster', 'Chemical Booster']) {
+    assert.equal(names.has(name), true, `${name} is missing`);
+  }
+  for (const retired of ['Kinetic Booster', 'Slashing Booster', 'Pyro Booster', 'Cryo Booster', 'Electric Booster', 'Radiation Booster']) {
+    assert.equal(names.has(retired), false, `${retired} remained in the live catalog`);
+  }
+
+  const bands = bionics.reduce((seen, item) => {
+    const level = Number(item.levelRequirement);
+    if (level <= 10) seen.add('foundation');
+    else if (level <= 25) seen.add('systems');
+    else if (level <= 40) seen.add('hybrids');
+    else seen.add('endgame');
+    return seen;
+  }, new Set());
+  assert.deepEqual([...bands].sort(), ['endgame', 'foundation', 'hybrids', 'systems']);
+
+  const budgets = evaluateClassic(
+    'itemgenerator.js',
+    `({
+      early: getRandomModifierPreviewInfo({ name: 'Health Module', type: 'Bionic', slot: 'bionic', levelRequirement: 5 }).countRange,
+      mid: getRandomModifierPreviewInfo({ name: 'Combo Relay', type: 'Bionic', slot: 'bionic', levelRequirement: 22 }).countRange,
+      late: getRandomModifierPreviewInfo({ name: 'Elemental Booster', type: 'Bionic', slot: 'bionic', levelRequirement: 50, statModifiers: { damageGroups: { elemental: 10 } } }).countRange,
+      normalLate: getRandomModifierPreviewInfo({ name: 'Chest', type: 'Armor', slot: 'chest', levelRequirement: 50 }).countRange
+    })`
+  );
+  assert.equal(budgets.early, '1');
+  assert.equal(budgets.mid, '1-2');
+  assert.equal(budgets.late, '2');
+  assert.equal(budgets.normalLate, '3-4');
+});
+
+test('wires begin at level 30 and black wires remain uncommon universal sockets', () => {
+  const result = evaluateClassic(
+    'itemgenerator.js',
+    `(() => {
+      const originalRandom = Math.random;
+      const make = (level, rolls) => {
+        Math.random = () => rolls.length ? rolls.shift() : 0.5;
+        return generateItemInstance({
+          name: 'Wire Test Armor', type: 'Armor', slot: 'chest', levelRequirement: level,
+          disableRandomModifiers: true
+        });
+      };
+      const low = make(29, [0.99]);
+      const noWire = make(30, [0, 0.2]);
+      const black = make(30, [0, 0.5, 0.01]);
+      const ordinary = make(30, [0, 0.5, 0.5, 0]);
+      const bionic = generateItemInstance({
+        name: 'Wireless Bionic', type: 'Bionic', slot: 'bionic', levelRequirement: 50,
+        disableRandomModifiers: true
+      });
+      Math.random = originalRandom;
+      return { low, noWire, black, ordinary, bionic };
+    })()`
+  );
+
+  assert.equal(result.low.rolledWires, undefined);
+  assert.equal(result.noWire.rolledWires, undefined);
+  assert.equal(result.black.rolledWires.length, 1);
+  assert.equal(result.black.rolledWires[0].color, 'black');
+  assert.equal(result.ordinary.rolledWires[0].color, 'red');
+  assert.equal(result.bionic.rolledWires, undefined);
+});
+
+test('colored chips are craftable, black chips are apex drops, and offense favors flat damage', () => {
+  const recipeCatalog = evaluateClassic('recipes.js', 'window.recipes', {
+    window: { coreboundConfig: { developerMode: false }, bionics, chips }
+  });
+  const recipeNames = new Set(recipeCatalog.map(recipe => recipe.name));
+  const colored = chips.filter(item => item.color !== 'black');
+  const black = chips.filter(item => item.color === 'black');
+  assert.equal(colored.every(item => recipeNames.has(item.name)), true);
+  assert.equal(black.every(item => !recipeNames.has(item.name)), true);
+
+  const red = chips.filter(item => item.color === 'red');
+  assert.ok(red.filter(item => item.damageTypes).length >= 14);
+  assert.equal(red.some(item => item.statModifiers?.damageTypes || item.statModifiers?.damageGroups), false);
+
+  const apexNames = new Set(evaluateClassic('lootPools.js', `LOOT_POOLS.exceptionalApex.items.map(entry => entry.itemName)`));
+  assert.equal(black.every(item => apexNames.has(item.name)), true);
+});
+
+test('multiple equipped Black Chips are all disabled while colored chips remain active', () => {
+  const result = evaluateClassic(
+    ['combatSchema.js', 'stats.js'],
+    `(() => {
+      const blackA = { name: 'Black A', type: 'Chip', color: 'black', healthBonus: 100 };
+      const blackB = { name: 'Black B', type: 'Chip', color: 'black', healthBonus: 100 };
+      const red = { name: 'Red', type: 'Chip', color: 'red', healthBonus: 25 };
+      const makePlayer = secondBlack => ({
+        baseStats: {
+          maxHealth: 100, maxEnergyShield: 0, healthRegen: 0,
+          criticalChance: 0, criticalMultiplier: 1, precision: 0, deflection: 0,
+          damageTypes: {}, defenseTypes: {}
+        },
+        equipment: {
+          mainHand: null,
+          offHand: { name: 'First', type: 'Armor', slot: 'offHand', rolledWires: [{ color: 'black', chip: blackA }, { color: 'red', chip: red }] },
+          head: secondBlack ? { name: 'Second', type: 'Armor', slot: 'head', rolledWires: [{ color: 'black', chip: blackB }] } : null,
+          chest: null, legs: null, feet: null, gloves: null, bionicSlots: []
+        },
+        passiveBonuses: { flatDamageTypes: {}, defenseTypes: {}, damageTypes: {}, damageGroups: {} },
+        activeBuffs: [], activeDebuffs: [], gatheringSkills: {}, currentHealth: null, currentShield: null
+      });
+      const valid = makePlayer(false);
+      const conflict = makePlayer(true);
+      const validStats = calculatePlayerStats(valid);
+      const conflictStats = calculatePlayerStats(conflict);
+      const conflictState = getEquippedChipState(conflict);
+      return {
+        validHealth: validStats.health,
+        conflictHealth: conflictStats.health,
+        blackCount: conflictState.blackCount,
+        conflict: conflictState.hasBlackConflict,
+        blackEnabled: isEquippedChipEnabled(blackA, conflictState),
+        redEnabled: isEquippedChipEnabled(red, conflictState)
+      };
+    })()`
+  );
+
+  assert.equal(result.validHealth, 225);
+  assert.equal(result.conflictHealth, 125);
+  assert.equal(result.blackCount, 2);
+  assert.equal(result.conflict, true);
+  assert.equal(result.blackEnabled, false);
+  assert.equal(result.redEnabled, true);
+  assert.match(read('inventory.js'), /chip\.effects/);
+  assert.match(read('global.js'), /BLACK CHIP CONFLICT/);
 });
 
 test('fabrication ingredients are sourced no later than their recipe output', () => {

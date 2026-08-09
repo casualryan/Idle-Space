@@ -36,7 +36,7 @@ const CONTENT_STYLE_MECHANICS = new Set([
 const CONTENT_ITEM_TEMPLATE_KEYS = new Set([
     'name', 'description', 'icon', 'color', 'type', 'slot', 'weaponType', 'weaponFamily',
     'weaponFamilyLabel', 'weaponTags', 'levelRequirement',
-    'developerOnly', 'stackable', 'quantity', 'salePrice', 'sellValue', 'isDisassembleable',
+    'developerOnly', 'disableRandomModifiers', 'stackable', 'quantity', 'salePrice', 'sellValue', 'isDisassembleable',
     'disassembleResults', 'effects', 'passiveBonuses', 'rollGroups', 'wires',
     'weaponBaseDamage', 'weaponLocalFlatDamage', 'weaponLocalTypeIncrease',
     'weaponLocalGroupIncrease', 'weaponDamageConversion', 'weaponLocalAttackSpeedPercent',
@@ -48,6 +48,8 @@ const CONTENT_ITEM_TEMPLATE_KEYS = new Set([
     'energyShieldBonus', 'energyShieldBonusPercent', 'energyShieldBonusPercentRange',
     'precision', 'deflection', 'healthRegen', 'armorEfficiency', 'weaponEfficiency',
     'bionicEfficiency', 'bionicSync', 'armorPenetration', 'debuffChanceBonus',
+    'debuffDurationBonus', 'damageRollFloorBonus', 'directDamageMultiplier',
+    'dotDamageMultiplier', 'damageVsDebuffed', 'damageTakenReduction',
     'statusResistance', 'statusDurationReduction', 'comboAttack', 'comboEffectiveness',
     'additionalComboAttacks', 'kineticMastery', 'slashingMastery', 'severedLimbChance',
     'maxSeveredLimbs', 'maxSeepingWoundStacks', ...RESERVED_ITEM_STAT_KEYS

@@ -1,6 +1,6 @@
 // Ordered, non-destructive migrations and validation for persisted game snapshots.
 
-const COREBOUND_SAVE_VERSION = 15;
+const COREBOUND_SAVE_VERSION = 16;
 const SAVE_MATERIAL_STACK_CAP = 50000;
 const SAVE_PASSIVE_TREE_VERSION = 6;
 const SAVE_COMBAT_STYLE_VERSION = 2;
@@ -154,6 +154,46 @@ function convertRetiredMaterialItem(item) {
         name,
         quantity: Math.max(1, Math.floor((Number(item.quantity) || 1) * multiplier))
     };
+}
+
+const SAVE_RETIRED_BIONIC_BOOSTERS = Object.freeze({
+    'Kinetic Booster': Object.freeze({ name: 'Physical Booster', group: 'physical', damageType: 'kinetic' }),
+    'Slashing Booster': Object.freeze({ name: 'Physical Booster', group: 'physical', damageType: 'slashing' }),
+    'Pyro Booster': Object.freeze({ name: 'Elemental Booster', group: 'elemental', damageType: 'pyro' }),
+    'Cryo Booster': Object.freeze({ name: 'Elemental Booster', group: 'elemental', damageType: 'cryo' }),
+    'Electric Booster': Object.freeze({ name: 'Elemental Booster', group: 'elemental', damageType: 'electric' }),
+    'Radiation Booster': Object.freeze({ name: 'Chemical Booster', group: 'chemical', damageType: 'radiation' })
+});
+
+function convertRetiredBionicBooster(item) {
+    if (!item || typeof item !== 'object') return item;
+    const conversion = SAVE_RETIRED_BIONIC_BOOSTERS[item.name];
+    if (!conversion) return item;
+
+    const converted = normalizeSavedItemData(item);
+    const typeValue = Number(converted.statModifiers?.damageTypes?.[conversion.damageType]);
+    const existingGroupValue = Number(converted.statModifiers?.damageGroups?.[conversion.group]);
+    const groupValue = (Number.isFinite(existingGroupValue) ? existingGroupValue : 0)
+        + (Number.isFinite(typeValue) ? typeValue : 0);
+    converted.name = conversion.name;
+    converted.statModifiers = converted.statModifiers || {};
+    delete converted.statModifiers.damageTypes;
+    converted.statModifiers.damageGroups = {
+        ...(converted.statModifiers.damageGroups || {}),
+        [conversion.group]: groupValue > 0 ? groupValue : 10
+    };
+    if (Array.isArray(converted.rolledModifiers)) {
+        converted.rolledModifiers = converted.rolledModifiers.map(modifier => {
+            if (!String(modifier?.id || '').startsWith('globalDamageTypePercent_')) return modifier;
+            return {
+                ...modifier,
+                id: `globalDamageGroupPercent_${conversion.group}`,
+                displayName: `${conversion.group.charAt(0).toUpperCase()}${conversion.group.slice(1)} Damage`,
+                statPath: `statModifiers.damageGroups.${conversion.group}`
+            };
+        });
+    }
+    return converted;
 }
 
 function mapSavedEquipment(equipment, mapper) {
@@ -392,6 +432,9 @@ const SAVE_MIGRATIONS = Object.freeze([
         passives.treeVersion = SAVE_PASSIVE_TREE_VERSION;
         delete passives.gearBonuses;
         state.player.passives = passives;
+    },
+    function migrateToVersion16(state) {
+        mapPersistedItems(state, item => convertRetiredBionicBooster(item));
     }
 ]);
 

@@ -14,6 +14,13 @@ const RANDOM_MODIFIER_COUNT_WEIGHTS = [
     { minLevel: 41, maxLevel: 50, weights: [{ count: 3, weight: 60 }, { count: 4, weight: 40 }] }
 ];
 
+const BIONIC_MODIFIER_COUNT_WEIGHTS = [
+    { minLevel: 1, maxLevel: 10, weights: [{ count: 1, weight: 100 }] },
+    { minLevel: 11, maxLevel: 25, weights: [{ count: 1, weight: 80 }, { count: 2, weight: 20 }] },
+    { minLevel: 26, maxLevel: 40, weights: [{ count: 1, weight: 55 }, { count: 2, weight: 45 }] },
+    { minLevel: 41, maxLevel: 50, weights: [{ count: 2, weight: 100 }] }
+];
+
 const GENERATOR_DAMAGE_TYPE_TO_GROUP = {
     kinetic: 'physical',
     slashing: 'physical',
@@ -79,6 +86,11 @@ function getModifierCountForLevel(level) {
     return picked.count;
 }
 
+function getBionicModifierCountForLevel(level) {
+    const bucket = getWeightedBucket(level, BIONIC_MODIFIER_COUNT_WEIGHTS);
+    return getRandomWeightEntry(bucket.weights).count;
+}
+
 function getModifierGradeForLevel(level) {
     const bucket = getWeightedBucket(level, RANDOM_MODIFIER_GRADE_WEIGHTS);
     const picked = getRandomWeightEntry(bucket.weights);
@@ -95,6 +107,14 @@ function getMaxModifierGradeForLevel(level) {
 
 function getModifierCountRangeForLevel(level) {
     const bucket = getWeightedBucket(level, RANDOM_MODIFIER_COUNT_WEIGHTS);
+    const counts = bucket.weights.map(entry => entry.count).sort((a, b) => a - b);
+    const min = counts[0];
+    const max = counts[counts.length - 1];
+    return min === max ? `${min}` : `${min}-${max}`;
+}
+
+function getBionicModifierCountRangeForLevel(level) {
+    const bucket = getWeightedBucket(level, BIONIC_MODIFIER_COUNT_WEIGHTS);
     const counts = bucket.weights.map(entry => entry.count).sort((a, b) => a - b);
     const min = counts[0];
     const max = counts[counts.length - 1];
@@ -306,9 +326,29 @@ function createSharedModifierDefinitions() {
             isPercent: true,
             grades: grade([3, 6], [6, 11], [11, 17], [17, 25], [25, 36]),
             eligibility: (ctx) => (
-                (ctx.slot === 'gloves' || ctx.isOffHand || (ctx.isBionic && ctx.bionicRoles.has('offense')))
+                (ctx.slot === 'gloves' || ctx.isOffHand)
                 && themedTypeAllowed(ctx, type)
             )
+        }));
+    });
+
+    Object.keys(GENERATOR_DAMAGE_GROUP_TO_TYPES).forEach(group => {
+        const nameMap = {
+            physical: 'Physical Damage',
+            elemental: 'Elemental Damage',
+            chemical: 'Chemical Damage'
+        };
+        defs.push(createModifierDefinition({
+            id: `globalDamageGroupPercent_${group}`,
+            displayName: nameMap[group],
+            family: 'globalGroupDamage',
+            statPath: `statModifiers.damageGroups.${group}`,
+            applyType: 'statModifierPercent',
+            isPercent: true,
+            grades: grade([3, 5], [5, 8], [8, 12], [12, 17], [17, 23]),
+            eligibility: (ctx) => ctx.isBionic
+                && ctx.bionicRoles.has('offense')
+                && (ctx.damageGroups.size === 0 || ctx.damageGroups.has(group))
         }));
     });
 
@@ -542,6 +582,9 @@ function getModifierContext(item) {
     const isComponent = type === 'component';
     const damageTypes = getDamageTypesFromItem(item);
     const damageGroups = getDamageGroupsFromDamageTypes(damageTypes);
+    Object.keys(item?.statModifiers?.damageGroups || {}).forEach(group => {
+        if (GENERATOR_DAMAGE_GROUP_TO_TYPES[group]) damageGroups.add(group);
+    });
     const affixDamageTypes = inferAffixDamageTypes(item);
     const affixDamageGroups = getDamageGroupsFromDamageTypes(affixDamageTypes);
     const bionicRoles = isBionic ? inferBionicAffixRoles(item) : new Set();
@@ -699,7 +742,9 @@ function rollRandomModifiers(item, template) {
     if (template && template.disableRandomModifiers === true) return;
 
     const level = normalizeGeneratedItemLevel(item.levelRequirement);
-    const desiredCount = getModifierCountForLevel(level);
+    const desiredCount = getModifierContext(item).isBionic
+        ? getBionicModifierCountForLevel(level)
+        : getModifierCountForLevel(level);
     const eligible = getEligibleRandomModifiers(item).filter(modifier => level >= modifier.minLevel);
     if (!eligible.length || desiredCount <= 0) return;
 
@@ -754,7 +799,9 @@ function getRandomModifierPreviewInfo(template) {
     if (!eligible.length) return null;
     return {
         level,
-        countRange: getModifierCountRangeForLevel(level),
+        countRange: getModifierContext(template).isBionic
+            ? getBionicModifierCountRangeForLevel(level)
+            : getModifierCountRangeForLevel(level),
         maxGrade: getMaxModifierGradeForLevel(level),
         maxGradeLabel: getModifierGradeLabel(getMaxModifierGradeForLevel(level))
     };
@@ -905,7 +952,16 @@ function generateItemInstance(template) {
         ['comboAttack', 'int'],
         ['comboEffectiveness', 'int'],
         ['additionalComboAttacks', 'int'],
-        ['armorPenetration', 'int']
+        ['armorPenetration', 'int'],
+        ['debuffChanceBonus', 'float'],
+        ['debuffDurationBonus', 'float'],
+        ['statusResistance', 'int'],
+        ['statusDurationReduction', 'int'],
+        ['damageRollFloorBonus', 'float'],
+        ['directDamageMultiplier', 'float'],
+        ['dotDamageMultiplier', 'float'],
+        ['damageVsDebuffed', 'float'],
+        ['damageTakenReduction', 'float']
     ];
 
     for (const [key, kind] of topLevelSpecs) {
@@ -1103,7 +1159,8 @@ function generateItemInstance(template) {
     // 9) Data-driven random modifiers
     rollRandomModifiers(item, template);
 
-    // 10) Wires (Sockets) rolling
+    // 10) Wires (Sockets) rolling. Authored layouts override the universal
+    // level-30+ equipment roll.
     if (template.wires && typeof template.wires === 'object') {
         const totalSlots = rollFrom(template.wires.totalSlots);
         const maxTotal = (typeof totalSlots === 'number' && totalSlots > 0) ? Math.floor(totalSlots) : 0;
@@ -1142,6 +1199,32 @@ function generateItemInstance(template) {
         }
         item.rolledWires = chosen; // runtime sockets
         item.wires = template.wires; // keep template for reference
+    } else {
+        const level = normalizeGeneratedItemLevel(item.levelRequirement);
+        const context = getModifierContext(item);
+        const canRollWires = level >= 30
+            && !context.isBionic
+            && (context.isWeapon || context.isArmor || context.isOffHand);
+        if (canRollWires) {
+            const roll = Math.random();
+            let slotCount = 0;
+            if (level >= 50) {
+                slotCount = roll < 0.15 ? 0 : roll < 0.75 ? 1 : roll < 0.97 ? 2 : 3;
+            } else if (level >= 40) {
+                slotCount = roll < 0.25 ? 0 : roll < 0.85 ? 1 : roll < 0.98 ? 2 : 3;
+            } else {
+                slotCount = roll < 0.45 ? 0 : roll < 0.95 ? 1 : 2;
+            }
+
+            if (slotCount > 0) {
+                const ordinaryColors = ['red', 'blue', 'green'];
+                item.rolledWires = Array.from({ length: slotCount }, () => ({
+                    color: Math.random() < 0.06
+                        ? 'black'
+                        : ordinaryColors[getRandomInt(0, ordinaryColors.length - 1)]
+                }));
+            }
+        }
     }
 
     // Quantity default

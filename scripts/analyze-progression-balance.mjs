@@ -21,7 +21,7 @@ const DAMAGE_GROUP = {
 };
 
 function evaluateClassic(file, expression) {
-  const sandbox = { window: { coreboundConfig: { developerMode: false } }, console };
+  const sandbox = { window: { coreboundConfig: { developerMode: false }, bionics, chips: [] }, console };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(`${fs.readFileSync(path.join(root, file), 'utf8')}\n;globalThis.result=(${expression});`, sandbox);

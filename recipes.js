@@ -1,11 +1,25 @@
 // Older authored outputs that predate the generated level 1-50 equipment spine.
 // Their ingredient maps are built by the same economy rules as every other recipe.
+const progressionBionicRecipes = (window.bionics || [])
+    .filter(item => item && !item.developerOnly)
+    .map(item => ({
+        name: item.name,
+        category: 'Bionics',
+        craftingTime: 5,
+        levelRequirement: item.levelRequirement
+    }));
+const progressionChipRecipes = (window.chips || [])
+    .filter(item => item && !item.developerOnly && item.color !== 'black')
+    .map(item => ({
+        name: item.name,
+        category: 'Chips',
+        craftingTime: 5,
+        levelRequirement: item.levelRequirement
+    }));
+
 const recipes = [
     { name: 'Makeshift Laser Sword', category: 'Weapons', levelRequirement: 1 },
     { name: 'Metal Carapace', category: 'Armor' },
-    { name: 'Reaction Enhancer', category: 'Bionics', craftingTime: 5 },
-    { name: 'Health Exchanger', category: 'Bionics', craftingTime: 5 },
-    { name: 'Kinetic Booster', category: 'Bionics' },
     { name: 'Heavy Metal Boots', category: 'Boots' },
     { name: 'Scorpion Sword', category: 'Weapons' },
     { name: 'Fire Spewer Mk1', category: 'Weapons' },
@@ -13,13 +27,8 @@ const recipes = [
     { name: 'Scrap Metal Helmet', category: 'Scrap Armor' },
     { name: 'Scrap Metal Trousers', category: 'Scrap Armor' },
     { name: 'Scrap Chest Plate', category: 'Scrap Armor' },
-    { name: 'Cryo Booster', category: 'Bionics' },
-    { name: 'Electric Booster', category: 'Bionics' },
-    { name: 'Slashing Booster', category: 'Bionics' },
-    { name: 'Chemical Booster', category: 'Bionics' },
-    { name: 'Radiation Booster', category: 'Bionics' },
-    { name: 'Health Module', category: 'Bionics' },
-    { name: 'Pyro Booster', category: 'Bionics' }
+    ...progressionBionicRecipes,
+    ...progressionChipRecipes
 ];
 
 const baselineArmorItems = [
@@ -438,7 +447,7 @@ for (const recipe of [...recipes, ...baselineRecipes]) {
     const mergedRecipe = { ...recipe };
     const baseline = [...baselineArmorItems, ...baselineWeaponItems, ...baselineOffHandItems]
         .find(item => item.name === mergedRecipe.name);
-    const level = Number(baseline?.level || LEGACY_RECIPE_LEVELS[mergedRecipe.name] || mergedRecipe.levelRequirement || 1);
+    const level = Number(baseline?.level || mergedRecipe.levelRequirement || LEGACY_RECIPE_LEVELS[mergedRecipe.name] || 1);
     if (mergedRecipe.category === "Weapons" || mergedRecipe.category === "Shields") {
         const legacyFocus = LEGACY_RECIPE_DAMAGE_FOCUS[mergedRecipe.name];
         mergedRecipe.damageFocus = normalizeRecipeDamageFocus(mergedRecipe.damageFocus)

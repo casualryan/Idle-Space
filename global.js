@@ -1485,6 +1485,24 @@ function renderGlobalStatusBanner() {
     if (activityState?.alert?.message) {
         activityAlert = activityState.alert;
     }
+    const chipState = typeof getEquippedChipState === 'function'
+        ? getEquippedChipState(player)
+        : null;
+    const conflictMessage = chipState?.hasBlackConflict
+        ? `${chipState.blackCount} Black Chips are equipped. Every Black Chip is disabled until only one remains.`
+        : '';
+    ['inventory-chip-warning', 'equipment-chip-warning', 'delve-chip-warning'].forEach(id => {
+        const warning = document.getElementById(id);
+        if (!warning) return;
+        warning.textContent = conflictMessage;
+        warning.style.display = conflictMessage ? 'block' : 'none';
+    });
+    if (chipState?.hasBlackConflict) {
+        activityAlert = {
+            severity: 'danger',
+            message: `BLACK CHIP CONFLICT: all ${chipState.blackCount} Black Chips are disabled`
+        };
+    }
 
     let combatText = 'Combat: Inactive';
     let combatClass = '';
