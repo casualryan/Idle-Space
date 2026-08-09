@@ -1,0 +1,55 @@
+add hardcap on physical, chemical, and elemetal resistances of 80 (this is a percentage reduction)
+
+
+
+THE BELOW CHANGES AND NOTES ARE TO BE IGNORED FOR NOW:
+
+    Inventory
+
+    Wires/Chips
+Preview stat delta on hover before slotting. <- This was a bad idea lol
+Persist the “one black chip equipped” violation message inline near the slot selector.
+
+    Tooltips
+Roll quality indicator per stat (low/avg/high relative to range; color-coded). Attempted and failed.
+
+    MISC  
+Color the adventure “Rec. Lv” badge based on player level delta. Highlight in these deltas: 3+ levels below. 1-2 levels below. Matching rec level. 1-2 above. 3+ above. Attempted and failed.
+
+
+QOL:
+IGNORE:
+
+combat log looks better but can still be improved
+
+IGNORE: Add missions and steps to unlock new areas. 99% of them should be locked by default.
+        Missions come in a few flavors: Main, Random, (others)
+        Main missions are pre-determined missions that, when completed, indicated a milestone has been achieved and unlocks something new.
+        Random missions are generated on purchase from a Mission Giver. It will cost an amount of credits to generate and can be abandoned, but no credits are refunded.
+        With a random mission it will indicate you to kill X# of Y enemy/enemies. On completion it will reward credits (more than the cost) and random loot, usually components/materials.
+        Random missions being completed increases that NPCs Favor. When new favor levels are reached, new mission types and tiers are unlocked.
+IGNORE: Add area sort options in addition to search bar. Sort by level, area biome type, recently unlocked, alphabetical. Other ideas?
+
+IGNORE: Indicator for "True Max Level" (8) on passive skills. Max level by allocating passive points is 4, this can be over-leveled up to 8 with equipment.
+
+FUTURE: TECH BLUEPRINTS. Finding and reading a blueprint permanently adds its recipe to the fabrication window and blueprint book. Learned recipes can be fabricated an unlimited number of times; blueprints do not wear out.
+This adds chase to crafting, while make some drops more exciting because they are rarer but multi-use
+
+IGNORE: Look closer at "viral" mechanic. Currently it doesn't do much.
+        Viral should be "zone chance" not "enemy chance" so I could make specific zones have more or less viral (100% infected!)
+        wtf should it do tho lol?
+
+IGNORE: Interactive tutorial to show how to equip/unequip items etc
+
+IGNORE: design new passives
+
+IGNORE: medtek and injector implementation - they should now last for 1 delve each, instead of a timeframe. There will be a dialogue on the delve screen that you
+IGNORE: click to select an injector. Multiple injectors at a time? Probably just 1. They can be more powerful/interesting if it's only 1.
+IGNORE: Account Upgrade Purchaseable: Injectors last 1/2/3 (per tier purchased) more Delves 
+
+IGNORE: ship implementation
+
+IGNORE: MOST IMPORTANT: get progression started. What should a level 1 weapon look like? What should a basic level 51 (endgame) weapon look like?
+IGNORE: What should peak endgame weapons look like? These are important things to work out.
+
+THIS CONCLUDES THE TO-BE-IGNORED CHANGES AND NOTES

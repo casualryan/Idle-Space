@@ -1,0 +1,119 @@
+// Gathering Activities Data
+const gatheringActivities = [
+    // Mining Activities
+    {
+        name: "Collect Scrap Metal",
+        skillType: "Mining",
+        time: 5,
+        item: {
+            name: "Scrap Metal",
+            quantity: 1
+        },
+        experience: 5,
+        requiredLevel: 1,
+        rareFind: {
+            name: "Scrap Metal",
+            quantity: 3
+        }
+    },
+    {
+        name: "Mine Iron Ore",
+        skillType: "Mining",
+        time: 8,
+        item: {
+            name: "Iron Ore",
+            quantity: 1
+        },
+        experience: 8,
+        requiredLevel: 3,
+        rareFind: {
+            name: "Iron Ore",
+            quantity: 3
+        }
+    },
+    {
+        name: "Mine Copper Ore",
+        skillType: "Mining",
+        time: 10,
+        item: {
+            name: "Copper Ore",
+            quantity: 1
+        },
+        experience: 10,
+        requiredLevel: 5,
+        rareFind: {
+            name: "Copper Ore",
+            quantity: 3
+        }
+    },
+    {
+        name: "Extract Titanium",
+        skillType: "Mining",
+        time: 15,
+        item: {
+            name: "Titanium",
+            quantity: 1
+        },
+        experience: 15,
+        requiredLevel: 10,
+        rareFind: {
+            name: "Titanium",
+            quantity: 2
+        }
+    },
+    {
+        name: "Salvage Wire Bundles",
+        skillType: "Mining",
+        time: 6,
+        item: {
+            name: "Wire Bundle",
+            quantity: 1
+        },
+        experience: 6,
+        requiredLevel: 2
+    },
+    {
+        name: "Break Down Fastener Plates",
+        skillType: "Mining",
+        time: 7,
+        item: {
+            name: "Metal Fasteners",
+            quantity: 1
+        },
+        experience: 7,
+        requiredLevel: 4
+    },
+    {
+        name: "Extract Stabilizer Ore",
+        skillType: "Mining",
+        time: 10,
+        item: {
+            name: "Stabilizer",
+            quantity: 1
+        },
+        experience: 10,
+        requiredLevel: 8
+    },
+    {
+        name: "Harvest Titanium Plating",
+        skillType: "Mining",
+        time: 14,
+        item: {
+            name: "Titanium Plating",
+            quantity: 1
+        },
+        experience: 14,
+        requiredLevel: 16
+    },
+    {
+        name: "Extract Quantum Fragments",
+        skillType: "Mining",
+        time: 18,
+        item: {
+            name: "Quantum Capacitor",
+            quantity: 1
+        },
+        experience: 18,
+        requiredLevel: 24
+    }
+];

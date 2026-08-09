@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Sound Effects</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e1e;
+            color: #f0f0f0;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #66ccff;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .instructions {
+            background-color: #2a2a2a;
+            border-left: 4px solid #66ccff;
+            padding: 15px;
+            margin-bottom: 30px;
+            border-radius: 3px;
+        }
+        .sound-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .sound-item {
+            background-color: #2a2a2a;
+            border-radius: 5px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #444;
+        }
+        .sound-item:hover {
+            border-color: #66ccff;
+            box-shadow: 0 0 10px rgba(102, 204, 255, 0.3);
+        }
+        .sound-name {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #66ccff;
+        }
+        .sound-description {
+            font-size: 14px;
+            margin-bottom: 15px;
+            color: #ccc;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: auto;
+        }
+        audio {
+            height: 30px;
+            flex-grow: 1;
+            margin-right: 10px;
+        }
+        .download-btn {
+            background-color: #215a7b;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 13px;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .download-btn:hover {
+            background-color: #3786b5;
+        }
+        .all-download {
+            margin-top: 30px;
+            text-align: center;
+        }
+        .all-download .download-btn {
+            background-color: #006633;
+            padding: 12px 24px;
+            font-size: 16px;
+        }
+        .all-download .download-btn:hover {
+            background-color: #009649;
+        }
+        footer {
+            margin-top: 50px;
+            text-align: center;
+            font-size: 14px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <h1>Game Sound Effects</h1>
+    
+    <div class="instructions">
+        <p><strong>Instructions:</strong> Click the play button to preview each sound. Click the download button to save the sound file. Place all downloaded files in your game's <code>sounds/</code> directory.</p>
+    </div>
+    
+    <div class="sound-container">
+        <div class="sound-item">
+            <div class="sound-name">UI Hover Sound</div>
+            <div class="sound-description">A subtle click sound when hovering over UI elements</div>
+            <div class="controls">
+                <audio controls src="https://soundbible.com/mp3/Air%20Plane%20Ding-SoundBible.com-496729130.mp3"></audio>
+                <a class="download-btn" href="https://soundbible.com/mp3/Air%20Plane%20Ding-SoundBible.com-496729130.mp3" download="ui_hover.mp3">Download</a>
+            </div>
+        </div>
+
+        <div class="sound-item">
+            <div class="sound-name">UI Click Sound</div>
+            <div class="sound-description">A digital click for button presses</div>
+            <div class="controls">
+                <audio controls src="https://soundbible.com/mp3/Button%20Press-SoundBible.com-1420904322.mp3"></audio>
+                <a class="download-btn" href="https://soundbible.com/mp3/Button%20Press-SoundBible.com-1420904322.mp3" download="ui_click.mp3">Download</a>
+            </div>
+        </div>
+
+        <div class="sound-item">
+            <div class="sound-name">UI Select Sound</div>
+            <div class="sound-description">An affirmative beep for selections and confirmations</div>
+            <div class="controls">
+                <audio controls src="https://soundbible.com/mp3/Electronic_Chime-KevanGC-495939803.mp3"></audio>
+                <a class="download-btn" href="https://soundbible.com/mp3/Electronic_Chime-KevanGC-495939803.mp3" download="ui_select.mp3">Download</a>
+            </div>
+        </div>
+
+        <div class="sound-item">
+            <div class="sound-name">UI Back Sound</div>
+            <div class="sound-description">A negative beep for back or cancel actions</div>
+            <div class="controls">
+                <audio controls src="https://soundbible.com/mp3/Robot_blip-Marianne_Gagnon-120342607.mp3"></audio>
+                <a class="download-btn" href="https://soundbible.com/mp3/Robot_blip-Marianne_Gagnon-120342607.mp3" download="ui_back.mp3">Download</a>
+            </div>
+        </div>
+
+        <div class="sound-item">
+            <div class="sound-name">UI Error Sound</div>
+            <div class="sound-description">An error buzz for invalid actions</div>
+            <div class="controls">
+                <audio controls src="https://soundbible.com/mp3/Computer%20Error-SoundBible.com-399240927.mp3"></audio>
+                <a class="download-btn" href="https://soundbible.com/mp3/Computer%20Error-SoundBible.com-399240927.mp3" download="ui_error.mp3">Download</a>
+            </div>
+        </div>
+
+        <div class="sound-item">
+            <div class="sound-name">Item Pickup Sound</div>
+            <div class="sound-description">Sound effect for picking up items</div>
+            <div class="controls">
+                <audio controls src="https://soundbible.com/mp3/Coins_01-Soundholder-408051692.mp3"></audio>
+                <a class="download-btn" href="https://soundbible.com/mp3/Coins_01-Soundholder-408051692.mp3" download="item_pickup.mp3">Download</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="all-download">
+        <p>Don't want to download them one by one?</p>
+        <a class="download-btn" href="https://www.mediafire.com/file/d73f70dkn8h4xla/game_sounds.zip/file" target="_blank">Download All Sounds (ZIP)</a>
+    </div>
+
+    <footer>
+        <p>These sounds are free for personal use. Commercial use may require licensing from original sources.</p>
+        <p>Sound effects collected from SoundBible.com and other free sound resources.</p>
+    </footer>
+</body>
+</html> 

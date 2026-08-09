@@ -1,0 +1,65 @@
+8/8/26
+
+Changes:
+
+rebuilt fabrication around scaling foundational costs and compact thematic recipes
+added common, advanced, and apex material ladders for all seven damage families
+enemy damage identities now determine their best targeted material drops
+higher-level delves now retain earlier materials and drop foundations in larger stacks
+reorganized material storage around material roles and progression stages
+Marty now sells unlocked foundational materials in bulk quantities of 1, 10, or 50
+retired thirteen redundant materials and added automatic save conversion for existing stockpiles
+
+Fixes:
+
+Flame Shell now has practical targeted sources at early, mid, and high progression
+late recipes no longer expand into thirteen-ingredient grocery lists
+material drop stack ranges are now visible in the enemy Codex
+
+8/7/26
+
+Changes:
+
+new characters now begin with a Broken Phase Sword and 1,000 credits
+only the authored Balanced combat style is currently player-facing
+successful delve rewards now enter a persistent claim cache
+empowered enemies now grant increased experience, credits, and drop chance
+fabrication now permits exactly one five-second job at a time
+
+Fixes:
+
+passive tiers now count only points invested in lower tiers
+passive caps now match their authored rank data, and missing passive bonuses were removed
+loot rolls now reroll among rarities actually populated for the enemy
+Seeping Wound defaults to five stacks and Severed Limb supports equipment-raised caps
+Bionic Sync and Bionic Efficiency now follow their intended stat and proc roles
+removed copied proc packages from ordinary legacy equipment
+removed load-order-dependent duplicate runtime functions
+player health and shield now persist correctly between delve encounters
+Sharpen now actually grants its listed kinetic damage
+
+9/2/25
+
+Changes:
+
+added changelog (long overdue lol)
+added exp penalty to zones 5+ levels lower than player. At 10 levels lower, no exp is given
+added coulple dev tool options in settings, these will be removed eventually
+
+Fixes:
+
+fixed shop screen opening to a basically blank screen; should now always open to first shop automatically
+
+9/5/25
+
+Changes:
+
+added 2 new endgame weapons (testing)
+added 1 new body armor (testing)
+swapped left and right click functionality in inventory (this makes way more sense lol)
+removed a couple outdated items
+changed the item schema to be accurate and have notes
+
+Fixes:
+
+tooltips now have proper grouping and organization

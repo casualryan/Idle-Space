@@ -1,0 +1,21 @@
+{
+  "name": "corebound-synthetic-dominion",
+  "version": "1.0.0",
+  "description": "Corebound: Synthetic Dominion",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "balance": "node scripts/analyze-progression-balance.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "validate": "npm test && npm run build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "vite": "6.3.2"
+  }
+}

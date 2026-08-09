@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="450" viewBox="0 0 300 450">
+  <!-- Sci-fi character silhouette -->
+  <!-- Head -->
+  <ellipse cx="150" cy="40" rx="25" ry="30" fill="#00ffcc" opacity="0.1" />
+  
+  <!-- Body -->
+  <path d="M125,70 L120,200 L130,250 L145,300 L155,300 L170,250 L180,200 L175,70 Z" 
+        fill="#00ffcc" opacity="0.1" />
+  
+  <!-- Arms -->
+  <path d="M125,80 L85,140 L80,180 L95,190 L115,150 Z" fill="#00ffcc" opacity="0.1" />
+  <path d="M175,80 L215,140 L220,180 L205,190 L185,150 Z" fill="#00ffcc" opacity="0.1" />
+  
+  <!-- Legs -->
+  <path d="M130,250 L120,350 L110,380 L130,390 L145,300 Z" fill="#00ffcc" opacity="0.1" />
+  <path d="M170,250 L180,350 L190,380 L170,390 L155,300 Z" fill="#00ffcc" opacity="0.1" />
+  
+  <!-- Tech enhancements - circuit patterns -->
+  <path d="M140,45 L160,45 M145,30 L155,30 M135,55 L165,55" 
+        stroke="#00ffcc" stroke-width="1" opacity="0.2" fill="none" />
+  
+  <!-- Body circuits -->
+  <path d="M130,100 L170,100 M135,150 L165,150 M140,200 L160,200" 
+        stroke="#00ffcc" stroke-width="1" opacity="0.2" fill="none" />
+  
+  <!-- Arm circuits -->
+  <path d="M120,90 L90,160 M180,90 L210,160" 
+        stroke="#00ffcc" stroke-width="1" opacity="0.2" fill="none" />
+  
+  <!-- Leg circuits -->
+  <path d="M130,280 L120,370 M170,280 L180,370" 
+        stroke="#00ffcc" stroke-width="1" opacity="0.2" fill="none" />
+  
+  <!-- Bionic glow points -->
+  <circle cx="90" cy="170" r="5" fill="#00ffcc" opacity="0.3" />
+  <circle cx="210" cy="170" r="5" fill="#00ffcc" opacity="0.3" />
+  <circle cx="120" cy="380" r="5" fill="#00ffcc" opacity="0.3" />
+  <circle cx="180" cy="380" r="5" fill="#00ffcc" opacity="0.3" />
+  <circle cx="150" cy="35" r="3" fill="#00ffcc" opacity="0.3" />
+  
+  <!-- Energy core -->
+  <circle cx="150" cy="150" r="10" fill="#00ffcc" opacity="0.2" />
+  <circle cx="150" cy="150" r="5" fill="#00ffcc" opacity="0.4" />
+</svg> 

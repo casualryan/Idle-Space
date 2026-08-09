@@ -1,0 +1,333 @@
+Item Schema Guide (Range-Only Format)
+
+IMPORTANT UPDATE — WEAPON LOCAL DAMAGE SYSTEM (CURRENT)
+This guide now treats the weapon-local model as authoritative for weapons.
+
+Canonical weapon base field:
+- weaponBaseDamage: { [damageType]: { min:number, max:number } }
+
+Legacy compatibility (one-way fallback):
+- If a weapon instance/template has no weaponBaseDamage but has legacy damageTypes, runtime interprets legacy damageTypes as weaponBaseDamage.
+- Once interpreted, legacy weapon damageTypes must NOT also be applied as direct global player damage from the same source.
+
+Damage groups:
+- physical: kinetic + slashing
+- elemental: pyro + cryo + electric
+- chemical: corrosive + radiation
+
+Weapon-local modifier fields (instance-level):
+- weaponLocalFlatDamage: { [damageType]: number }  
+  Example: +# to Weapon X Damage
+- weaponLocalTypeIncrease: { [damageType]: number }  
+  Example: #% Increased Weapon X Damage
+- weaponLocalGroupIncrease: { physical?: number, elemental?: number, chemical?: number }  
+  Example: #% Increased Weapon Physical/Elemental/Chemical Damage
+- weaponDamageConversion: { source: damageType, target: damageType, percent?: number }  
+  Example: X Weapon Damage Converted to Y
+- weaponLocalAttackSpeedPercent: number  
+  Example: #% Increased Weapon Attack Speed
+
+Weapon modifier eligibility rules:
+- Flat and increased weapon damage mods roll only within the weapon's base damage group.
+- Cross-pool local damage is not a normal roll path; conversion is the exception.
+- Same-pool added damage is valid and can create extra final weapon damage lines.
+
+Implemented local calculation order:
+1) weaponBaseDamage
+2) + flat local weapon damage
+3) conversion
+4) local increased weapon damage (type + group, additive, destination-based after conversion)
+5) final local weapon damage
+6) export to global/player pipeline
+7) apply global/player modifiers and normal combat pipeline
+
+Attack speed order:
+1) bAttackSpeed (weapon base)
+2) local weapon attack speed modifier (weaponLocalAttackSpeedPercent)
+3) global player attackSpeedModifier stack
+
+Tooltip expectations for weapons:
+- Final Weapon Damage appears above attack speed.
+- Base Weapon Damage is shown beneath/alongside final damage.
+- Attack Speed shown with Base Attack Speed when modified.
+- Weapon Modifiers shown as a dedicated section.
+- Wording indicates final weapon damage includes local weapon modifiers.
+
+DEPRECATED FOR WEAPONS:
+- Treating top-level damageTypes on weapon templates as direct global player damage source.
+- For weapons, use weaponBaseDamage as canonical local base.
+
+NOTE:
+- Existing sections/examples below may include legacy `damageTypes` authoring examples.
+- For weapon authoring, follow the updated rules above first.
+
+Overview
+All numeric stats MUST be expressed as explicit range objects of the form { min: #, max: # }.
+To represent a fixed value, use min == max (e.g., { min: 12, max: 12 }).
+
+Unless otherwise noted, integers are rolled for integer-looking values. Floats are rolled when decimals are present (e.g., { min: 0.5, max: 1.25 }). Percent values defined at top-level are expressed as percentage ranges and converted to fractions internally where required.
+
+Core Fields
+- name: string
+- type: "Weapon" | "Armor" | "Bionic" | "Material" | "Component"
+- icon: string (path to icon)
+- slot: equipment slot for equippable items (e.g., 'mainHand', 'offHand', 'head', 'chest', 'legs', 'feet', 'gloves', 'bionic')
+- stackable: boolean (legacy compatibility for materials; runtime material
+  quantities live in fixed-slot dedicated storage capped at 50,000 each)
+- levelRequirement: { min: number, max: number } (rolled by the generator; used to gate equipping/buying)
+
+Wires (Sockets)
+- wires: {
+  totalSlots: number | "min-max",           // total wire sockets that can roll on the item
+  blackSlotsMax?: number,                    // optional cap for black (universal) sockets
+  colors?: {                                 // optional color-specific caps (as "min-max" strings)
+    red?: "min-max",
+    green?: "min-max",
+    blue?: "min-max",
+    black?: "min-max"
+  }
+}
+- rolledWires (runtime only, created by generator): Array<{ color: 'red'|'green'|'blue'|'black', chip?: ChipRef }>
+  - The generator will roll an allocation of wire colors and populate an empty list of sockets for runtime use.
+  - black sockets accept any chip color; enforce maximum one black chip equipped per character across all gear.
+- rolledModifiers (runtime only, created by generator): Array<{
+    id: string,
+    displayName: string,
+    grade: 1|2|3|4|5,
+    gradeLabel: string, // "Grade I".."Grade V"
+    value: number,      // stored value as applied (fractions for top-level percent keys)
+    displayValue: number, // player-facing roll value (usually percent points for % mods)
+    statPath: string,
+    isPercent: boolean
+  }>
+  - Generated equippables can receive rolledModifiers based on item level.
+  - Materials/components/chips do not roll generated modifiers.
+  - rolledModifiers are saved with the item instance and should not reroll on load.
+
+Weapon-Specific
+- weaponType: string (e.g., Sword, Staff, Dagger)
+- bAttackSpeed: { min: number, max: number }
+
+Common Numeric Stats (top-level, ranges only)
+- damageTypes: { [damageType]: { min: number, max: number } }
+  Example types: kinetic, slashing, pyro, cryo, electric, corrosive, radiation
+
+- defenseTypes: { [defenseType]: { min: number, max: number } }
+  Example types: physicalResistance, elementalResistance, chemicalResistance
+
+- healthBonus: { min: number, max: number }
+-   Flat max health added to the character. Applied before percent bonuses.
+- energyShieldBonus: { min: number, max: number }
+-   Flat energy shield added. Works like an additional HP buffer in combat.
+- healthBonusPercent: { min: number, max: number }  // percentage, converted internally to fraction
+-   Percent increase to max health. Multiplies after flat healthBonus.
+- energyShieldBonusPercent: { min: number, max: number }
+-   Percent increase to max energy shield. Multiplies after flat energyShieldBonus.
+- attackSpeedModifier: { min: number, max: number } // percentage, converted internally
+-   Percent modifier to base attack speed. Higher is faster; affects DPS.
+- criticalChanceModifier: { min: number, max: number } // percentage, converted internally
+-   Percent points added to critical strike chance.
+- criticalMultiplierModifier: { min: number, max: number } // percentage, converted internally
+-   Percent increase to crit damage multiplier (e.g., +50% turns 1.5x into 2.0x).
+- precision: { min: number, max: number }
+-   Increases hit accuracy/consistency. Offsets enemy deflection in damage roll.
+- deflection: { min: number, max: number }
+-   Reduces incoming effectiveness of attacks. Opposes attacker precision.
+- healthRegen: { min: number, max: number }
+-   Health regenerated per second during combat.
+- armorEfficiency: { min: number, max: number }
+-   Increases activation chance of armor-triggered effects (defensive/whenHit).
+- weaponEfficiency: { min: number, max: number }
+-   Increases activation chance of weapon/onHit/onCritical effects.
+- bionicEfficiency: { min: number, max: number }
+-   Increases activation chance of bionic-triggered effects.
+- bionicSync: { min: number, max: number }
+-   Multiplies stats granted by equipped bionics (scales their contributions).
+- comboAttack: { min: number, max: number }
+-   Chance for additional combo strikes beyond the base chain.
+- comboEffectiveness: { min: number, max: number }
+-   Percent bonus damage applied to combo attacks beyond the base.
+- additionalComboAttacks: { min: number, max: number }
+-   Flat number of extra hits appended to a combo sequence when it procs.
+- armorPenetration: { min: number, max: number }
+-   Percentage points removed from the resistance matching each damage component.
+
+- debuffChanceBonus: { min: number, max: number }
+-   Percentage points added to the inherent status-application chance.
+- statusResistance: { min: number, max: number }
+-   Percentage points removed from an attacker's inherent status-application chance.
+- statusDurationReduction: { min: number, max: number }
+-   Percent reduction to hostile status duration, capped at 75% in combat.
+
+statModifiers (optional catch-all)
+Use this object for any additional numeric stats you want to define. All numeric-like values MUST be { min, max }.
+Special support inside statModifiers:
+- damageTypes: percent modifiers by damage type (stored as +X% at item level)
+  Example: { kinetic: { min: 5, max: 10 }, pyro: { min: 8, max: 8 } }
+
+- damageGroups: percent modifiers by group (stored as +X% at item level)
+  Example: { physical: { min: 5, max: 10 }, elemental: { min: 10, max: 20 } }
+
+Any other numeric fields under statModifiers will be rolled and assigned as-is using their { min, max } forms. If you provide attackSpeedModifier only here, it will be mirrored to the top-level for compatibility.
+
+Mod pools (roll groups)
+Define optional groups where the generator picks N entries from a list. Counts and values are { min, max } ranges.
+
+Schema:
+rollGroups: [
+  {
+    pick: 1 | "1-2" | { min: 1, max: 3 },
+    from: [
+      { path: "damageTypes.kinetic", value: "10-20" },
+      { path: "damageTypes.slashing", value: "10-20" }
+    ]
+  },
+  {
+    pick: "2-2", // exactly 2
+    from: [
+      { path: "passiveBonuses.Swift Strikes", value: "1-2" },
+      { path: "passiveBonuses.Kinetic Focus", value: "1-2" },
+      { path: "passiveBonuses.Slashing Focus", value: "1-2" },
+      { path: "passiveBonuses.Physical Mastery", value: "1-2" }
+    ]
+  }
+]
+
+Notes:
+- path is a dot path into the item object (e.g., damageTypes.kinetic, statModifiers.damageTypes.pyro, passiveBonuses.Some Passive, criticalChanceModifier, healthBonus, etc.)
+- All numeric values are { min, max } range objects (no plain numbers or "X-Y" strings).
+- Percent top-level keys (attackSpeedModifier, criticalChanceModifier, criticalMultiplierModifier, healthBonusPercent, energyShieldBonusPercent) interpret { min, max } as percents and convert internally to fractions.
+- Floating values like healthRegen are preserved to 2 decimals.
+- rollGroups are additive with guaranteed stats; use them to introduce variability across items.
+- For generated rolledModifiers, top-level percent stat paths store fractions internally:
+  - healthBonusPercent, energyShieldBonusPercent, attackSpeedModifier, criticalChanceModifier, criticalMultiplierModifier
+  - Example: +12% is stored as 0.12 on the instance, with displayValue as 12.
+- damage/stat modifier percentage rolls under statModifiers (e.g. statModifiers.damageTypes.kinetic) are stored as whole percent points (e.g. 12 for +12%).
+
+Passive Bonuses
+- passiveBonuses: { [Passive Name]: number | "min-max" | {min,max} }
+
+Effects (unchanged)
+- effects: [
+    {
+      trigger: 'onHit' | 'onCritical' | 'whenHit' | 'bionic' | 'onHeal',
+      // trigger notes:
+      // - onHit: fires on successful player attack (uses weaponEfficiency for proc bonus)
+      // - onCritical: fires only on crits (uses weaponEfficiency)
+      // - whenHit: fires when wearer takes a hit (uses armorEfficiency)
+      // - bionic: fires from passive bionic rhythms (uses bionicEfficiency)
+      // - onHeal: fires when this entity receives a heal (no efficiency bonus)
+
+      chance: number (0-100), // 30 = 30% base chance; efficiencies may increase this
+      action: 'dealDamage' | 'heal' | 'applyBuff' | 'applyDebuff',
+      // action notes:
+      // - dealDamage: direct damage to target; supports damageTypes in parameters
+      // - heal: restore health to wearer or ally
+      // - applyBuff: apply named buff to target/self
+      // - applyDebuff: apply named debuff to target (e.g., seepingWound)
+
+      parameters: { ... }
+    }
+  ]
+
+Disassembly
+- isDisassembleable: boolean
+- disassembleResults: Array<{ name: string, quantity: number }>
+
+Example: Full Weapon Using Every Stat (range-only)
+{
+  "name": "All-Stats Test Blade",
+  "type": "Weapon",
+  "weaponType": "Sword",
+  "icon": "icons/ironsword.png",
+  "slot": "mainHand",
+  "levelRequirement": { "min": 10, "max": 12 },
+  "bAttackSpeed": { "min": 1.0, "max": 1.2 },
+  "damageTypes": {
+    "slashing": { "min": 25, "max": 35 },
+    "kinetic": { "min": 5, "max": 10 }
+  },
+  "defenseTypes": {
+    "physicalResistance": { "min": 0, "max": 2 }
+  },
+  "healthBonus": { "min": 10, "max": 20 },
+  "energyShieldBonus": { "min": 5, "max": 10 },
+  "healthBonusPercent": { "min": 5, "max": 10 },
+  "energyShieldBonusPercent": { "min": 5, "max": 10 },
+  "attackSpeedModifier": { "min": 5, "max": 15 },
+  "criticalChanceModifier": { "min": 5, "max": 10 },
+  "criticalMultiplierModifier": { "min": 10, "max": 20 },
+  "precision": { "min": 2, "max": 4 },
+  "deflection": { "min": 1, "max": 3 },
+  "healthRegen": { "min": 0.25, "max": 0.5 },
+  "armorEfficiency": { "min": 3, "max": 7 },
+  "weaponEfficiency": { "min": 5, "max": 12 },
+  "bionicEfficiency": { "min": 0, "max": 0 },
+  "bionicSync": { "min": 0, "max": 0 },
+  "comboAttack": { "min": 3, "max": 8 },
+  "comboEffectiveness": { "min": 10, "max": 25 },
+  "additionalComboAttacks": { "min": 0, "max": 1 },
+  "armorPenetration": { "min": 5, "max": 10 },
+  "statModifiers": {
+    "damageTypes": {
+      "slashing": { "min": 5, "max": 10 },
+      "pyro": { "min": 3, "max": 6 }
+    },
+    "damageGroups": {
+      "physical": { "min": 5, "max": 10 },
+      "elemental": { "min": 10, "max": 15 }
+    },
+    "kineticMastery": { "min": 1, "max": 2 },
+    "severedLimbChance": { "min": 50, "max": 100 },
+    "maxSeveredLimbs": { "min": 0, "max": 1 },
+    "precision": { "min": 1, "max": 2 }
+  },
+  "passiveBonuses": {
+    "Kinetic Mastery": { "min": 1, "max": 2 },
+    "Slashing Mastery": { "min": 1, "max": 3 }
+  },
+  "rollGroups": [
+    {
+      "pick": { "min": 1, "max": 1 },
+      "from": [
+        { "path": "damageTypes.kinetic", "value": { "min": 10, "max": 20 } },
+        { "path": "damageTypes.slashing", "value": { "min": 10, "max": 20 } }
+      ]
+    },
+    {
+      "pick": { "min": 2, "max": 2 },
+      "from": [
+        { "path": "passiveBonuses.Swift Strikes", "value": { "min": 1, "max": 2 } },
+        { "path": "passiveBonuses.Kinetic Focus", "value": { "min": 1, "max": 2 } },
+        { "path": "passiveBonuses.Slashing Focus", "value": { "min": 1, "max": 2 } },
+        { "path": "passiveBonuses.Physical Mastery", "value": { "min": 1, "max": 2 } }
+      ]
+    },
+    {
+      "pick": { "min": 1, "max": 1 },
+      "from": [
+        { "path": "criticalChanceModifier", "value": { "min": 5, "max": 5 } }
+      ]
+    }
+  ],
+  "wires": {
+    "totalSlots": "1-3",
+    "blackSlotsMax": 1,
+    "colors": { "red": "0-2", "green": "0-2", "blue": "0-2", "black": "0-1" }
+  },
+  "effects": [
+    {
+      "trigger": "onCritical",
+      "chance": 1.0,
+      "action": "applyDebuff",
+      "parameters": { "debuffName": "seepingWound", "duration": 10, "useSourceDamage": true }
+    }
+  ],
+  "isDisassembleable": true,
+  "disassembleResults": [ { "name": "Scrap Metal", "quantity": 2 } ],
+  "description": "Demonstrates every field in one item."
+}
+
+Notes
+- Any stat can be extended in the future; the generator is tolerant to new numeric fields at top-level and under statModifiers.
+- For percent stats at top level (attackSpeedModifier, healthBonusPercent, energyShieldBonusPercent, criticalChanceModifier, criticalMultiplierModifier), define values as % ranges; they will be converted to fractions internally when required by the stats system.

@@ -1,0 +1,88 @@
+STYLE TARGET:
+- Dark sci-fi/cyberpunk item icon style.
+- Object centered on a dark transparent or very dark background.
+- High contrast.
+- Clean, readable silhouette.
+- Slight glow, rim light, or edge highlight is okay.
+- Icon should feel like a game item/material pickup, not a realistic product photo.
+- Prefer chunky, bold shapes over thin, tiny, delicate shapes.
+- Background is solid black, NOT transparent
+
+IMPORTANT COMPOSITION RULE:
+The item should fill most of the 512x512 canvas.
+
+Use this guideline:
+- Object should occupy roughly 70-85% of the canvas height or width.
+- Leave only a modest border/padding around the object.
+- Do NOT make the item small in the middle with huge empty space.
+- Avoid thin objects that only occupy the center 30-40% of the image.
+- The icon should be readable when scaled down to 64x64 or 48x48.
+
+REFERENCE DIRECTION:
+Use the ore-style icon as the better reference:
+- large central object
+- bold shape
+- fills the frame
+- easy to recognize from far away
+
+Avoid the wire-bundle problem:
+- object too small
+- too much dead space
+- thin details getting lost
+- looks far away in the inventory slot
+
+FRAMING:
+- Center the object.
+- Slight 3/4 angle is good if it improves readability.
+- Avoid extreme perspective.
+- Avoid placing the object near the edges.
+- Avoid tiny scattered pieces unless the material specifically requires it.
+- If the material is naturally small, exaggerate it into a larger icon-friendly chunk, bundle, cluster, vial, canister, core, plate, shard, or container.
+
+BACKGROUND:
+- Prefer transparent background if supported.
+- If not transparent, use a very dark navy/black background that matches a sci-fi UI.
+- Do not include an inventory frame, border, quantity number, text label, UI button, or tooltip.
+- Generate only the item object itself.
+
+COLOR / MATERIAL READABILITY:
+- Metal materials: silver, gray, dark steel, chrome, scratched edges.
+- Copper/electric materials: copper/orange accents, blue electric highlights if appropriate.
+- Pyro materials: orange/red glow, heated metal, ember-like core.
+- Cryo materials: icy blue/white glow, frost crystals, cold vapor.
+- Chemical/corrosive materials: toxic green/yellow fluid, sealed containers, acid stains.
+- Radiation materials: sickly green, yellow, purple, glowing isotope core, hazard feel without text.
+- Neural/AI materials: purple/blue circuitry, crystalline chips, brainlike circuitry, glowing data nodes.
+- Quantum/phase materials: violet/cyan shimmer, impossible facets, energy distortion.
+
+DETAIL LEVEL:
+- Use enough detail to look polished at 512x512.
+- Do not use so much tiny detail that the item becomes muddy at small size.
+- Strong outer silhouette first, internal detail second.
+
+CONSISTENCY:
+- All icons should look like they belong in the same game.
+- Similar lighting angle across icons.
+- Similar contrast level.
+- Similar object scale.
+- Similar amount of padding.
+
+NEGATIVE REQUIREMENTS:
+- No text.
+- No numbers.
+- No UI frame.
+- No inventory border.
+- No quantity marker.
+- No character/hand holding the item.
+- No full scene or background environment.
+- No tiny object floating in the middle of the canvas.
+- No overly realistic photo style.
+- No low-contrast gray-on-black mush.
+
+OUTPUT:
+- 512x512 pixels.
+- One icon per requested material.
+- PNG preferred.
+- Transparent background preferred.
+
+Make the material object large and readable, filling roughly 75-85% of the canvas, with a bold silhouette suitable for a small inventory icon.
