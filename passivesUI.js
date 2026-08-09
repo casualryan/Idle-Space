@@ -39,6 +39,8 @@ let passiveTreePointerPosition = null;
 const PASSIVE_SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 const PASSIVE_TREE_SEARCH_DELAY_MS = 140;
 const PASSIVE_TREE_RENDER_BUFFER = 0.24;
+const PASSIVE_TREE_RENDER_RESERVE = 0.5;
+const PASSIVE_TREE_EDGE_SCREEN_MARGIN = 32;
 const PASSIVE_TREE_OVERVIEW_THRESHOLD = 0.62;
 const PASSIVE_TREE_CLOSE_THRESHOLD = 0.24;
 const PASSIVE_TREE_OVERVIEW_TYPES = new Set(['origin', 'gateway', 'travel', 'connector', 'bridge', 'notable', 'keystone']);
@@ -433,27 +435,43 @@ function initializePassiveTreeRenderer(canvas, svg) {
     if (typeof ResizeObserver === 'function') {
         passiveTreeRenderer.resizeObserver = new ResizeObserver(() => {
             if (!passiveTreeRenderer || passiveTreeRenderer.svg !== svg) return;
-            const previousRect = passiveTreeRenderer.viewportRect;
             passiveTreeRenderer.viewportRect = null;
             passiveTooltipMetrics = null;
             requestAnimationFrame(() => {
                 if (passiveTreeRenderer?.svg !== svg) return;
                 const nextRect = getPassiveTreeViewportRect(svg, true);
-                if (previousRect?.width > 0 && previousRect?.height > 0 && nextRect.width > 0 && nextRect.height > 0) {
-                    const view = passiveTreePendingView || passiveTreeView;
-                    const centerX = view.x + view.width / 2;
-                    const centerY = view.y + view.height / 2;
-                    const nextAspect = nextRect.width / nextRect.height;
-                    const width = nextAspect >= 1 ? view.width : view.height * nextAspect;
-                    const height = nextAspect >= 1 ? view.width / nextAspect : view.height;
-                    passiveTreeView = { x: centerX - width / 2, y: centerY - height / 2, width, height };
-                    passiveTreePendingView = null;
-                }
+                synchronizePassiveTreeViewToViewport(nextRect);
                 renderPassiveTreeGraph({ forceVisibility: true });
             });
         });
         passiveTreeRenderer.resizeObserver.observe(canvas.parentElement);
     }
+}
+
+function isUsablePassiveTreeViewportRect(rect) {
+    return Number(rect?.width) > 0 && Number(rect?.height) > 0;
+}
+
+function synchronizePassiveTreeViewToViewport(rect) {
+    if (!isUsablePassiveTreeViewportRect(rect)) return false;
+    const view = passiveTreePendingView || passiveTreeView;
+    const currentAspect = view.width / Math.max(1, view.height);
+    const nextAspect = rect.width / rect.height;
+    if (Math.abs(currentAspect - nextAspect) <= Math.max(currentAspect, nextAspect) * 0.001) return false;
+
+    const currentHome = getPassiveTreeHomeView(currentAspect);
+    const zoomRatio = Math.max(0.001, Math.min(
+        view.width / Math.max(1, currentHome.width),
+        view.height / Math.max(1, currentHome.height)
+    ));
+    const nextHome = getPassiveTreeHomeView(nextAspect);
+    const width = nextHome.width * zoomRatio;
+    const height = nextHome.height * zoomRatio;
+    const centerX = view.x + view.width / 2;
+    const centerY = view.y + view.height / 2;
+    passiveTreeView = { x: centerX - width / 2, y: centerY - height / 2, width, height };
+    passiveTreePendingView = null;
+    return true;
 }
 
 function getPassiveTreeDetailLevel(view = passiveTreePendingView || passiveTreeView) {
@@ -476,11 +494,13 @@ function getPassiveTreeRenderBounds(view) {
 }
 
 function passiveTreeBoundsContainView(bounds, view) {
-    return Boolean(bounds)
-        && view.x >= bounds.x
-        && view.y >= bounds.y
-        && view.x + view.width <= bounds.x + bounds.width
-        && view.y + view.height <= bounds.y + bounds.height;
+    if (!bounds) return false;
+    const reserveX = view.width * PASSIVE_TREE_RENDER_BUFFER * PASSIVE_TREE_RENDER_RESERVE;
+    const reserveY = view.height * PASSIVE_TREE_RENDER_BUFFER * PASSIVE_TREE_RENDER_RESERVE;
+    return view.x >= bounds.x + reserveX
+        && view.y >= bounds.y + reserveY
+        && view.x + view.width <= bounds.x + bounds.width - reserveX
+        && view.y + view.height <= bounds.y + bounds.height - reserveY;
 }
 
 function isPassivePointInsideBounds(x, y, bounds, margin = 0) {
@@ -488,6 +508,17 @@ function isPassivePointInsideBounds(x, y, bounds, margin = 0) {
         && y + margin >= bounds.y
         && x - margin <= bounds.x + bounds.width
         && y - margin <= bounds.y + bounds.height;
+}
+
+function passiveTreeSegmentBoundsOverlap(from, to, bounds, margin = 0) {
+    const minX = Math.min(from.x, to.x);
+    const maxX = Math.max(from.x, to.x);
+    const minY = Math.min(from.y, to.y);
+    const maxY = Math.max(from.y, to.y);
+    return maxX + margin >= bounds.x
+        && minX - margin <= bounds.x + bounds.width
+        && maxY + margin >= bounds.y
+        && minY - margin <= bounds.y + bounds.height;
 }
 
 function getPassiveNodeRadius(node) {
@@ -638,18 +669,14 @@ function getPassiveCanvasNodeStrokeWidth(node, detailLevel) {
     return ['travel', 'connector', 'bridge'].includes(node.type) ? 2 : 3;
 }
 
-function drawPassiveCanvasEdges(context, manuallyActive, visibleNodeIds) {
+function drawPassiveCanvasEdges(context, manuallyActive, view) {
     const paths = { inactive: [], available: [], active: [] };
+    const edgeMargin = PASSIVE_TREE_EDGE_SCREEN_MARGIN * view.width
+        / Math.max(1, getPassiveTreeViewportRect(passiveTreeRenderer.svg).width);
     for (const edge of PASSIVE_TREE.edges) {
         const from = getPassiveNode(edge.from);
         const to = getPassiveNode(edge.to);
-        const bothVisible = visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to);
-        const overviewRoute = passiveTreeRenderer.detailLevel === 'overview'
-            && isPassivePointInsideBounds(from.x, from.y, passiveTreeRenderer.renderBounds)
-            && isPassivePointInsideBounds(to.x, to.y, passiveTreeRenderer.renderBounds)
-            && ((visibleNodeIds.has(from.id) && PASSIVE_TREE_OVERVIEW_TYPES.has(from.type))
-                || (visibleNodeIds.has(to.id) && PASSIVE_TREE_OVERVIEW_TYPES.has(to.type)));
-        if (!bothVisible && !overviewRoute) continue;
+        if (!passiveTreeSegmentBoundsOverlap(from, to, view, edgeMargin)) continue;
         const active = manuallyActive.has(from.id) && manuallyActive.has(to.id);
         const available = active || manuallyActive.has(from.id) || manuallyActive.has(to.id);
         const category = active ? 'active' : available ? 'available' : 'inactive';
@@ -740,7 +767,7 @@ function drawPassiveTreeCanvas(view, manuallyActive) {
         context.stroke();
     }
     context.setLineDash([]);
-    drawPassiveCanvasEdges(context, manuallyActive, renderer.visibleNodeIds);
+    drawPassiveCanvasEdges(context, manuallyActive, view);
     for (const nodeId of renderer.visibleNodeIds) drawPassiveCanvasNode(context, getPassiveNode(nodeId), manuallyActive);
 }
 
@@ -793,12 +820,15 @@ function renderPassiveTreeGraph({ forceVisibility = false, forceState = false } 
     const svg = document.getElementById('passive-tree-svg');
     if (!canvas || !svg) return;
     if (!passiveTreeRenderer || passiveTreeRenderer.svg !== svg) initializePassiveTreeRenderer(canvas, svg);
+    const viewportRect = getPassiveTreeViewportRect(svg, forceVisibility);
+    const aspectChanged = synchronizePassiveTreeViewToViewport(viewportRect);
     const view = passiveTreePendingView || passiveTreeView;
     const detailLevel = getPassiveTreeDetailLevel(view);
     svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.width} ${view.height}`);
     svg.dataset.detail = detailLevel;
     const manuallyActive = getPassiveTreeManualActiveSet();
     const visibilityChanged = forceVisibility
+        || aspectChanged
         || passiveTreeRenderer.detailLevel !== detailLevel
         || !passiveTreeBoundsContainView(passiveTreeRenderer.renderBounds, view);
     if (visibilityChanged) {
@@ -1006,13 +1036,19 @@ function bindPassiveTreeInteractions() {
             return;
         }
         if (event.button !== 0) return;
-        const view = passiveTreePendingView || passiveTreeView;
         const rect = getPassiveTreeViewportRect(svg, true);
+        synchronizePassiveTreeViewToViewport(rect);
+        const view = passiveTreePendingView || passiveTreeView;
+        const scale = Math.min(
+            rect.width / Math.max(1, view.width),
+            rect.height / Math.max(1, view.height)
+        );
         passiveTreeDragState = {
             pointerId: event.pointerId,
             clientX: event.clientX,
             clientY: event.clientY,
             rect,
+            scale,
             view: { ...view }
         };
         svg.setPointerCapture?.(event.pointerId);
@@ -1025,10 +1061,10 @@ function bindPassiveTreeInteractions() {
             return;
         }
         if (event.pointerId !== passiveTreeDragState.pointerId) return;
-        const { rect, view } = passiveTreeDragState;
+        const { scale, view } = passiveTreeDragState;
         schedulePassiveTreeView({
-            x: view.x - (event.clientX - passiveTreeDragState.clientX) * view.width / Math.max(1, rect.width),
-            y: view.y - (event.clientY - passiveTreeDragState.clientY) * view.height / Math.max(1, rect.height),
+            x: view.x - (event.clientX - passiveTreeDragState.clientX) / Math.max(Number.EPSILON, scale),
+            y: view.y - (event.clientY - passiveTreeDragState.clientY) / Math.max(Number.EPSILON, scale),
             width: view.width,
             height: view.height
         });
@@ -1131,10 +1167,10 @@ function renderPassiveTreePointCounters() {
 }
 
 function refreshPassiveTreeDynamicState() {
-    renderPassiveTreeGraph({ forceVisibility: true, forceState: true });
     renderPassiveNodeDetails();
     renderPassiveTreeSummary();
     renderPassiveTreePointCounters();
+    renderPassiveTreeGraph({ forceVisibility: true, forceState: true });
 }
 
 function displayPassivesScreen() {

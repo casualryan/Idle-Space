@@ -385,6 +385,86 @@ test('passive canvas maps pointer coordinates and paints at a capped device pixe
   assert.ok(result.calls.transforms >= 2, 'canvas transform was not reset and reapplied');
 });
 
+test('passive tree repairs a hidden square viewport before allocation-driven rendering', () => {
+  const result = evaluateClassic(
+    ['passives.js', 'passivesUI.js'],
+    `(() => {
+      passiveTreeView = getPassiveTreeHomeView(1);
+      const before = { ...passiveTreeView };
+      const rect = { left: 0, top: 0, width: 1200, height: 700 };
+      const changed = synchronizePassiveTreeViewToViewport(rect);
+      const after = { ...passiveTreeView };
+      const scale = Math.min(rect.width / after.width, rect.height / after.height);
+      return {
+        changed,
+        beforeAspect: before.width / before.height,
+        afterAspect: after.width / after.height,
+        viewportAspect: rect.width / rect.height,
+        centerShiftX: (after.x + after.width / 2) - (before.x + before.width / 2),
+        centerShiftY: (after.y + after.height / 2) - (before.y + before.height / 2),
+        paintedWidth: after.width * scale,
+        paintedHeight: after.height * scale,
+        horizontalPanFor100Pixels: 100 / scale,
+        verticalPanFor100Pixels: 100 / scale
+      };
+    })()`,
+    {
+      player: {
+        passiveTreeVersion: 5, passiveAllocations: {}, passivePoints: 2, gearPassiveBonuses: {}, level: 1,
+        totalStats: { health: 100, energyShield: 0 }, currentHealth: 100, currentShield: 0,
+        calculateStats: () => {}
+      },
+      document: { getElementById: () => null },
+      requestAnimationFrame: () => 0,
+      cancelAnimationFrame: () => {}
+    }
+  );
+  assert.equal(result.changed, true, 'hidden square initialization was not corrected when the viewport became visible');
+  assert.equal(result.beforeAspect, 1);
+  assert.ok(Math.abs(result.afterAspect - result.viewportAspect) < 0.0001, 'tree view does not match the visible viewport aspect');
+  assert.ok(Math.abs(result.centerShiftX) < 0.0001 && Math.abs(result.centerShiftY) < 0.0001, 'aspect repair moved the camera center');
+  assert.ok(Math.abs(result.paintedWidth - 1200) < 0.01, 'aspect repair leaves horizontal dead bands');
+  assert.ok(Math.abs(result.paintedHeight - 700) < 0.01, 'aspect repair leaves vertical dead bands');
+  assert.equal(result.horizontalPanFor100Pixels, result.verticalPanFor100Pixels, 'drag axes do not use the same rendered scale');
+});
+
+test('passive tree keeps vertical routes painted independently of endpoint culling', () => {
+  const result = evaluateClassic(
+    ['passives.js', 'passivesUI.js'],
+    `(() => {
+      const view = { x: -1200, y: -675, width: 2400, height: 1350 };
+      const renderBounds = getPassiveTreeRenderBounds(view);
+      const smallVerticalPan = { ...view, y: view.y + view.height * PASSIVE_TREE_RENDER_BUFFER * 0.75 };
+      return {
+        refreshesWithReserve: !passiveTreeBoundsContainView(renderBounds, smallVerticalPan),
+        crossingVerticalEdge: passiveTreeSegmentBoundsOverlap(
+          { x: 0, y: view.y - 700 },
+          { x: 0, y: view.y + view.height + 700 },
+          view
+        ),
+        rejectsDistantVerticalEdge: passiveTreeSegmentBoundsOverlap(
+          { x: view.x + view.width + 700, y: view.y - 700 },
+          { x: view.x + view.width + 700, y: view.y + view.height + 700 },
+          view
+        )
+      };
+    })()`,
+    {
+      player: {
+        passiveTreeVersion: 5, passiveAllocations: {}, passivePoints: 2, gearPassiveBonuses: {}, level: 1,
+        totalStats: { health: 100, energyShield: 0 }, currentHealth: 100, currentShield: 0,
+        calculateStats: () => {}
+      },
+      document: { getElementById: () => null },
+      requestAnimationFrame: () => 0,
+      cancelAnimationFrame: () => {}
+    }
+  );
+  assert.equal(result.refreshesWithReserve, true, 'vertical culling waits until its entire buffer is exhausted');
+  assert.equal(result.crossingVerticalEdge, true, 'a route crossing the viewport was culled with both endpoints off-screen');
+  assert.equal(result.rejectsDistantVerticalEdge, false, 'unrelated distant routes are no longer culled');
+});
+
 test('level progression awards two passive points and starts level one with two', () => {
   const globalSource = read('global.js');
   const codexSource = read('codex.js');
