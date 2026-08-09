@@ -261,14 +261,28 @@ test('radial passive tree is connected, stable, and honors allocation/refund rul
         familyTargets: PASSIVE_TREE_SECTOR_ORDER.map(sector => [...new Set(passives.filter(node => node.sector === sector && node.specialty === 'family').map(node => node.target))]),
         tagTargets: PASSIVE_TREE_SECTOR_ORDER.map(sector => [...new Set(passives.filter(node => node.sector === sector && node.specialty === 'tag').map(node => node.target))]),
         styleTargets: PASSIVE_TREE_SECTOR_ORDER.map(sector => [...new Set(passives.filter(node => node.sector === sector && node.specialty === 'style').map(node => node.target))]),
+        bridgeSeams: PASSIVE_BRIDGE_DEFINITIONS.map(bridge => {
+          const nodes = passives.filter(node => node.sector === 'bridge'
+            && node.sectors?.join('|') === bridge.sectors.join('|'));
+          return {
+            count: nodes.length,
+            types: nodes.map(node => node.type),
+            names: nodes.map(node => node.name),
+            lifeBonuses: nodes.map(node => Number(node.effects.healthPercent || 0)),
+            expectedNames: [bridge.notable, bridge.lifeNotable],
+            isTwoNodeRoute: nodes.length === 2
+              && nodes.every(node => node.connections.length === 2)
+              && nodes[0].connections.includes(nodes[1].id)
+          };
+        }),
         jewels: passives.filter(node => node.type === 'jewel').length,
         before, blockedOuter, blockedRefund, leafRefund
       };
     })()`
   );
   assert.equal(result.validation.valid, true, result.validation.errors.join('; '));
-  assert.equal(result.nodeCount, 1595);
-  assert.equal(result.edgeCount, 1869);
+  assert.equal(result.nodeCount, 1490);
+  assert.equal(result.edgeCount, 1764);
   assert.equal(result.clusterCount, 147);
   assert.equal(result.notableCount, 210);
   assert.equal(result.keystones, 35);
@@ -277,6 +291,11 @@ test('radial passive tree is connected, stable, and honors allocation/refund rul
   assert.equal(result.familyTargets.every(targets => targets.length === 7), true, 'weapon families are not distributed through every sector');
   assert.equal(result.tagTargets.every(targets => targets.length === 4), true, 'weapon tags are not distributed through every sector');
   assert.equal(result.styleTargets.every(targets => targets.length === 4), true, 'combat styles are not distributed through every sector');
+  assert.equal(result.bridgeSeams.every(seam => seam.count === 2), true, 'an outer sector seam contains more than two passives');
+  assert.equal(result.bridgeSeams.every(seam => seam.types.every(type => type === 'notable')), true, 'outer sector seams are not exclusively notables');
+  assert.equal(result.bridgeSeams.every(seam => seam.names.join('|') === seam.expectedNames.join('|')), true, 'an outer sector seam lost its authored notable identities');
+  assert.equal(result.bridgeSeams.every(seam => seam.isTwoNodeRoute), true, 'an outer sector seam is not a two-point route');
+  assert.equal(result.bridgeSeams.every(seam => seam.lifeBonuses.filter(bonus => bonus === 3).length === 1), true, 'an outer sector seam lacks its 3% maximum-health notable');
   assert.equal(result.sectorCounts.every(count => count >= 207), true);
   assert.equal(result.lifeCounts.every(count => count >= 20), true, 'life access is not distributed across every sector');
   assert.equal(result.shieldCounts.every(count => count >= 15), true, 'Energy Shield access is not distributed across every sector');
@@ -307,7 +326,7 @@ test('passive tree renderer uses a culled canvas graph with an incremental SVG i
   const overviewTypes = new Set(['origin', 'gateway', 'travel', 'connector', 'bridge', 'notable', 'keystone']);
   const overviewNodeCount = passiveDefinitions.filter(node => overviewTypes.has(node.type)).length;
 
-  assert.equal(overviewNodeCount, 601, 'overview detail unexpectedly includes the full minor-node population');
+  assert.equal(overviewNodeCount, 496, 'overview detail unexpectedly includes the full minor-node population');
   assert.ok(overviewNodeCount < passiveDefinitions.length / 2, 'overview detail does not substantially reduce live node count');
   assert.match(uiSource, /id="passive-tree-canvas"/, 'passive graph canvas layer is missing');
   assert.match(uiSource, /canvas\.getContext\('2d'\)/, 'passive graph does not initialize a 2D canvas renderer');
@@ -365,7 +384,7 @@ test('passive canvas maps pointer coordinates and paints at a capped device pixe
     })()`,
     {
       player: {
-        passiveTreeVersion: 5, passiveAllocations: {}, passivePoints: 2, gearPassiveBonuses: {}, level: 1,
+        passiveTreeVersion: 6, passiveAllocations: {}, passivePoints: 2, gearPassiveBonuses: {}, level: 1,
         totalStats: { health: 100, energyShield: 0 }, currentHealth: 100, currentShield: 0,
         calculateStats: () => {}
       },
@@ -380,7 +399,7 @@ test('passive canvas maps pointer coordinates and paints at a capped device pixe
   assert.ok(Math.abs(result.viewAspect - 4 / 3) < 0.0001, 'passive view does not match the viewport aspect ratio');
   assert.ok(Math.abs(result.paintedWidth - 800) < 0.01, 'canvas leaves a horizontal dead band');
   assert.ok(Math.abs(result.paintedHeight - 600) < 0.01, 'canvas leaves a vertical dead band');
-  assert.ok(result.calls.arcs > 1595, 'canvas did not paint nodes and cluster rings');
+  assert.ok(result.calls.arcs > 1490, 'canvas did not paint nodes and cluster rings');
   assert.ok(result.calls.lines > 0, 'canvas did not paint graph connections');
   assert.ok(result.calls.transforms >= 2, 'canvas transform was not reset and reapplied');
 });
@@ -410,7 +429,7 @@ test('passive tree repairs a hidden square viewport before allocation-driven ren
     })()`,
     {
       player: {
-        passiveTreeVersion: 5, passiveAllocations: {}, passivePoints: 2, gearPassiveBonuses: {}, level: 1,
+        passiveTreeVersion: 6, passiveAllocations: {}, passivePoints: 2, gearPassiveBonuses: {}, level: 1,
         totalStats: { health: 100, energyShield: 0 }, currentHealth: 100, currentShield: 0,
         calculateStats: () => {}
       },
@@ -451,7 +470,7 @@ test('passive tree keeps vertical routes painted independently of endpoint culli
     })()`,
     {
       player: {
-        passiveTreeVersion: 5, passiveAllocations: {}, passivePoints: 2, gearPassiveBonuses: {}, level: 1,
+        passiveTreeVersion: 6, passiveAllocations: {}, passivePoints: 2, gearPassiveBonuses: {}, level: 1,
         totalStats: { health: 100, energyShield: 0 }, currentHealth: 100, currentShield: 0,
         calculateStats: () => {}
       },
@@ -982,7 +1001,7 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   assert.equal(result.migrated.state.player.equipment.bionicSlots[0].defenseTypes.chemicalResistance, 3);
   assert.equal(result.migrated.state.player.equipment.bionicSlots.length, 4);
   assert.equal(result.migrated.state.player.passives.gearBonuses, undefined);
-  assert.equal(result.migrated.state.player.passives.treeVersion, 5);
+  assert.equal(result.migrated.state.player.passives.treeVersion, 6);
   assert.equal(result.migrated.state.player.passives.points, 24, 'retired ranks and two-points-per-level catch-up were not applied');
   assert.equal(Object.keys(result.migrated.state.player.passives.allocations).length, 0);
   assert.equal(result.migrated.state.player.combatStyles.version, 2);
@@ -1017,7 +1036,7 @@ test('v2 passive saves are refunded and caught up to two points per level', () =
   );
 
   assert.deepEqual([...result.appliedVersions], [13, 14]);
-  assert.equal(result.state.player.passives.treeVersion, 5);
+  assert.equal(result.state.player.passives.treeVersion, 6);
   assert.deepEqual(Object.keys(result.state.player.passives.allocations), []);
   assert.equal(result.state.player.passives.points, 38);
 });

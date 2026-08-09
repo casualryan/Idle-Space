@@ -2,7 +2,7 @@
 // cluster blueprints so the renderer, save migration, validation, and stat
 // pipeline share one authority without maintaining thousands of hand-wired IDs.
 
-const PASSIVE_TREE_VERSION = 5;
+const PASSIVE_TREE_VERSION = 6;
 const PASSIVE_TREE_ORIGIN_ID = 'core-origin';
 const PASSIVE_TREE_SECTOR_ORDER = Object.freeze([
     'kinetic', 'slashing', 'corrosive', 'radiation', 'electric', 'cryo', 'pyro'
@@ -145,13 +145,13 @@ const PASSIVE_SECTOR_DEFINITIONS = Object.freeze({
 });
 
 const PASSIVE_BRIDGE_DEFINITIONS = Object.freeze([
-    { sectors: ['kinetic', 'slashing'], label: 'Physical Confluence', notable: 'Physical Mastery', effects: { damageGroups: { physical: 5 }, flatHealth: 14 } },
-    { sectors: ['slashing', 'corrosive'], label: 'Open-Wound Chemistry', notable: 'Septic Edge', effects: { damageTypes: { slashing: 4, corrosive: 4 }, dotDamageMultiplier: 0.03 } },
-    { sectors: ['corrosive', 'radiation'], label: 'Chemical Confluence', notable: 'Chemical Mastery', effects: { damageGroups: { chemical: 5 }, defenseTypes: { chemicalResistance: 3 } } },
-    { sectors: ['radiation', 'electric'], label: 'Volatile Circuitry', notable: 'Irradiated Conductor', effects: { damageTypes: { radiation: 4, electric: 4 }, bionicSync: 3 } },
-    { sectors: ['electric', 'cryo'], label: 'Superconductive Shell', notable: 'Zero-Resistance Circuit', effects: { damageTypes: { electric: 4, cryo: 4 }, flatEnergyShield: 14 } },
-    { sectors: ['cryo', 'pyro'], label: 'Thermal Confluence', notable: 'Thermal Mastery', effects: { damageTypes: { cryo: 4, pyro: 4 }, defenseTypes: { elementalResistance: 3 } } },
-    { sectors: ['pyro', 'kinetic'], label: 'Explosive Impact', notable: 'Detonation Physics', effects: { damageTypes: { pyro: 4, kinetic: 4 }, debuffChanceBonus: 0.012 } }
+    { sectors: ['kinetic', 'slashing'], label: 'Physical Confluence', notable: 'Physical Mastery', lifeNotable: 'Tempered Frame', effects: { damageGroups: { physical: 5 }, flatHealth: 14 } },
+    { sectors: ['slashing', 'corrosive'], label: 'Open-Wound Chemistry', notable: 'Septic Edge', lifeNotable: 'Scar-Toughened', effects: { damageTypes: { slashing: 4, corrosive: 4 }, dotDamageMultiplier: 0.03 } },
+    { sectors: ['corrosive', 'radiation'], label: 'Chemical Confluence', notable: 'Chemical Mastery', lifeNotable: 'Adaptive Vitality', effects: { damageGroups: { chemical: 5 }, defenseTypes: { chemicalResistance: 3 } } },
+    { sectors: ['radiation', 'electric'], label: 'Volatile Circuitry', notable: 'Irradiated Conductor', lifeNotable: 'Charged Metabolism', effects: { damageTypes: { radiation: 4, electric: 4 }, bionicSync: 3 } },
+    { sectors: ['electric', 'cryo'], label: 'Superconductive Shell', notable: 'Zero-Resistance Circuit', lifeNotable: 'Insulated Core', effects: { damageTypes: { electric: 4, cryo: 4 }, flatEnergyShield: 14 } },
+    { sectors: ['cryo', 'pyro'], label: 'Thermal Confluence', notable: 'Thermal Mastery', lifeNotable: 'Thermal Homeostasis', effects: { damageTypes: { cryo: 4, pyro: 4 }, defenseTypes: { elementalResistance: 3 } } },
+    { sectors: ['pyro', 'kinetic'], label: 'Explosive Impact', notable: 'Detonation Physics', lifeNotable: 'Blast-Hardened', effects: { damageTypes: { pyro: 4, kinetic: 4 }, debuffChanceBonus: 0.012 } }
 ]);
 
 const PASSIVE_GENERIC_BLUEPRINTS = Object.freeze([
@@ -544,12 +544,6 @@ function getSpecialistMinorEffects(sector, wheelIndex, nodeIndex) {
     );
 }
 
-function getBridgeMinorEffects(leftSector, rightSector, index) {
-    if (index % 5 === 1) return { flatHealth: 8, flatEnergyShield: 6 };
-    if (index % 5 === 3) return { precision: 1, deflection: 1 };
-    return { damageTypes: { [leftSector.damageType]: 1, [rightSector.damageType]: 1 } };
-}
-
 function createPassiveTree() {
     const nodes = [];
     const links = new Set();
@@ -919,38 +913,38 @@ function createPassiveTree() {
         let endAngle = rightSector.angle - 19;
         while (endAngle <= startAngle) endAngle += 360;
         const ids = [];
-        for (let index = 0; index < 17; index++) {
-            const progress = (index + 1) / 18;
+        const bridgeNodes = [
+            {
+                legacyIndex: 5,
+                name: bridge.notable,
+                effects: mergePassiveEffects(bridge.effects, bridge.effects, { precision: 2, deflection: 2 })
+            },
+            {
+                legacyIndex: 12,
+                name: bridge.lifeNotable,
+                effects: { healthPercent: 3 }
+            }
+        ];
+        for (const [index, bridgeNode] of bridgeNodes.entries()) {
+            const progress = (bridgeNode.legacyIndex + 1) / 18;
             const angle = startAngle + (endAngle - startAngle) * progress + Math.sin(progress * Math.PI * 2) * 1.4;
             const radius = 2870 + Math.sin(progress * Math.PI) * 560 + Math.sin(progress * Math.PI * 3) * 85;
             const position = passivePolarPosition(radius, angle);
-            const isNotable = index === 5 || index === 12;
-            const effects = isNotable
-                ? mergePassiveEffects(bridge.effects, bridge.effects, { precision: 2, deflection: 2 })
-                : getBridgeMinorEffects(leftSector, rightSector, index);
-            const id = `bridge-${bridgeIndex + 1}-${index + 1}`;
+            const id = `bridge-${bridgeIndex + 1}-${bridgeNode.legacyIndex + 1}`;
             addNode({
                 id,
-                name: isNotable ? (index === 5 ? bridge.notable : bridge.label) : `${bridge.label} Conduit`,
+                name: bridgeNode.name,
                 description: `A hybrid route between ${leftSector.label} and ${rightSector.label}.`,
-                sector: 'bridge', sectors: bridge.sectors, type: isNotable ? 'notable' : 'bridge',
-                depth: index + 1, ...position, effects
+                sector: 'bridge', sectors: bridge.sectors, type: 'notable',
+                depth: bridgeNode.legacyIndex + 1, ...position, effects: bridgeNode.effects
             });
             ids.push(id);
             if (index > 0) link(ids[index - 1], id);
         }
         const leftEntry = getClosestNodePair([ids[0]], sectorClusterIds[leftSectorId].travelIds.slice(12));
         const rightEntry = getClosestNodePair([ids[ids.length - 1]], sectorClusterIds[rightSectorId].travelIds.slice(12));
-        linkLocalPath(leftEntry.leftId, leftEntry.rightId, {
-            idPrefix: `bridge-${bridgeIndex + 1}-${leftSectorId}-entry`,
-            label: bridge.label, sectorId: 'bridge', depth: 0,
-            effects: getBridgeMinorEffects(leftSector, rightSector, 0)
-        });
-        linkLocalPath(rightEntry.leftId, rightEntry.rightId, {
-            idPrefix: `bridge-${bridgeIndex + 1}-${rightSectorId}-entry`,
-            label: bridge.label, sectorId: 'bridge', depth: 18,
-            effects: getBridgeMinorEffects(leftSector, rightSector, 16)
-        });
+        link(leftEntry.leftId, leftEntry.rightId);
+        link(rightEntry.leftId, rightEntry.rightId);
     });
 
     // If two deliberately local routes meet at a generated connector, make
