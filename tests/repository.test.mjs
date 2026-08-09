@@ -984,8 +984,8 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   );
 
   assert.equal(result.beforeUnchanged, true, 'migration mutated the parsed legacy payload');
-  assert.equal(result.migrated.toVersion, 14);
-  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+  assert.equal(result.migrated.toVersion, 15);
+  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
   assert.equal(result.migrated.state.inventory.length, 0, 'legacy material stacks still occupy ordinary slots');
   assert.equal(result.migrated.state.materialInventory['Scrap Metal'], 20);
   assert.equal(result.migrated.state.materialInventory['Wire Bundle'], 7);
@@ -1035,10 +1035,36 @@ test('v2 passive saves are refunded and caught up to two points per level', () =
     })()`
   );
 
-  assert.deepEqual([...result.appliedVersions], [13, 14]);
+  assert.deepEqual([...result.appliedVersions], [13, 14, 15]);
   assert.equal(result.state.player.passives.treeVersion, 6);
   assert.deepEqual(Object.keys(result.state.player.passives.allocations), []);
   assert.equal(result.state.player.passives.points, 38);
+});
+
+test('v14 saves with stale passive treeVersion are refunded to tree version 6', () => {
+  const result = evaluateClassic(
+    'saveSchema.js',
+    `(() => {
+      const migrated = migrateGameStateSnapshot({
+        player: {
+          level: 10,
+          passives: {
+            allocations: { 'kinetic-offense-1': 1, 'kinetic-offense-2': 1 },
+            points: 6,
+            treeVersion: 5
+          }
+        },
+        meta: { version: 14 }
+      });
+      return migrated;
+    })()`
+  );
+
+  assert.deepEqual([...result.appliedVersions], [15]);
+  assert.equal(result.toVersion, 15);
+  assert.equal(result.state.player.passives.treeVersion, 6);
+  assert.deepEqual(Object.keys(result.state.player.passives.allocations), []);
+  assert.equal(result.state.player.passives.points, 20);
 });
 
 test('material storage has deterministic slots, capped stacks, and actionable source tooltips', () => {

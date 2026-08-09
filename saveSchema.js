@@ -1,6 +1,6 @@
 // Ordered, non-destructive migrations and validation for persisted game snapshots.
 
-const COREBOUND_SAVE_VERSION = 14;
+const COREBOUND_SAVE_VERSION = 15;
 const SAVE_MATERIAL_STACK_CAP = 50000;
 const SAVE_PASSIVE_TREE_VERSION = 6;
 const SAVE_COMBAT_STYLE_VERSION = 2;
@@ -342,6 +342,32 @@ const SAVE_MIGRATIONS = Object.freeze([
     },
     function migrateToVersion14(state) {
         mapPersistedItems(state, item => normalizeSavedItemData(item));
+        const passives = state.player.passives && typeof state.player.passives === 'object'
+            ? state.player.passives
+            : { allocations: {}, points: 2 };
+        const allocations = passives.allocations && typeof passives.allocations === 'object'
+            ? passives.allocations
+            : {};
+        let points = Math.max(0, Math.floor(Number(passives.points) || 0));
+        if (Number(passives.treeVersion) !== SAVE_PASSIVE_TREE_VERSION) {
+            points += Object.values(allocations).reduce((total, rank) => {
+                const value = Math.floor(Number(rank));
+                return total + (Number.isFinite(value) && value > 0 ? value : 0);
+            }, 0);
+            passives.allocations = {};
+        } else {
+            passives.allocations = Object.fromEntries(Object.entries(allocations)
+                .filter(([, rank]) => Number(rank) > 0)
+                .map(([id]) => [id, 1]));
+        }
+        const allocatedPoints = Object.keys(passives.allocations).length;
+        const progressionTotal = Math.max(2, Math.floor(Number(state.player.level) || 1) * 2);
+        passives.points = Math.max(points, progressionTotal - allocatedPoints);
+        passives.treeVersion = SAVE_PASSIVE_TREE_VERSION;
+        delete passives.gearBonuses;
+        state.player.passives = passives;
+    },
+    function migrateToVersion15(state) {
         const passives = state.player.passives && typeof state.player.passives === 'object'
             ? state.player.passives
             : { allocations: {}, points: 2 };
