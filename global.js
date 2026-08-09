@@ -8,13 +8,12 @@ let playerCurrency = STARTING_CREDITS;
 
 // Add this near the top of the file with other constants
 const MAX_PLAYER_LEVEL = 51;
-const SAVE_SLOT_COUNT = 5;
-/** Slot that receives periodic autosave (last explicit Save or Load only). */
-const AUTOSAVE_TARGET_SLOT_KEY = 'idleCombatGameSave_activeSlot';
-const SAVE_SLOT_KEY_PREFIX = 'idleCombatGameSave_slot_';
+const saveProfiles = window.coreboundSaveProfiles;
 const saveCoordinator = window.coreboundSaveCoordinator || null;
 let saveRuntimeReady = false;
 let lastSaveFailure = null;
+let mainMenuView = 'root';
+let exitAutosaveAttempted = false;
 
 // Helper function to cleanly remove and reapply all passive bonuses from gear
 function resetGearPassiveBonuses() {
@@ -298,28 +297,15 @@ function getXPForNextLevel(level) {
 }
 
 function sanitizeSaveSlotIndex(slotIndex) {
-    const parsed = Number(slotIndex);
-    if (!Number.isInteger(parsed) || parsed < 1 || parsed > SAVE_SLOT_COUNT) {
-        return 1;
-    }
-    return parsed;
+    return saveProfiles ? saveProfiles.sanitizeSlot(slotIndex) : 1;
 }
-
-function getSaveKeyForSlot(slotIndex) {
-    return `${SAVE_SLOT_KEY_PREFIX}${sanitizeSaveSlotIndex(slotIndex)}`;
-}
-
-/** UI-only: which slot row is highlighted for Save/Load/Reset (does not affect autosave). */
-let uiSelectedSaveSlot = null;
 
 function getAutosaveTargetSlot() {
-    return sanitizeSaveSlotIndex(localStorage.getItem(AUTOSAVE_TARGET_SLOT_KEY));
+    return saveProfiles.getActiveSlot();
 }
 
 function setAutosaveTargetSlot(slotIndex) {
-    const safeSlot = sanitizeSaveSlotIndex(slotIndex);
-    localStorage.setItem(AUTOSAVE_TARGET_SLOT_KEY, String(safeSlot));
-    return safeSlot;
+    return saveProfiles.setActiveSlot(slotIndex);
 }
 
 function ownsSaveWriterLease() {
@@ -341,18 +327,6 @@ function clearSaveFailure() {
     if (!lastSaveFailure) return;
     lastSaveFailure = null;
     renderSaveProtectionState();
-}
-
-function getLatestBackupPreview(slotIndex) {
-    const backup = saveCoordinator?.getBackups(slotIndex)?.[0];
-    if (!backup) return null;
-    const level = Math.max(1, Math.floor(Number(backup.state?.player?.level) || 1));
-    const savedAt = Number(backup.state?.meta?.savedAt || 0);
-    return {
-        ...backup,
-        level,
-        savedAt: Number.isFinite(savedAt) && savedAt > 0 ? savedAt : null
-    };
 }
 
 function renderSaveProtectionState() {
@@ -377,9 +351,12 @@ function renderSaveProtectionState() {
     } else if (lastSaveFailure) {
         status.classList.add('is-error');
         status.textContent = `Saving stopped · ${lastSaveFailure.message}`;
+    } else if (!saveRuntimeReady) {
+        status.classList.add('is-healthy');
+        status.textContent = 'No profile is active · Autosave is paused';
     } else {
         status.classList.add('is-healthy');
-        status.textContent = 'Protected autosave active · This is the active save tab';
+        status.textContent = `Protected autosave active · Profile ${getAutosaveTargetSlot()}`;
     }
 }
 
@@ -389,66 +366,21 @@ function takeSaveControlAndReload() {
         return { ok: false, reason: 'ownership_failed' };
     }
 
-    const targetSlot = getAutosaveTargetSlot();
-    const result = loadGame(targetSlot);
-    if (!result.ok) {
-        saveCoordinator.relinquishOwnership();
-        setSaveFailure(new Error(`Could not reload slot ${targetSlot}; this tab remains read-only.`), false);
-        return result;
+    if (saveRuntimeReady) {
+        const targetSlot = getAutosaveTargetSlot();
+        const result = loadGame(targetSlot, 'autosave');
+        if (!result.ok) {
+            saveRuntimeReady = false;
+            showMainMenu('load');
+            setMainMenuStatus(`Profile ${targetSlot}'s autosave could not be loaded. Its manual save is still available.`, 'error');
+            return result;
+        }
     }
 
     clearSaveFailure();
     renderSaveProtectionState();
-    logMessage(`This tab now owns autosave slot ${targetSlot}.`);
-    return { ok: true, slot: targetSlot };
-}
-
-function restoreLatestSaveBackup(slotIndex = null) {
-    const targetSlot = slotIndex == null ? getUiSelectedSaveSlot() : sanitizeSaveSlotIndex(slotIndex);
-    if (!ownsSaveWriterLease()) {
-        setSaveFailure(new Error('Another Corebound tab owns saving.'), false);
-        return { ok: false, reason: 'duplicate_tab' };
-    }
-
-    const backup = getLatestBackupPreview(targetSlot);
-    if (!backup) {
-        logMessage(`No recovery save is available for slot ${targetSlot}.`);
-        return { ok: false, reason: 'no_backup' };
-    }
-
-    const dateLabel = backup.savedAt ? new Date(backup.savedAt).toLocaleString() : 'an unknown time';
-    if (!confirm(`Restore slot ${targetSlot} to its Level ${backup.level} recovery save from ${dateLabel}?`)) {
-        return { ok: false, reason: 'cancelled' };
-    }
-
-    try {
-        const saveKey = getSaveKeyForSlot(targetSlot);
-        const currentRaw = localStorage.getItem(saveKey);
-        if (currentRaw) saveCoordinator.backupCurrentSave(targetSlot, currentRaw, { force: true });
-        localStorage.setItem(saveKey, backup.raw);
-        const loadResult = loadGame(targetSlot);
-        if (!loadResult.ok) throw new Error(`Recovery save for slot ${targetSlot} could not be loaded.`);
-        clearSaveFailure();
-        renderSaveSlots();
-        logMessage(`Restored slot ${targetSlot} from its previous recovery save.`);
-        return { ok: true, slot: targetSlot };
-    } catch (error) {
-        console.error(`Error restoring save slot ${targetSlot}:`, error);
-        setSaveFailure(error, false);
-        return { ok: false, reason: 'restore_error', error };
-    }
-}
-
-function getUiSelectedSaveSlot() {
-    const selectedInput = document.querySelector('input[name="save-slot-select"]:checked');
-    if (selectedInput) {
-        uiSelectedSaveSlot = sanitizeSaveSlotIndex(selectedInput.value);
-        return uiSelectedSaveSlot;
-    }
-    if (uiSelectedSaveSlot != null) {
-        return uiSelectedSaveSlot;
-    }
-    return getAutosaveTargetSlot();
+    renderMainMenu(mainMenuView);
+    return { ok: true };
 }
 
 function formatCreditsValue(value) {
@@ -459,33 +391,9 @@ function formatCreditsValue(value) {
     }
 }
 
-function getSaveSlotPreview(slotIndex) {
-    const key = getSaveKeyForSlot(slotIndex);
-    const raw = localStorage.getItem(key);
-    if (!raw) {
-        return { slot: slotIndex, state: 'empty' };
-    }
-
-    try {
-        const parsed = JSON.parse(raw);
-        const level = Number(parsed?.player?.level || 1);
-        const credits = Number(parsed?.player?.currency || 0);
-        const updatedAt = Number(parsed?.meta?.savedAt || 0);
-        return {
-            slot: slotIndex,
-            state: 'ok',
-            level: Number.isFinite(level) ? level : 1,
-            credits: Number.isFinite(credits) ? credits : 0,
-            updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : null,
-        };
-    } catch (_) {
-        return { slot: slotIndex, state: 'corrupt' };
-    }
-}
-
 const SETTINGS_PANEL_LABELS = {
     main: 'Settings',
-    save: 'Save & Load',
+    save: 'Save & Session',
     gameplay: 'Gameplay',
     keybinds: 'Keybinds',
     dev: 'Dev Tools',
@@ -516,7 +424,7 @@ function showSettingsPanel(panelId) {
     const title = document.getElementById('settings-title');
     if (backBtn) backBtn.hidden = safeId === 'main';
     if (title) title.textContent = SETTINGS_PANEL_LABELS[safeId] || 'Settings';
-    if (safeId === 'save') renderSaveSlots();
+    if (safeId === 'save') renderSaveProtectionState();
 }
 
 function wireSettingsNavigation() {
@@ -533,66 +441,124 @@ function wireSettingsNavigation() {
     }
 }
 
-function renderSaveSlots() {
-    const listEl = document.getElementById('save-slots-list');
-    const activeLabel = document.getElementById('active-save-slot-label');
-    if (!listEl) return;
+function formatSnapshotPreview(preview) {
+    if (preview.state === 'corrupt') return 'Unreadable snapshot';
+    if (preview.state === 'empty') return 'No snapshot';
+    const dateLabel = preview.savedAt ? new Date(preview.savedAt).toLocaleString() : 'Unknown time';
+    return `Level ${preview.level} · ${formatCreditsValue(preview.credits)} credits · ${dateLabel}`;
+}
 
-    const autosaveSlot = getAutosaveTargetSlot();
-    const selectedSlot = getUiSelectedSaveSlot();
+function setMainMenuStatus(message = '', tone = '') {
+    const status = document.getElementById('main-menu-status');
+    if (!status) return;
+    status.textContent = message;
+    status.className = `main-menu-status${tone ? ` is-${tone}` : ''}`;
+    status.hidden = !message;
+}
 
-    const rows = [];
-    for (let slot = 1; slot <= SAVE_SLOT_COUNT; slot++) {
-        const preview = getSaveSlotPreview(slot);
-        const isSelected = slot === selectedSlot;
-        const isAutosaveTarget = slot === autosaveSlot;
-        let meta = '';
+function renderMainMenu(view = mainMenuView) {
+    mainMenuView = ['root', 'new', 'load'].includes(view) ? view : 'root';
+    const rootPanel = document.getElementById('main-menu-root');
+    const slotPanel = document.getElementById('main-menu-slots');
+    const list = document.getElementById('main-menu-slot-list');
+    const title = document.getElementById('main-menu-slot-title');
+    const description = document.getElementById('main-menu-slot-description');
+    const continueButton = document.getElementById('main-menu-continue');
+    if (!rootPanel || !slotPanel || !list) return;
 
-        if (preview.state === 'ok') {
-            const dateLabel = preview.updatedAt ? new Date(preview.updatedAt).toLocaleString() : 'Unknown time';
-            meta = `
-                <div class="save-slot-main">Level ${preview.level} · Credits ${formatCreditsValue(preview.credits)}</div>
-                <div class="save-slot-sub">Updated ${dateLabel}</div>
-            `;
-        } else if (preview.state === 'corrupt') {
-            meta = `<div class="save-slot-main save-slot-warning">Corrupt data</div><div class="save-slot-sub">Save may be unreadable.</div>`;
-        } else {
-            meta = `<div class="save-slot-main save-slot-empty">Empty slot</div><div class="save-slot-sub">No save data.</div>`;
-        }
+    const continueChoice = saveProfiles.getContinueChoice();
+    if (continueButton) {
+        continueButton.disabled = !continueChoice || !ownsSaveWriterLease();
+        continueButton.dataset.slot = continueChoice?.slot || '';
+        continueButton.dataset.kind = continueChoice?.kind || '';
+        const detail = continueChoice ? `Profile ${continueChoice.slot} · ${formatSnapshotPreview(continueChoice)}` : 'No playable profile found';
+        const detailElement = continueButton.querySelector('.main-menu-button-detail');
+        if (detailElement) detailElement.textContent = detail;
+    }
 
-        rows.push(`
-            <label class="save-slot-row ${isSelected ? 'selected' : ''} ${isAutosaveTarget ? 'autosave-target' : ''}" data-save-slot="${slot}">
-                <input type="radio" name="save-slot-select" value="${slot}" ${isSelected ? 'checked' : ''}>
-                <div class="save-slot-info">
-                    <div class="save-slot-title">Slot ${slot}${isAutosaveTarget ? ' <span class="save-slot-badge">AUTOSAVE</span>' : ''}</div>
-                    ${meta}
+    rootPanel.hidden = mainMenuView !== 'root';
+    slotPanel.hidden = mainMenuView === 'root';
+    if (mainMenuView === 'root') return;
+
+    const profiles = saveProfiles.listProfiles();
+    const canWrite = ownsSaveWriterLease();
+    if (mainMenuView === 'new') {
+        title.textContent = 'New Game';
+        description.textContent = profiles.every(profile => profile.occupied)
+            ? 'All profiles are full. Delete one before creating a new game.'
+            : 'Choose an empty profile. Existing profiles must be deleted before reuse.';
+        list.innerHTML = profiles.map(profile => {
+            const best = profile.autosave.state !== 'empty' ? profile.autosave : profile.manual;
+            const summary = profile.occupied ? formatSnapshotPreview(best) : 'Empty profile';
+            return `
+                <article class="profile-slot-row ${profile.occupied ? 'is-occupied' : 'is-empty'}">
+                    <div class="profile-slot-copy">
+                        <strong>Profile ${profile.slot}</strong>
+                        <span>${summary}</span>
+                    </div>
+                    ${profile.occupied
+                        ? `<button type="button" class="profile-delete-button" data-menu-action="delete" data-slot="${profile.slot}" ${canWrite ? '' : 'disabled'}>Delete</button>`
+                        : `<button type="button" class="profile-primary-button" data-menu-action="new" data-slot="${profile.slot}" ${canWrite ? '' : 'disabled'}>Start New Game</button>`}
+                </article>`;
+        }).join('');
+        return;
+    }
+
+    title.textContent = 'Load Game';
+    description.textContent = 'Choose a profile, then load its autosave or its independent manual save.';
+    list.innerHTML = profiles.map(profile => {
+        const snapshotButton = (preview, label) => {
+            const disabled = preview.state !== 'ok' || !ownsSaveWriterLease();
+            return `
+                <button type="button" class="snapshot-load-button ${preview.state === 'corrupt' ? 'is-corrupt' : ''}"
+                    data-menu-action="load" data-slot="${profile.slot}" data-kind="${preview.kind}" ${disabled ? 'disabled' : ''}>
+                    <strong>${label}</strong>
+                    <span>${formatSnapshotPreview(preview)}</span>
+                </button>`;
+        };
+        return `
+            <article class="profile-load-row">
+                <header>
+                    <strong>Profile ${profile.slot}</strong>
+                    ${profile.occupied ? `<button type="button" class="profile-delete-button" data-menu-action="delete" data-slot="${profile.slot}" ${canWrite ? '' : 'disabled'}>Delete Profile</button>` : ''}
+                </header>
+                <div class="profile-snapshot-grid">
+                    ${snapshotButton(profile.autosave, 'Autosave')}
+                    ${snapshotButton(profile.manual, 'Manual Save')}
                 </div>
-            </label>
-        `);
-    }
+            </article>`;
+    }).join('');
+}
 
-    listEl.innerHTML = rows.join('');
-    if (activeLabel) {
-        activeLabel.textContent = `Autosave writes to slot ${autosaveSlot} (last Save or Load)`;
-    }
-
-    const restoreButton = document.getElementById('restore-save-backup');
-    if (restoreButton) {
-        const backup = getLatestBackupPreview(selectedSlot);
-        restoreButton.disabled = !backup || !ownsSaveWriterLease();
-        restoreButton.title = backup
-            ? `Restore Level ${backup.level} from ${backup.savedAt ? new Date(backup.savedAt).toLocaleString() : 'an unknown time'}`
-            : 'No recovery save is available for this slot yet.';
-    }
+function showMainMenu(view = 'root') {
+    saveRuntimeReady = false;
+    const overlay = document.getElementById('main-menu-overlay');
+    if (overlay) overlay.hidden = false;
+    document.body.classList.add('at-main-menu');
+    closeSettingsMenu();
+    setMainMenuStatus('');
+    renderMainMenu(view);
     renderSaveProtectionState();
+}
 
-    listEl.querySelectorAll('input[name="save-slot-select"]').forEach((input) => {
-        input.addEventListener('change', () => {
-            if (!input.checked) return;
-            uiSelectedSaveSlot = sanitizeSaveSlotIndex(input.value);
-            renderSaveSlots();
-        });
-    });
+function hideMainMenu() {
+    const overlay = document.getElementById('main-menu-overlay');
+    if (overlay) overlay.hidden = true;
+    document.body.classList.remove('at-main-menu');
+}
+
+function showManualSaveConfirmation(slotIndex) {
+    const toast = document.getElementById('manual-save-toast');
+    if (!toast) return;
+    toast.textContent = `Manual save complete · Profile ${sanitizeSaveSlotIndex(slotIndex)}`;
+    toast.hidden = false;
+    toast.classList.remove('is-visible');
+    requestAnimationFrame(() => toast.classList.add('is-visible'));
+    clearTimeout(showManualSaveConfirmation.timer);
+    showManualSaveConfirmation.timer = setTimeout(() => {
+        toast.classList.remove('is-visible');
+        setTimeout(() => { toast.hidden = true; }, 180);
+    }, 2400);
 }
 
 function buildGameStateSnapshot() {
@@ -649,10 +615,14 @@ function buildGameStateSnapshot() {
 // Save game function
 function saveGame(isAutoSave = false, slotIndex = null) {
     const targetSlot = slotIndex == null ? getAutosaveTargetSlot() : sanitizeSaveSlotIndex(slotIndex);
+    const saveKind = isAutoSave ? 'autosave' : 'manual';
+    if (!saveRuntimeReady) {
+        return { ok: false, reason: 'no_active_profile', slot: targetSlot, kind: saveKind };
+    }
     if (!ownsSaveWriterLease()) {
         const error = new Error('Another Corebound tab owns saving.');
         if (!isAutoSave) setSaveFailure(error, false);
-        return { ok: false, reason: 'duplicate_tab', slot: targetSlot };
+        return { ok: false, reason: 'duplicate_tab', slot: targetSlot, kind: saveKind };
     }
 
     try {
@@ -661,17 +631,20 @@ function saveGame(isAutoSave = false, slotIndex = null) {
             knownItemNames: new Set((window.items || []).map(item => item.name))
         });
 
-        const saveKey = getSaveKeyForSlot(targetSlot);
-        const previousRaw = localStorage.getItem(saveKey);
+        const previousSnapshot = saveProfiles.readSnapshot(targetSlot, saveKind);
+        const previousRaw = previousSnapshot.raw;
         if (previousRaw && saveCoordinator) {
             try {
-                saveCoordinator.backupCurrentSave(targetSlot, previousRaw, { force: !isAutoSave });
+                saveCoordinator.backupCurrentSave(targetSlot, previousRaw, {
+                    force: !isAutoSave,
+                    saveKind
+                });
             } catch (backupError) {
-                console.warn(`Could not update recovery saves for slot ${targetSlot}:`, backupError);
+                console.warn(`Could not update ${saveKind} recovery saves for profile ${targetSlot}:`, backupError);
             }
         }
-        localStorage.setItem(saveKey, JSON.stringify(gameState));
-        console.log(`Game saved successfully in slot ${targetSlot}.`);
+        saveProfiles.writeSnapshot(targetSlot, saveKind, JSON.stringify(gameState));
+        console.log(`${isAutoSave ? 'Autosave' : 'Manual save'} completed for profile ${targetSlot}.`);
         clearSaveFailure();
         
         // Play save sound unless it's an auto-save
@@ -680,23 +653,23 @@ function saveGame(isAutoSave = false, slotIndex = null) {
         }
         
         // Only show the message if it's a manual save
-        return { ok: true, slot: targetSlot, savedAt: gameState.meta.savedAt };
+        return { ok: true, slot: targetSlot, kind: saveKind, savedAt: gameState.meta.savedAt };
     } catch (e) {
         console.error('Error saving game:', e);
         setSaveFailure(e, isAutoSave);
-        return { ok: false, reason: 'save_error', slot: targetSlot, error: e };
+        return { ok: false, reason: 'save_error', slot: targetSlot, kind: saveKind, error: e };
     }
 }
 
-function loadGame(slotIndex = null) {
+function loadGame(slotIndex = null, saveKind = 'autosave') {
     const targetSlot = slotIndex == null ? getAutosaveTargetSlot() : sanitizeSaveSlotIndex(slotIndex);
-    const saveKey = getSaveKeyForSlot(targetSlot);
-    const savedState = localStorage.getItem(saveKey);
+    const kind = saveProfiles.sanitizeKind(saveKind);
+    const snapshot = saveProfiles.readSnapshot(targetSlot, kind);
+    const savedState = snapshot.raw;
 
     if (!savedState) {
-        console.log(`No saved game found in slot ${targetSlot}.`);
-        logMessage(`No saved game found in slot ${targetSlot}.`);
-        const event = new CustomEvent('gameLoaded', { detail: { slot: targetSlot, loaded: false } });
+        console.log(`No ${kind} found in profile ${targetSlot}.`);
+        const event = new CustomEvent('gameLoaded', { detail: { slot: targetSlot, kind, loaded: false } });
         window.dispatchEvent(event);
         return { ok: false, reason: 'empty_slot' };
     }
@@ -840,10 +813,6 @@ function loadGame(slotIndex = null) {
         updateEquipmentDisplay();
         renderGlobalStatusBanner();
 
-        setAutosaveTargetSlot(targetSlot);
-        uiSelectedSaveSlot = targetSlot;
-        renderSaveSlots();
-
         if (isDelveInProgress && currentDelveLocation && typeof beginNextMonsterInSequence === 'function') {
             // Loading restarts the current encounter with a fresh instance while
             // preserving the delve index and exact contents of the delve bag.
@@ -854,25 +823,29 @@ function loadGame(slotIndex = null) {
             }, 0);
         }
 
+        setAutosaveTargetSlot(targetSlot);
+
         if (migration.appliedVersions.length > 0) {
             console.log(`Save slot ${targetSlot} migrated from version ${migration.fromVersion} to ${migration.toVersion}.`);
         }
-        console.log(`Game loaded successfully from slot ${targetSlot}.`);
-        logMessage(`Game loaded from slot ${targetSlot}.`);
-        const event = new CustomEvent('gameLoaded', { detail: { slot: targetSlot, loaded: true } });
+        console.log(`Game loaded successfully from profile ${targetSlot} ${kind}.`);
+        logMessage(`Loaded Profile ${targetSlot} ${kind === 'manual' ? 'manual save' : 'autosave'}.`);
+        const event = new CustomEvent('gameLoaded', { detail: { slot: targetSlot, kind, loaded: true } });
         window.dispatchEvent(event);
         return {
             ok: true,
+            slot: targetSlot,
+            kind,
+            legacy: snapshot.legacy,
             migratedFrom: migration.appliedVersions.length > 0 ? migration.fromVersion : null,
             version: migration.toVersion,
             warnings: saveValidation.warnings
         };
     } catch (error) {
-        console.error(`Error loading save slot ${targetSlot}:`, error);
-        logMessage(`Failed to load save slot ${targetSlot}.`);
-        const event = new CustomEvent('gameLoaded', { detail: { slot: targetSlot, loaded: false, error: true } });
+        console.error(`Error loading profile ${targetSlot} ${kind}:`, error);
+        const event = new CustomEvent('gameLoaded', { detail: { slot: targetSlot, kind, loaded: false, error: true } });
         window.dispatchEvent(event);
-        return { ok: false, reason: 'load_error' };
+        return { ok: false, reason: 'load_error', slot: targetSlot, kind, error };
     }
 }
 
@@ -969,124 +942,150 @@ function restoreEquipment(savedEquipment) {
     return equipment;
 }
 
-// Reset game function
-function resetGame(slotIndex = null) {
-    const targetSlot = slotIndex == null ? getUiSelectedSaveSlot() : sanitizeSaveSlotIndex(slotIndex);
+function initializeNewCharacterState() {
+    if (typeof stopCombat === 'function' && (
+        (typeof isCombatActive !== 'undefined' && isCombatActive) ||
+        (typeof isDelveInProgress !== 'undefined' && isDelveInProgress)
+    )) {
+        stopCombat('newGame');
+    }
+    if (window.activityManager && typeof window.activityManager.clearActivityOnLoad === 'function') {
+        window.activityManager.clearActivityOnLoad();
+    }
+    if (typeof window.clearFabricationsOnLoad === 'function') window.clearFabricationsOnLoad();
+
+    player.baseStats = JSON.parse(JSON.stringify(playerBaseStats));
+    player.totalStats = {};
+    player.currentHealth = null;
+    player.currentShield = null;
+    player.activeBuffs = [];
+    player.effects = [];
+    player.experience = 0;
+    player.level = 1;
+    player.maxInventorySlots = 30;
+    player.passivePoints = 2;
+    player.passiveAllocations = {};
+    player.passiveTreeVersion = PASSIVE_TREE_VERSION;
+    player.gearPassiveBonuses = {};
+    player.passiveAttackSpeedBonus = 0;
+    player.equippedSkillId = window.DEFAULT_COMBAT_STYLE_ID || 'balancedStyle';
+    player.unlockedSkillIds = (window.combatStyles || []).map(style => style.id);
+    player.combatStyleAllocations = {};
+    player.combatStyleVersion = window.COMBAT_STYLE_VERSION || 2;
+    player.skillPoints = 0;
+    player.skillModAllocations = {};
+    player.gatheringSkills = { Mining: { level: 1, experience: 0 } };
+    player.equipment = {
+        mainHand: null,
+        offHand: null,
+        head: null,
+        chest: null,
+        legs: null,
+        feet: null,
+        gloves: null,
+        bionicSlots: [null, null, null, null]
+    };
+    if (typeof normalizeCombatStylesState === 'function') normalizeCombatStylesState(player);
+
+    window.inventory = [];
+    window.materialInventory = {};
+    window.componentDropCounts = {};
+    if (typeof delveClaimCache !== 'undefined') delveClaimCache = { items: [], credits: 0 };
+    if (typeof completedDelveLocations !== 'undefined') completedDelveLocations = {};
+    if (typeof isDelveInProgress !== 'undefined') isDelveInProgress = false;
+    if (typeof currentDelveLocation !== 'undefined') currentDelveLocation = null;
+    if (typeof currentMonsterIndex !== 'undefined') currentMonsterIndex = 0;
+    if (typeof delveBag !== 'undefined') delveBag = { items: [], credits: 0 };
+    if (typeof currentLocation !== 'undefined') currentLocation = null;
+    if (typeof closeDelveClaimCachePopup === 'function') closeDelveClaimCachePopup();
+
+    const startingItemTemplate = items.find(item => item.name === 'Broken Phase Sword');
+    if (startingItemTemplate) window.inventory.push(generateItemInstance(startingItemTemplate));
+    else console.warn('Starting item template not found.');
+
+    playerCurrency = STARTING_CREDITS;
+    player.calculateStats();
+    player.currentHealth = player.totalStats.health;
+    player.currentShield = player.totalStats.energyShield;
+    updateInventoryDisplay();
+    updateEquipmentDisplay();
+    updatePlayerStatsDisplay();
+    displayPassivesScreen();
+    initializeEquipmentSlots();
+    showScreen('inventory-screen');
+}
+
+function startNewGameInProfile(slotIndex) {
+    const slot = sanitizeSaveSlotIndex(slotIndex);
     if (!ownsSaveWriterLease()) {
-        setSaveFailure(new Error('Another Corebound tab owns saving.'), false);
+        setMainMenuStatus('This tab is read-only because Corebound is active in another tab.', 'error');
         return { ok: false, reason: 'duplicate_tab' };
     }
-    if (confirm(`Are you sure you want to reset save slot ${targetSlot}? This action cannot be undone.`)) {
-        if (typeof stopCombat === 'function' && (
-            (typeof isCombatActive !== 'undefined' && isCombatActive) ||
-            (typeof isDelveInProgress !== 'undefined' && isDelveInProgress)
-        )) {
-            stopCombat('resetGame');
-        }
-        if (window.activityManager && typeof window.activityManager.clearActivityOnLoad === 'function') {
-            window.activityManager.clearActivityOnLoad();
-        }
-        if (typeof window.clearFabricationsOnLoad === 'function') {
-            window.clearFabricationsOnLoad();
-        }
-
-        // Clear localStorage for selected slot only
-        localStorage.removeItem(getSaveKeyForSlot(targetSlot));
-        if (saveCoordinator) saveCoordinator.clearBackups(targetSlot);
-
-        // Reset player, inventory, and equipped items to initial state
-        player.baseStats = JSON.parse(JSON.stringify(playerBaseStats));
-        player.totalStats = {};
-        player.currentHealth = null;
-        player.currentShield = null;
-        player.activeBuffs = [];
-		player.effects = [];
-        player.experience = 0;
-        player.level = 1;
-		// Reset inventory slots to default
-		player.maxInventorySlots = 30;
-        
-        // Reset passive system
-        player.passivePoints = 2; // Level 1 begins with the same two-point progression grant.
-        player.passiveAllocations = {}; // Clear all allocations
-        player.passiveTreeVersion = PASSIVE_TREE_VERSION;
-        player.gearPassiveBonuses = {}; // Clear all gear bonuses
-        player.passiveAttackSpeedBonus = 0; // Reset cumulative passive bonus
-
-        player.equippedSkillId = window.DEFAULT_COMBAT_STYLE_ID || 'balancedStyle';
-        player.unlockedSkillIds = (window.combatStyles || []).map(style => style.id);
-        player.combatStyleAllocations = {};
-        player.combatStyleVersion = window.COMBAT_STYLE_VERSION || 2;
-        player.skillPoints = 0;
-        player.skillModAllocations = {};
-        if (typeof normalizeCombatStylesState === 'function') {
-            normalizeCombatStylesState(player);
-        }
-        
-        player.gatheringSkills = {
-            Mining: { level: 1, experience: 0 }
-        };
-
-        // Reset equipment
-        player.equipment = {
-            mainHand: null,
-            offHand: null,
-            head: null,
-            chest: null,
-            legs: null,
-            feet: null,
-            gloves: null,
-            bionicSlots: [null, null, null, null]
-        };
-
-        // Clear inventory
-        window.inventory = []; // Start with an empty inventory
-        window.materialInventory = {};
-        window.componentDropCounts = {};
-
-        if (typeof delveClaimCache !== 'undefined') {
-            delveClaimCache = { items: [], credits: 0 };
-        }
-        if (typeof completedDelveLocations !== 'undefined') completedDelveLocations = {};
-        if (typeof isDelveInProgress !== 'undefined') isDelveInProgress = false;
-        if (typeof currentDelveLocation !== 'undefined') currentDelveLocation = null;
-        if (typeof currentMonsterIndex !== 'undefined') currentMonsterIndex = 0;
-        if (typeof delveBag !== 'undefined') delveBag = { items: [], credits: 0 };
-        if (typeof currentLocation !== 'undefined') currentLocation = null;
-        if (typeof closeDelveClaimCachePopup === 'function') closeDelveClaimCachePopup();
-
-        // Add a starting item
-        const startingItemTemplate = items.find(item => item.name === 'Broken Phase Sword');
-        if (startingItemTemplate) {
-            const startingItem = generateItemInstance(startingItemTemplate);
-            window.inventory.push(startingItem);
-        } else {
-            console.warn('Starting item template not found.');
-        }
-
-        playerCurrency = STARTING_CREDITS;
-
-		// Recalculate player stats and update UI
-        player.calculateStats();
-        updateInventoryDisplay();
-        updateEquipmentDisplay();
-        updatePlayerStatsDisplay();
-        displayPassivesScreen(); // Make sure passive screen is also updated
-        
-        // Re-initialize equipment slots
-        initializeEquipmentSlots();
-        
-        // Show the updated UI
-        showScreen('inventory-screen');
-        
-        renderSaveSlots();
-        logMessage(`Save slot ${targetSlot} has been reset.`);
-        return { ok: true, slot: targetSlot };
-    } else {
-        console.log('Reset cancelled.');
-        logMessage('Reset cancelled.');
-        return { ok: false, reason: 'cancelled' };
+    if (saveProfiles.getProfile(slot).occupied) {
+        setMainMenuStatus(`Profile ${slot} is not empty. Delete it before starting a new game there.`, 'error');
+        return { ok: false, reason: 'occupied', slot };
     }
+
+    initializeNewCharacterState();
+    setAutosaveTargetSlot(slot);
+    saveRuntimeReady = true;
+    const result = saveGame(true, slot);
+    if (!result.ok) {
+        saveRuntimeReady = false;
+        setMainMenuStatus(`Profile ${slot} could not be created because its first autosave failed.`, 'error');
+        return result;
+    }
+    clearSaveFailure();
+    hideMainMenu();
+    logMessage(`New game started in Profile ${slot}.`);
+    renderSaveProtectionState();
+    return result;
+}
+
+function loadProfileSnapshot(slotIndex, saveKind) {
+    const slot = sanitizeSaveSlotIndex(slotIndex);
+    const kind = saveProfiles.sanitizeKind(saveKind);
+    saveRuntimeReady = false;
+    const result = loadGame(slot, kind);
+    if (!result.ok) {
+        showMainMenu('load');
+        setMainMenuStatus(`Profile ${slot}'s ${kind === 'manual' ? 'manual save' : 'autosave'} could not be loaded. Nothing was overwritten.`, 'error');
+        return result;
+    }
+    clearSaveFailure();
+    saveRuntimeReady = true;
+    hideMainMenu();
+    renderSaveProtectionState();
+    return result;
+}
+
+function deleteSaveProfile(slotIndex) {
+    const slot = sanitizeSaveSlotIndex(slotIndex);
+    if (!ownsSaveWriterLease()) {
+        setMainMenuStatus('This tab is read-only because Corebound is active in another tab.', 'error');
+        return { ok: false, reason: 'duplicate_tab', slot };
+    }
+    if (!confirm(`Delete Profile ${slot}, including its autosave and manual save? This cannot be undone.`)) {
+        return { ok: false, reason: 'cancelled', slot };
+    }
+    saveProfiles.deleteProfile(slot);
+    if (saveCoordinator) saveCoordinator.clearBackups(slot);
+    renderMainMenu(mainMenuView);
+    setMainMenuStatus(`Profile ${slot} deleted.`, 'success');
+    return { ok: true, slot };
+}
+
+function logOutToMainMenu() {
+    const slot = getAutosaveTargetSlot();
+    const result = saveGame(true, slot);
+    if (!result.ok) {
+        setSaveFailure(result.error || new Error('The final autosave did not complete.'), true);
+        return result;
+    }
+    saveRuntimeReady = false;
+    closeSettingsMenu();
+    window.location.reload();
+    return result;
 }
 
 
@@ -1099,14 +1098,25 @@ setInterval(() => {
 if (saveCoordinator) {
     saveCoordinator.onOwnershipChange(() => {
         renderSaveProtectionState();
-        renderSaveSlots();
+        renderMainMenu(mainMenuView);
     });
 }
 
-window.addEventListener('beforeunload', () => {
-    if (saveRuntimeReady && ownsSaveWriterLease()) {
+function forceExitAutosave() {
+    if (!exitAutosaveAttempted && saveRuntimeReady && ownsSaveWriterLease()) {
+        exitAutosaveAttempted = true;
         saveGame(true, getAutosaveTargetSlot());
     }
+}
+
+window.addEventListener('pagehide', forceExitAutosave);
+window.addEventListener('pageshow', () => {
+    // A page restored from the browser's back/forward cache must be allowed to
+    // perform another final autosave the next time it exits.
+    exitAutosaveAttempted = false;
+});
+window.addEventListener('beforeunload', () => {
+    forceExitAutosave();
     if (saveCoordinator) saveCoordinator.relinquishOwnership();
 });
 
@@ -1119,27 +1129,43 @@ window.registerCoreboundInitializer(() => {
     if (devPanel && !developerMode) devPanel.hidden = true;
     
     document.getElementById('save-game').addEventListener('click', () => {
-        const slot = getUiSelectedSaveSlot();
+        const slot = getAutosaveTargetSlot();
         const result = saveGame(false, slot);
         if (result.ok) {
-            setAutosaveTargetSlot(slot);
-            renderSaveSlots();
-            logMessage(`Saved to slot ${slot}. Autosave will use this slot.`);
+            showManualSaveConfirmation(slot);
+            logMessage(`Manual save completed for Profile ${slot}.`);
         }
     });
-    document.getElementById('load-game').addEventListener('click', () => {
-        const slot = getUiSelectedSaveSlot();
-        loadGame(slot);
-    });
-    document.getElementById('reset-game').addEventListener('click', () => {
-        const slot = getUiSelectedSaveSlot();
-        resetGame(slot);
-    });
-    document.getElementById('restore-save-backup').addEventListener('click', () => {
-        restoreLatestSaveBackup(getUiSelectedSaveSlot());
-    });
+    document.getElementById('logout-to-main-menu').addEventListener('click', logOutToMainMenu);
     document.getElementById('save-owner-takeover').addEventListener('click', () => {
         takeSaveControlAndReload();
+    });
+
+    document.getElementById('main-menu-new').addEventListener('click', () => {
+        setMainMenuStatus('');
+        renderMainMenu('new');
+    });
+    document.getElementById('main-menu-load').addEventListener('click', () => {
+        setMainMenuStatus('');
+        renderMainMenu('load');
+    });
+    document.getElementById('main-menu-back').addEventListener('click', () => {
+        setMainMenuStatus('');
+        renderMainMenu('root');
+    });
+    document.getElementById('main-menu-continue').addEventListener('click', (event) => {
+        const button = event.currentTarget;
+        if (button.dataset.slot && button.dataset.kind) {
+            loadProfileSnapshot(button.dataset.slot, button.dataset.kind);
+        }
+    });
+    document.getElementById('main-menu-slot-list').addEventListener('click', (event) => {
+        const button = event.target.closest('[data-menu-action]');
+        if (!button || button.disabled) return;
+        const action = button.dataset.menuAction;
+        if (action === 'new') startNewGameInProfile(button.dataset.slot);
+        else if (action === 'load') loadProfileSnapshot(button.dataset.slot, button.dataset.kind);
+        else if (action === 'delete') deleteSaveProfile(button.dataset.slot);
     });
     wireSidebarNavigation();
 
@@ -1249,24 +1275,10 @@ window.registerCoreboundInitializer(() => {
         closeSettingsMenu();
     });
 
-    // Automatically load the game when the page is loaded from active slot.
-    const startupSlot = getAutosaveTargetSlot();
-    uiSelectedSaveSlot = startupSlot;
-    const startupLoad = loadGame(startupSlot);
-    if (!startupLoad.ok && startupLoad.reason === 'empty_slot') {
-        const startingItemTemplate = items.find(item => item.name === 'Broken Phase Sword');
-        if (startingItemTemplate && window.inventory.length === 0) {
-            window.inventory.push(generateItemInstance(startingItemTemplate));
-        }
-        playerCurrency = STARTING_CREDITS;
-        player.calculateStats();
-        player.currentHealth = player.totalStats.health;
-        player.currentShield = player.totalStats.energyShield;
-        logMessage('New character initialized with a Broken Phase Sword and 1,000 credits.');
-    }
-    saveRuntimeReady = true;
+    // A profile must be explicitly created or successfully loaded before any save may write.
+    saveRuntimeReady = false;
     renderSaveProtectionState();
-    renderSaveSlots();
+    showMainMenu('root');
     startGlobalStatusBannerUpdates();
 
     // Initial display updates
@@ -1295,6 +1307,7 @@ window.registerCoreboundInitializer(() => {
 
 // Global keyboard shortcuts
 document.addEventListener('keydown', (e) => {
+    if (!document.getElementById('main-menu-overlay')?.hidden) return;
     if (['INPUT','TEXTAREA'].includes((e.target && e.target.tagName) || '')) return;
     const binds = JSON.parse(localStorage.getItem('keybinds') || 'null') || { inventory:'I', equipment:'E', passives:'P', adventure:'A', settings:'S' };
     const key = (e.key||'').toUpperCase();

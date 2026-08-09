@@ -1570,6 +1570,8 @@ test('save coordinator enforces one writer and keeps rotating recovery snapshots
       const skippedNearDuplicate = second.backupCurrentSave(4, level15);
       const laterBackup = second.backupCurrentSave(4, level19);
       const backupLevels = second.getBackups(4).map(entry => entry.state.player.level);
+      const manualBackup = second.backupCurrentSave(4, level15, { force: true, saveKind: 'manual' });
+      const manualBackupLevels = second.getBackups(4, 'manual').map(entry => entry.state.player.level);
       second.clearBackups(4);
 
       return {
@@ -1581,6 +1583,8 @@ test('save coordinator enforces one writer and keeps rotating recovery snapshots
         skippedNearDuplicate,
         laterBackup,
         backupLevels,
+        manualBackup,
+        manualBackupLevels,
         backupsAfterClear: second.getBackups(4).length
       };
     })()`,
@@ -1595,7 +1599,67 @@ test('save coordinator enforces one writer and keeps rotating recovery snapshots
   assert.equal(result.skippedNearDuplicate, false, 'five-second autosaves should not consume every recovery slot');
   assert.equal(result.laterBackup, true);
   assert.deepEqual([...result.backupLevels], [19, 14]);
+  assert.equal(result.manualBackup, true);
+  assert.deepEqual([...result.manualBackupLevels], [15]);
   assert.equal(result.backupsAfterClear, 0);
+});
+
+test('profile saves keep autosave and manual snapshots independent and preserve legacy slots', () => {
+  const storageData = new Map();
+  const localStorage = {
+    getItem: key => storageData.get(key) ?? null,
+    setItem: (key, value) => storageData.set(key, String(value)),
+    removeItem: key => storageData.delete(key)
+  };
+  const result = evaluateClassic(
+    'saveProfiles.js',
+    `(() => {
+      const store = window.coreboundSaveProfiles;
+      const legacy = JSON.stringify({ player: { level: 12, currency: 400 }, meta: { savedAt: 1000 } });
+      const manual = JSON.stringify({ player: { level: 18, currency: 900 }, meta: { savedAt: 2000 } });
+      const autosave = JSON.stringify({ player: { level: 20, currency: 1200 }, meta: { savedAt: 3000 } });
+      localStorage.setItem(store.getLegacySnapshotKey(2), legacy);
+      const legacyPreview = store.previewSnapshot(2, 'autosave');
+      store.writeSnapshot(2, 'manual', manual);
+      store.writeSnapshot(2, 'autosave', autosave);
+      store.setActiveSlot(2);
+      const profile = store.getProfile(2);
+      const continuation = store.getContinueChoice();
+      store.writeSnapshot(2, 'manual', JSON.stringify({ player: { level: 21 }, meta: { savedAt: 4000 } }));
+      const newerManualContinuation = store.getContinueChoice();
+      localStorage.setItem(store.getSnapshotKey(2, 'autosave'), '{broken');
+      const manualFallback = store.getContinueChoice();
+      store.deleteProfile(2);
+      return {
+        legacyState: legacyPreview.state,
+        legacyLevel: legacyPreview.level,
+        legacyFlag: legacyPreview.legacy,
+        autosaveLevel: profile.autosave.level,
+        manualLevel: profile.manual.level,
+        continuationKind: continuation.kind,
+        continuationLevel: continuation.level,
+        newerContinuationKind: newerManualContinuation.kind,
+        newerContinuationLevel: newerManualContinuation.level,
+        fallbackKind: manualFallback.kind,
+        fallbackLevel: manualFallback.level,
+        occupiedAfterDelete: store.getProfile(2).occupied
+      };
+    })()`,
+    { localStorage }
+  );
+
+  assert.equal(result.legacyState, 'ok');
+  assert.equal(result.legacyLevel, 12);
+  assert.equal(result.legacyFlag, true);
+  assert.equal(result.autosaveLevel, 20);
+  assert.equal(result.manualLevel, 18);
+  assert.equal(result.continuationKind, 'autosave');
+  assert.equal(result.continuationLevel, 20);
+  assert.equal(result.newerContinuationKind, 'manual');
+  assert.equal(result.newerContinuationLevel, 21);
+  assert.equal(result.fallbackKind, 'manual');
+  assert.equal(result.fallbackLevel, 21);
+  assert.equal(result.occupiedAfterDelete, false);
 });
 
 test('save UI only reports manual success after a confirmed write', () => {
@@ -1604,8 +1668,13 @@ test('save UI only reports manual success after a confirmed write', () => {
   assert.match(source, /if \(!saveRuntimeReady \|\| !ownsSaveWriterLease\(\)\) return;/);
   assert.match(source, /backupCurrentSave\(targetSlot, previousRaw/);
   assert.match(source, /return \{ ok: false, reason: 'save_error'/);
+  assert.match(source, /showManualSaveConfirmation\(slot\)/);
+  assert.match(source, /window\.addEventListener\('pagehide', forceExitAutosave\)/);
+  assert.match(source, /saveRuntimeReady = false;\s*const result = loadGame\(slot, kind\)/);
   assert.match(read('index.html'), /id="save-owner-overlay"/);
-  assert.match(read('index.html'), /id="restore-save-backup"/);
+  assert.match(read('index.html'), /id="main-menu-overlay"/);
+  assert.match(read('index.html'), /id="logout-to-main-menu"/);
+  assert.doesNotMatch(read('index.html'), /id="load-game"/);
 });
 
 test('async runtime loading cannot miss the one-time DOMContentLoaded event', () => {

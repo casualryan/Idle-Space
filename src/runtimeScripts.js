@@ -3,6 +3,7 @@
 export const RUNTIME_SCRIPTS = [
   'combatSchema.js',
   'saveSchema.js',
+  'saveProfiles.js',
   'saveCoordinator.js',
   'stats.js',
   'recipes.js',

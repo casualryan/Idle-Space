@@ -13,6 +13,41 @@
 </head>
 
 <body>
+    <div id="main-menu-overlay" class="main-menu-overlay" role="dialog" aria-modal="true" aria-labelledby="main-menu-title">
+        <section class="main-menu-card">
+            <div class="main-menu-brand">SYNTHETIC DOMINION</div>
+            <h1 id="main-menu-title">COREBOUND</h1>
+            <p class="main-menu-tagline">Build the operator. Break the machine.</p>
+
+            <div id="main-menu-root" class="main-menu-root">
+                <button type="button" id="main-menu-continue" class="main-menu-choice main-menu-choice-primary">
+                    <span>Continue</span>
+                    <small class="main-menu-button-detail">No playable profile found</small>
+                </button>
+                <button type="button" id="main-menu-new" class="main-menu-choice">
+                    <span>New Game</span>
+                    <small>Choose an empty character profile</small>
+                </button>
+                <button type="button" id="main-menu-load" class="main-menu-choice">
+                    <span>Load Game</span>
+                    <small>Choose an autosave or manual save</small>
+                </button>
+            </div>
+
+            <div id="main-menu-slots" class="main-menu-slots" hidden>
+                <div class="main-menu-slots-header">
+                    <button type="button" id="main-menu-back" class="main-menu-back">&larr; Back</button>
+                    <div>
+                        <h2 id="main-menu-slot-title">Load Game</h2>
+                        <p id="main-menu-slot-description"></p>
+                    </div>
+                </div>
+                <div id="main-menu-slot-list" class="main-menu-slot-list"></div>
+            </div>
+            <p id="main-menu-status" class="main-menu-status" aria-live="polite" hidden></p>
+        </section>
+    </div>
+
     <!-- Sidebar Navigation -->
     <div id="sidebar">
         <button id="sidebar-collapse-toggle" style="position:absolute; top:6px; right:6px; width:22px; height:22px; border:1px solid #00ffcc; background:linear-gradient(to bottom,#003366,#001133); color:#00ffcc; border-radius:4px; cursor:pointer; z-index:200;">‹</button>
@@ -354,8 +389,8 @@
                 <div id="settings-panel-main" class="settings-panel">
                     <nav class="settings-nav" aria-label="Settings categories">
                         <button type="button" class="settings-nav-item" data-settings-panel="save">
-                            <span class="settings-nav-label">Save &amp; Load</span>
-                            <span class="settings-nav-desc">Slots, save, load, reset</span>
+                            <span class="settings-nav-label">Save &amp; Session</span>
+                            <span class="settings-nav-desc">Manual save or return to main menu</span>
                         </button>
                         <button type="button" class="settings-nav-item" data-settings-panel="gameplay">
                             <span class="settings-nav-label">Gameplay</span>
@@ -373,15 +408,11 @@
                 </div>
 
                 <div id="settings-panel-save" class="settings-panel" hidden>
-                    <p id="active-save-slot-label" class="active-save-slot-label">Autosave writes to slot 1</p>
+                    <p class="active-save-slot-label">Autosaves and manual saves are stored separately in the active profile.</p>
                     <p id="save-system-status" class="save-system-status" aria-live="polite">Save protection is starting...</p>
-                    <div id="save-slots-list" class="save-slots-grid save-slots-scroll"></div>
-                    <div class="settings-action-grid" id="save-settings-actions">
-                        <button type="button" id="save-game" class="settings-btn settings-btn-primary">Save</button>
-                        <button type="button" id="load-game" class="settings-btn settings-btn-primary">Load</button>
-                        <button type="button" id="restore-save-backup" class="settings-btn settings-btn-secondary">Restore Previous</button>
-                        <button type="button" id="reset-game" class="settings-btn settings-btn-danger">Reset</button>
-                        <button type="button" id="toggle-sound" class="settings-btn settings-btn-secondary">Sound: ON</button>
+                    <div class="settings-action-grid settings-action-grid--stacked" id="save-settings-actions">
+                        <button type="button" id="save-game" class="settings-btn settings-btn-primary">Manual Save</button>
+                        <button type="button" id="logout-to-main-menu" class="settings-btn settings-btn-secondary">Log Out to Main Menu</button>
                     </div>
                 </div>
 
@@ -390,6 +421,9 @@
                         <input id="setting-disable-sell-confirm" type="checkbox">
                         <span>Disable sell confirmation</span>
                     </label>
+                    <div class="settings-action-grid settings-action-grid--stacked">
+                        <button type="button" id="toggle-sound" class="settings-btn settings-btn-secondary">Sound: ON</button>
+                    </div>
                 </div>
 
                 <div id="settings-panel-keybinds" class="settings-panel" hidden>
@@ -428,6 +462,7 @@
         </div>
     </div>
     <div id="save-error-alert" class="save-error-alert" hidden role="alert" aria-live="assertive"></div>
+    <div id="manual-save-toast" class="manual-save-toast" hidden role="status" aria-live="polite"></div>
 
 </body>
 </html>

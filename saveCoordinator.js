@@ -113,26 +113,44 @@ function createCoreboundSaveCoordinator(options = {}) {
         heartbeatTimer = null;
     }
 
-    function getBackupKey(slotIndex, backupIndex) {
+    function normalizeSaveKind(saveKind) {
+        return saveKind === 'manual' ? 'manual' : 'autosave';
+    }
+
+    function getBackupKey(slotIndex, saveKind, backupIndex) {
+        return `${COREBOUND_SAVE_BACKUP_KEY_PREFIX}${Number(slotIndex)}_${normalizeSaveKind(saveKind)}_${Number(backupIndex)}`;
+    }
+
+    function getLegacyBackupKey(slotIndex, backupIndex) {
         return `${COREBOUND_SAVE_BACKUP_KEY_PREFIX}${Number(slotIndex)}_${Number(backupIndex)}`;
     }
 
-    function getBackups(slotIndex) {
+    function getBackups(slotIndex, saveKind = 'autosave') {
+        const kind = normalizeSaveKind(saveKind);
         const backups = [];
         for (let index = 1; index <= backupCount; index++) {
-            const raw = storage.getItem(getBackupKey(slotIndex, index));
+            const raw = storage.getItem(getBackupKey(slotIndex, kind, index));
             const state = parseStoredObject(raw);
             if (!state) continue;
             backups.push({ index, raw, state });
         }
+        if (backups.length === 0 && kind === 'autosave') {
+            for (let index = 1; index <= backupCount; index++) {
+                const raw = storage.getItem(getLegacyBackupKey(slotIndex, index));
+                const state = parseStoredObject(raw);
+                if (!state) continue;
+                backups.push({ index, raw, state, legacy: true });
+            }
+        }
         return backups;
     }
 
-    function backupCurrentSave(slotIndex, currentRaw, { force = false } = {}) {
+    function backupCurrentSave(slotIndex, currentRaw, { force = false, saveKind = 'autosave' } = {}) {
+        const kind = normalizeSaveKind(saveKind);
         const currentState = parseStoredObject(currentRaw);
         if (!currentState) return false;
 
-        const newestBackup = parseStoredObject(storage.getItem(getBackupKey(slotIndex, 1)));
+        const newestBackup = parseStoredObject(storage.getItem(getBackupKey(slotIndex, kind, 1)));
         const currentSavedAt = Number(currentState.meta?.savedAt || 0);
         const newestSavedAt = Number(newestBackup?.meta?.savedAt || 0);
         if (!force && newestBackup && currentSavedAt - newestSavedAt < backupIntervalMs) {
@@ -140,17 +158,25 @@ function createCoreboundSaveCoordinator(options = {}) {
         }
 
         for (let index = backupCount; index >= 2; index--) {
-            const prior = storage.getItem(getBackupKey(slotIndex, index - 1));
-            if (prior) storage.setItem(getBackupKey(slotIndex, index), prior);
-            else storage.removeItem(getBackupKey(slotIndex, index));
+            const prior = storage.getItem(getBackupKey(slotIndex, kind, index - 1));
+            if (prior) storage.setItem(getBackupKey(slotIndex, kind, index), prior);
+            else storage.removeItem(getBackupKey(slotIndex, kind, index));
         }
-        storage.setItem(getBackupKey(slotIndex, 1), currentRaw);
+        storage.setItem(getBackupKey(slotIndex, kind, 1), currentRaw);
         return true;
     }
 
-    function clearBackups(slotIndex) {
-        for (let index = 1; index <= backupCount; index++) {
-            storage.removeItem(getBackupKey(slotIndex, index));
+    function clearBackups(slotIndex, saveKind = null) {
+        const kinds = saveKind == null ? ['autosave', 'manual'] : [normalizeSaveKind(saveKind)];
+        for (const kind of kinds) {
+            for (let index = 1; index <= backupCount; index++) {
+                storage.removeItem(getBackupKey(slotIndex, kind, index));
+            }
+        }
+        if (saveKind == null || normalizeSaveKind(saveKind) === 'autosave') {
+            for (let index = 1; index <= backupCount; index++) {
+                storage.removeItem(getLegacyBackupKey(slotIndex, index));
+            }
         }
     }
 
