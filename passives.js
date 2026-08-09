@@ -2,7 +2,7 @@
 // cluster blueprints so the renderer, save migration, validation, and stat
 // pipeline share one authority without maintaining thousands of hand-wired IDs.
 
-const PASSIVE_TREE_VERSION = 4;
+const PASSIVE_TREE_VERSION = 5;
 const PASSIVE_TREE_ORIGIN_ID = 'core-origin';
 const PASSIVE_TREE_SECTOR_ORDER = Object.freeze([
     'kinetic', 'slashing', 'corrosive', 'radiation', 'electric', 'cryo', 'pyro'
@@ -209,15 +209,8 @@ const PASSIVE_CLUSTER_RADII = Object.freeze([
     2820, 3020, 2800,
     3380, 3590, 3380
 ]);
-const PASSIVE_ARTERY_EDGES = Object.freeze([
-    [0, 3], [0, 4], [1, 4], [1, 5], [2, 5],
-    [3, 6], [3, 7], [4, 6], [4, 7], [4, 8], [5, 7], [5, 8],
-    [6, 9], [6, 10], [7, 9], [7, 10], [7, 11], [8, 10], [8, 11],
-    [9, 12], [9, 13], [10, 12], [10, 13], [10, 14], [11, 13], [11, 14],
-    [12, 15], [12, 16], [13, 15], [13, 16], [13, 17], [14, 16], [14, 17]
-]);
-const PASSIVE_TWO_EXIT_CLUSTERS = new Set([4, 7, 10, 13, 16]);
-const PASSIVE_CLUSTER_LINKS = Object.freeze([[1, 4], [3, 6], [7, 11], [9, 12], [13, 16]]);
+const PASSIVE_MAX_LOCAL_EDGE_LENGTH = 620;
+const PASSIVE_TWO_EXIT_CLUSTERS = new Set([4, 7, 10, 13]);
 const PASSIVE_SPECIALIST_LAYOUT = Object.freeze([
     { radius: 3860, angle: -17 }, { radius: 4210, angle: 1 }, { radius: 3910, angle: 17 }
 ]);
@@ -562,16 +555,146 @@ function createPassiveTree() {
     const links = new Set();
     const clusters = [];
     const nodeIds = new Set();
+    const authoredNodeById = new Map();
     const addNode = node => {
         if (nodeIds.has(node.id)) throw new TypeError(`Duplicate passive node ID: ${node.id}`);
         nodeIds.add(node.id);
-        nodes.push({ maxRank: 1, gearScalable: node.type !== 'keystone', ...node });
+        const completed = { maxRank: 1, gearScalable: node.type !== 'keystone', ...node };
+        nodes.push(completed);
+        authoredNodeById.set(completed.id, completed);
     };
     const link = (left, right) => {
         if (!left || !right || left === right) return;
         links.add([left, right].sort().join('|'));
     };
     const connectRing = ids => ids.forEach((id, index) => link(id, ids[(index + 1) % ids.length]));
+    const getClosestNodePair = (leftIds, rightIds) => {
+        let closest = null;
+        for (const leftId of leftIds) {
+            const left = authoredNodeById.get(leftId);
+            for (const rightId of rightIds) {
+                const right = authoredNodeById.get(rightId);
+                if (!left || !right) continue;
+                const distance = Math.hypot(left.x - right.x, left.y - right.y);
+                if (!closest || distance < closest.distance) closest = { leftId, rightId, distance };
+            }
+        }
+        return closest;
+    };
+    const linkLocalPath = (leftId, rightId, options) => {
+        const left = authoredNodeById.get(leftId);
+        const right = authoredNodeById.get(rightId);
+        if (!left || !right) throw new TypeError(`Cannot build local passive path: ${leftId} -> ${rightId}`);
+        const routeIds = [leftId];
+        for (const [waypointIndex, waypoint] of (options.waypoints || []).entries()) {
+            const waypointId = `${options.idPrefix}-bend-${waypointIndex + 1}`;
+            addNode({
+                id: waypointId,
+                name: `${options.label} Connector`,
+                description: options.description || 'A short local connection between nearby passive routes.',
+                sector: options.sectorId,
+                type: 'connector',
+                depth: options.depth,
+                x: Math.round(waypoint.x),
+                y: Math.round(waypoint.y),
+                effects: options.effects || { precision: 1 }
+            });
+            routeIds.push(waypointId);
+        }
+        routeIds.push(rightId);
+        for (let legIndex = 0; legIndex < routeIds.length - 1; legIndex++) {
+            const legLeftId = routeIds[legIndex];
+            const legRightId = routeIds[legIndex + 1];
+            const legLeft = authoredNodeById.get(legLeftId);
+            const legRight = authoredNodeById.get(legRightId);
+            const distance = Math.hypot(legLeft.x - legRight.x, legLeft.y - legRight.y);
+            const segmentCount = Math.max(1, Math.ceil(distance / PASSIVE_MAX_LOCAL_EDGE_LENGTH));
+            let previousId = legLeftId;
+            for (let segmentIndex = 1; segmentIndex < segmentCount; segmentIndex++) {
+                const progress = segmentIndex / segmentCount;
+                const connectorId = `${options.idPrefix}-leg-${legIndex + 1}-connector-${segmentIndex}`;
+                addNode({
+                    id: connectorId,
+                    name: `${options.label} Connector`,
+                    description: options.description || 'A short local connection between nearby passive routes.',
+                    sector: options.sectorId,
+                    type: 'connector',
+                    depth: options.depth,
+                    x: Math.round(legLeft.x + (legRight.x - legLeft.x) * progress),
+                    y: Math.round(legLeft.y + (legRight.y - legLeft.y) * progress),
+                    effects: options.effects || { precision: 1 }
+                });
+                link(previousId, connectorId);
+                previousId = connectorId;
+            }
+            link(previousId, legRightId);
+        }
+    };
+    const getPointToSegmentDistance = (point, left, right) => {
+        const deltaX = right.x - left.x;
+        const deltaY = right.y - left.y;
+        const lengthSquared = deltaX * deltaX + deltaY * deltaY;
+        if (lengthSquared <= Number.EPSILON) return Math.hypot(point.x - left.x, point.y - left.y);
+        const progress = Math.max(0, Math.min(1,
+            ((point.x - left.x) * deltaX + (point.y - left.y) * deltaY) / lengthSquared
+        ));
+        return Math.hypot(
+            point.x - (left.x + deltaX * progress),
+            point.y - (left.y + deltaY * progress)
+        );
+    };
+    const isRouteClearOfClusters = (routePoints, ignoredClusterIds = new Set()) => {
+        for (let pointIndex = 0; pointIndex < routePoints.length - 1; pointIndex++) {
+            const left = routePoints[pointIndex];
+            const right = routePoints[pointIndex + 1];
+            for (const cluster of clusters) {
+                if (ignoredClusterIds.has(cluster.id)) continue;
+                if (getPointToSegmentDistance(cluster, left, right) < cluster.radius + 24) return false;
+            }
+        }
+        return true;
+    };
+    const getClearRouteWaypoints = (leftId, rightId, ignoredClusterIds = []) => {
+        const left = authoredNodeById.get(leftId);
+        const right = authoredNodeById.get(rightId);
+        const ignored = new Set(ignoredClusterIds);
+        if (isRouteClearOfClusters([left, right], ignored)) return [];
+        const deltaX = right.x - left.x;
+        const deltaY = right.y - left.y;
+        const length = Math.max(1, Math.hypot(deltaX, deltaY));
+        const perpendicularX = -deltaY / length;
+        const perpendicularY = deltaX / length;
+        const candidates = [];
+        for (const progress of [0.35, 0.5, 0.65]) {
+            for (const side of [-1, 1]) {
+                for (const clearance of [140, 180, 230, 290, 360, 440]) {
+                    const waypoint = {
+                        x: left.x + deltaX * progress + perpendicularX * side * clearance,
+                        y: left.y + deltaY * progress + perpendicularY * side * clearance
+                    };
+                    const route = [left, waypoint, right];
+                    if (!isRouteClearOfClusters(route, ignored)) continue;
+                    const routeLength = Math.hypot(left.x - waypoint.x, left.y - waypoint.y)
+                        + Math.hypot(right.x - waypoint.x, right.y - waypoint.y);
+                    candidates.push({ routeLength, waypoints: [waypoint] });
+                }
+            }
+        }
+        if (candidates.length > 0) {
+            candidates.sort((a, b) => a.routeLength - b.routeLength);
+            return candidates[0].waypoints;
+        }
+        for (const side of [-1, 1]) {
+            for (const clearance of [180, 240, 320, 420, 540]) {
+                const waypoints = [0.3, 0.7].map(progress => ({
+                    x: left.x + deltaX * progress + perpendicularX * side * clearance,
+                    y: left.y + deltaY * progress + perpendicularY * side * clearance
+                }));
+                if (isRouteClearOfClusters([left, ...waypoints, right], ignored)) return waypoints;
+            }
+        }
+        return null;
+    };
 
     addNode({
         id: PASSIVE_TREE_ORIGIN_ID,
@@ -630,9 +753,6 @@ function createPassiveTree() {
             });
             travelIds.push(travelId);
         });
-        [0, 1, 2].forEach(index => link(gatewayIds[sectorId], travelIds[index]));
-        PASSIVE_ARTERY_EDGES.forEach(([leftIndex, rightIndex]) => link(travelIds[leftIndex], travelIds[rightIndex]));
-
         blueprints.forEach((blueprint, clusterIndex) => {
             const depth = clusterIndex + 1;
             const layout = PASSIVE_ARTERY_LAYOUT[clusterIndex];
@@ -681,9 +801,20 @@ function createPassiveTree() {
                 ringIds.push(id);
             }
             connectRing(ringIds);
-            link(travelIds[clusterIndex], ringIds[0]);
+            const entrance = getClosestNodePair([travelIds[clusterIndex]], ringIds);
+            linkLocalPath(entrance.leftId, entrance.rightId, {
+                idPrefix: `${sectorId}-cluster-${depth}-entrance`,
+                label: `${sector.label} ${blueprint.label}`, sectorId, depth,
+                effects: getTravelEffects(sector, clusterIndex)
+            });
             if (PASSIVE_TWO_EXIT_CLUSTERS.has(clusterIndex)) {
-                link(ringIds[4], travelIds[Math.min(PASSIVE_ARTERY_LAYOUT.length - 1, clusterIndex + 3)]);
+                const exitTravelId = travelIds[clusterIndex + 3];
+                const exit = getClosestNodePair(ringIds, [exitTravelId]);
+                linkLocalPath(exit.leftId, exit.rightId, {
+                    idPrefix: `${sectorId}-cluster-${depth}-exit`,
+                    label: `${sector.label} ${blueprint.label}`, sectorId, depth: depth + 0.5,
+                    effects: getTravelEffects(sector, clusterIndex + 3)
+                });
             }
             ringGroups.push(ringIds);
             clusters.push({
@@ -692,8 +823,6 @@ function createPassiveTree() {
                 x: center.x, y: center.y, radius: 99
             });
         });
-        PASSIVE_CLUSTER_LINKS.forEach(([leftIndex, rightIndex]) => link(ringGroups[leftIndex][2], ringGroups[rightIndex][6]));
-
         sector.specialists.forEach((specialistName, wheelIndex) => {
             const specialistLayout = PASSIVE_SPECIALIST_LAYOUT[wheelIndex];
             const wheelAngle = sector.angle + specialistLayout.angle + Math.sin((sectorIndex + 1) * (wheelIndex + 2)) * 1.8;
@@ -726,12 +855,60 @@ function createPassiveTree() {
                 ringIds.push(id);
             }
             connectRing(ringIds);
-            link(travelIds[15 + wheelIndex], ringIds[0]);
+            const entrance = getClosestNodePair([travelIds[15 + wheelIndex]], ringIds);
+            const entranceWaypoints = getClearRouteWaypoints(entrance.leftId, entrance.rightId);
+            linkLocalPath(entrance.leftId, entrance.rightId, {
+                idPrefix: `${sectorId}-specialist-${wheelIndex + 1}-entrance`,
+                label: specialistName, sectorId, depth: 19 + wheelIndex,
+                effects: getTravelEffects(sector, 15 + wheelIndex),
+                waypoints: entranceWaypoints || []
+            });
             specialistGroups.push(ringIds);
             clusters.push({ id: `${sectorId}-specialist-${wheelIndex + 1}`, sector: sectorId, label: specialistName, x: center.x, y: center.y, radius: 137, specialist: true });
         });
-        link(specialistGroups[0][7], specialistGroups[1][5]);
-        link(specialistGroups[1][7], specialistGroups[2][5]);
+    });
+
+    // Build the braided roads only after every cluster is positioned. That
+    // lets each short connector route around every wheel in the full tree,
+    // including neighboring-sector clusters near the center.
+    PASSIVE_TREE_SECTOR_ORDER.forEach(sectorId => {
+        const sector = PASSIVE_SECTOR_DEFINITIONS[sectorId];
+        const { travelIds } = sectorClusterIds[sectorId];
+        [0, 1, 2].forEach(index => {
+            const waypoints = getClearRouteWaypoints(gatewayIds[sectorId], travelIds[index]);
+            if (waypoints === null) return;
+            linkLocalPath(gatewayIds[sectorId], travelIds[index], {
+                idPrefix: `${sectorId}-gateway-${index + 1}`,
+                label: `${sector.label} Gateway`, sectorId, depth: 0.5,
+                effects: getTravelEffects(sector, index), waypoints
+            });
+        });
+        for (let layerIndex = 0; layerIndex < 5; layerIndex++) {
+            for (let laneIndex = 0; laneIndex < 3; laneIndex++) {
+                const leftIndex = layerIndex * 3 + laneIndex;
+                const rightIndex = leftIndex + 3;
+                const waypoints = getClearRouteWaypoints(travelIds[leftIndex], travelIds[rightIndex]);
+                if (waypoints === null) continue;
+                linkLocalPath(travelIds[leftIndex], travelIds[rightIndex], {
+                    idPrefix: `${sectorId}-artery-out-${leftIndex + 1}-${rightIndex + 1}`,
+                    label: `${sector.label} Arterial`, sectorId, depth: layerIndex + 1.5,
+                    effects: getTravelEffects(sector, leftIndex), waypoints
+                });
+            }
+        }
+        for (let layerIndex = 0; layerIndex < 6; layerIndex++) {
+            for (let laneIndex = 0; laneIndex < 2; laneIndex++) {
+                const leftIndex = layerIndex * 3 + laneIndex;
+                const rightIndex = leftIndex + 1;
+                const waypoints = getClearRouteWaypoints(travelIds[leftIndex], travelIds[rightIndex]);
+                if (waypoints === null) continue;
+                linkLocalPath(travelIds[leftIndex], travelIds[rightIndex], {
+                    idPrefix: `${sectorId}-artery-side-${leftIndex + 1}-${rightIndex + 1}`,
+                    label: `${sector.label} Crossroad`, sectorId, depth: layerIndex + 1,
+                    effects: getTravelEffects(sector, rightIndex), waypoints
+                });
+            }
+        }
     });
 
     PASSIVE_BRIDGE_DEFINITIONS.forEach((bridge, bridgeIndex) => {
@@ -762,11 +939,46 @@ function createPassiveTree() {
             ids.push(id);
             if (index > 0) link(ids[index - 1], id);
         }
-        link(sectorClusterIds[leftSectorId].travelIds[14], ids[0]);
-        link(ids[ids.length - 1], sectorClusterIds[rightSectorId].travelIds[12]);
-        link(ids[6], sectorClusterIds[leftSectorId].ringGroups[13][4]);
-        link(ids[10], sectorClusterIds[rightSectorId].ringGroups[12][4]);
+        const leftEntry = getClosestNodePair([ids[0]], sectorClusterIds[leftSectorId].travelIds.slice(12));
+        const rightEntry = getClosestNodePair([ids[ids.length - 1]], sectorClusterIds[rightSectorId].travelIds.slice(12));
+        linkLocalPath(leftEntry.leftId, leftEntry.rightId, {
+            idPrefix: `bridge-${bridgeIndex + 1}-${leftSectorId}-entry`,
+            label: bridge.label, sectorId: 'bridge', depth: 0,
+            effects: getBridgeMinorEffects(leftSector, rightSector, 0)
+        });
+        linkLocalPath(rightEntry.leftId, rightEntry.rightId, {
+            idPrefix: `bridge-${bridgeIndex + 1}-${rightSectorId}-entry`,
+            label: bridge.label, sectorId: 'bridge', depth: 18,
+            effects: getBridgeMinorEffects(leftSector, rightSector, 16)
+        });
     });
+
+    // If two deliberately local routes meet at a generated connector, make
+    // that meeting a real junction instead of drawing one line beneath an
+    // unrelated node.
+    for (const connector of nodes.filter(node => node.type === 'connector')) {
+        let closestCrossing = null;
+        for (const serialized of links) {
+            const [fromId, toId] = serialized.split('|');
+            if (fromId === connector.id || toId === connector.id) continue;
+            const from = authoredNodeById.get(fromId);
+            const to = authoredNodeById.get(toId);
+            const deltaX = to.x - from.x;
+            const deltaY = to.y - from.y;
+            const lengthSquared = deltaX * deltaX + deltaY * deltaY;
+            if (lengthSquared <= Number.EPSILON) continue;
+            const progress = ((connector.x - from.x) * deltaX + (connector.y - from.y) * deltaY) / lengthSquared;
+            if (progress <= 0.08 || progress >= 0.92) continue;
+            const distance = getPointToSegmentDistance(connector, from, to);
+            if (distance < 22 && (!closestCrossing || distance < closestCrossing.distance)) {
+                closestCrossing = { serialized, fromId, toId, distance };
+            }
+        }
+        if (!closestCrossing) continue;
+        links.delete(closestCrossing.serialized);
+        link(closestCrossing.fromId, connector.id);
+        link(connector.id, closestCrossing.toId);
+    }
 
     const adjacency = Object.fromEntries(nodes.map(node => [node.id, []]));
     const edges = [...links].map(serialized => {
@@ -921,10 +1133,36 @@ function validatePassiveTree() {
     for (const node of passives) {
         if (!node.name || !node.type || !node.effects) errors.push(`${node.id} is missing required data`);
         if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) errors.push(`${node.id} has invalid coordinates`);
+        if (node.id !== PASSIVE_TREE_ORIGIN_ID && node.connections.length > 6) {
+            errors.push(`${node.id} is an unreadable ${node.connections.length}-way junction`);
+        }
         for (const connection of node.connections || []) {
             const target = PASSIVE_NODE_BY_ID.get(connection);
             if (!target) errors.push(`${node.id} references missing node ${connection}`);
             else if (!target.connections.includes(node.id)) errors.push(`${node.id} -> ${connection} is not symmetric`);
+        }
+    }
+    for (const edge of PASSIVE_TREE.edges) {
+        const from = PASSIVE_NODE_BY_ID.get(edge.from);
+        const to = PASSIVE_NODE_BY_ID.get(edge.to);
+        const distance = Math.hypot(from.x - to.x, from.y - to.y);
+        if (distance > PASSIVE_MAX_LOCAL_EDGE_LENGTH + 1) {
+            errors.push(`${edge.from} -> ${edge.to} spans ${Math.round(distance)} units`);
+        }
+        if (distance < 100) continue;
+        const deltaX = to.x - from.x;
+        const deltaY = to.y - from.y;
+        const lengthSquared = deltaX * deltaX + deltaY * deltaY;
+        for (const node of passives) {
+            if (node.id === edge.from || node.id === edge.to) continue;
+            const progress = ((node.x - from.x) * deltaX + (node.y - from.y) * deltaY) / lengthSquared;
+            if (progress <= 0.08 || progress >= 0.92) continue;
+            const closestX = from.x + deltaX * progress;
+            const closestY = from.y + deltaY * progress;
+            if (Math.hypot(node.x - closestX, node.y - closestY) < 20) {
+                errors.push(`${edge.from} -> ${edge.to} passes over ${node.id}`);
+                break;
+            }
         }
     }
     const reachable = new Set([PASSIVE_TREE_ORIGIN_ID]);
@@ -945,7 +1183,7 @@ function validatePassiveTree() {
     for (const node of travelNodes) {
         const roadConnections = node.connections.filter(id => {
             const target = PASSIVE_NODE_BY_ID.get(id);
-            return target && (target.type === 'travel' || target.type === 'gateway' || target.type === 'bridge');
+            return target && ['travel', 'connector', 'gateway', 'bridge'].includes(target.type);
         });
         if (roadConnections.length < 2) errors.push(`${node.id} is a forced rail instead of a pass-by arterial node`);
     }

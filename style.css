@@ -3048,6 +3048,7 @@ hr {
 }
 
 .passive-tree-node.node-travel circle,
+.passive-tree-node.node-connector circle,
 .passive-tree-node.node-bridge circle {
     fill: #0b1c2b;
     stroke-width: 2;
@@ -3118,12 +3119,14 @@ hr {
 
 #passive-tree-svg[data-detail="overview"] .passive-tree-node circle { stroke-width: 10; }
 #passive-tree-svg[data-detail="overview"] .passive-tree-node.node-travel circle,
+#passive-tree-svg[data-detail="overview"] .passive-tree-node.node-connector circle,
 #passive-tree-svg[data-detail="overview"] .passive-tree-node.node-bridge circle { stroke-width: 7; }
 #passive-tree-svg[data-detail="overview"] .passive-tree-node.node-notable circle { stroke-width: 12; }
 #passive-tree-svg[data-detail="overview"] .passive-tree-node.node-keystone circle { stroke-width: 14; }
 
 #passive-tree-svg[data-detail="medium"] .passive-tree-node circle { stroke-width: 5; }
 #passive-tree-svg[data-detail="medium"] .passive-tree-node.node-travel circle,
+#passive-tree-svg[data-detail="medium"] .passive-tree-node.node-connector circle,
 #passive-tree-svg[data-detail="medium"] .passive-tree-node.node-bridge circle { stroke-width: 4; }
 #passive-tree-svg[data-detail="medium"] .passive-tree-node.node-notable circle { stroke-width: 7; }
 #passive-tree-svg[data-detail="medium"] .passive-tree-node.node-keystone circle { stroke-width: 9; }
