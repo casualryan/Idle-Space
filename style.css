@@ -2166,7 +2166,9 @@ hr {
 
 /* But make buttons still clickable */
 .recipe-card button,
-.recipe-card button * {
+.recipe-card button *,
+.recipe-card select,
+.recipe-card select * {
     pointer-events: auto;
 }
 
@@ -2218,6 +2220,34 @@ hr {
     font-size: 14px;
     margin-bottom: 15px;
     line-height: 1.4;
+}
+
+.chassis-core-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0 0 12px;
+    color: #66ffcc;
+    font-size: 12px;
+    font-family: 'Orbitron', sans-serif;
+}
+
+.chassis-core-selector select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid #2f7ea5;
+    border-radius: 4px;
+    background: #00152b;
+    color: #e2f4ff;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.chassis-core-selector select:disabled {
+    cursor: not-allowed;
+    color: #718395;
+    border-color: #34485c;
 }
 
 .recipe-ingredients {

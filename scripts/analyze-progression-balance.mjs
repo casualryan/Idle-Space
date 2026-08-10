@@ -7,6 +7,11 @@ import enemies from '../src/enemies/index.js';
 import armor from '../src/items/armor/index.js';
 import bionics from '../src/items/bionics/index.js';
 import weapons from '../src/items/weapons/index.js';
+import {
+  WEAPON_CHASSIS_DEFINITIONS,
+  WEAPON_DAMAGE_CORE_DEFINITIONS,
+  weaponChassisTemplates
+} from '../src/items/weapons/chassisCatalog.js';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(scriptDirectory, '..');
@@ -21,7 +26,17 @@ const DAMAGE_GROUP = {
 };
 
 function evaluateClassic(file, expression) {
-  const sandbox = { window: { coreboundConfig: { developerMode: false }, bionics, chips: [] }, console };
+  const sandbox = {
+    window: {
+      coreboundConfig: { developerMode: false },
+      bionics,
+      chips: [],
+      weaponChassisDefinitions: WEAPON_CHASSIS_DEFINITIONS,
+      weaponDamageCoreDefinitions: WEAPON_DAMAGE_CORE_DEFINITIONS,
+      weaponChassisTemplates
+    },
+    console
+  };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(`${fs.readFileSync(path.join(root, file), 'utf8')}\n;globalThis.result=(${expression});`, sandbox);
@@ -32,6 +47,11 @@ const locations = evaluateClassic('locations.js', 'locations');
 const recipes = evaluateClassic('recipes.js', 'window.recipes');
 const craftable = new Set(recipes.map(recipe => recipe.name));
 const progressionEnemies = new Map(enemies.map(enemy => [enemy.name, enemy]));
+// Use the canonical kinetic chassis preview for the progression curve. The
+// resolver's all-core and mixed-handling behavior is covered separately; letting
+// this audit counter-pick every area's weakest resistance would model seven
+// optimized loadouts rather than one representative character.
+const simulatedWeapons = weapons;
 
 function valueAt(value, quality = 0.5, fallback = 0) {
   if (Number.isFinite(Number(value))) return Number(value);
@@ -109,7 +129,7 @@ function eligible(items, gearLevel) {
   return items.filter(item =>
     !item.developerOnly &&
     levelOf(item) <= gearLevel &&
-    (craftable.has(item.name) || item.name === 'Broken Phase Sword')
+    (craftable.has(item.name) || craftable.has(item.chassisTemplateName) || item.name === 'Broken Phase Sword')
   );
 }
 
@@ -125,7 +145,7 @@ function buildProfile(location, gearLevel, quality = 0.5) {
     Object.entries(damageCounts).map(([key, count]) => [key, count / totalDamageTypes])
   );
 
-  const weapon = eligible(weapons, gearLevel)
+  const weapon = eligible(simulatedWeapons, gearLevel)
     .sort((a, b) => expectedWeaponDps(b, areaEnemies, quality) - expectedWeaponDps(a, areaEnemies, quality))[0];
   const equipped = [];
   for (const slot of ['offHand', 'head', 'chest', 'legs', 'feet', 'gloves']) {

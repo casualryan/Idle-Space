@@ -143,7 +143,10 @@ const baselineArmorItems = [
     { name: "Stormstep Reactor Gloves", level: 50, category: "Gloves" }
 ];
 
-const baselineWeaponItems = [
+// These ordinary weapon templates remain registered so existing items, loot,
+// equipment, and saves remain valid. Their individual recipes are retired in
+// favor of family chassis recipes below.
+const retiredBaselineWeaponItems = [
     { name: "Bent Impact Rod", level: 1, family: "kinetic" },
     { name: "Scrap Maul", level: 5, family: "kinetic" },
     { name: "Pneumatic Hammer", level: 11, family: "kinetic" },
@@ -409,9 +412,36 @@ function createProgressionRecipe({ name, level, category, family }) {
 
 const baselineRecipes = [
     ...baselineArmorItems.map(item => createProgressionRecipe(item)),
-    ...baselineWeaponItems.map(item => createProgressionRecipe({ ...item, category: "Weapons" })),
     ...baselineOffHandItems.map(item => createProgressionRecipe({ ...item, category: "Shields" }))
 ];
+
+const retiredWeaponRecipes = retiredBaselineWeaponItems.map(item => ({
+    ...createProgressionRecipe({ ...item, category: "Weapons" }),
+    retired: true,
+    levelRequirement: item.level
+}));
+
+const weaponChassisRecipes = (window.weaponChassisTemplates || []).map(template => {
+    const level = Number(template.levelRequirement?.min ?? template.levelRequirement?.max ?? template.levelRequirement ?? 1);
+    const ingredientsByDamage = Object.fromEntries(
+        Object.entries(window.weaponDamageCoreDefinitions || {}).map(([damageType, core]) => [
+            damageType,
+            buildEconomyIngredients(template.name, level, core.materialFamily, 'Weapons')
+        ])
+    );
+    return {
+        name: template.name,
+        category: 'Weapons',
+        craftingTime: 5,
+        levelRequirement: level,
+        weaponChassis: true,
+        weaponFamily: template.weaponFamily,
+        damageOptions: Object.keys(ingredientsByDamage),
+        ingredientsByDamage,
+        ingredients: ingredientsByDamage.kinetic,
+        description: template.description
+    };
+});
 
 const LEGACY_RECIPE_DAMAGE_FOCUS = {
     "Makeshift Laser Sword": "radiation",
@@ -443,9 +473,9 @@ function inferDamageFocusByName(name) {
 }
 
 const recipeByName = new Map();
-for (const recipe of [...recipes, ...baselineRecipes]) {
+for (const recipe of [...recipes, ...baselineRecipes, ...weaponChassisRecipes]) {
     const mergedRecipe = { ...recipe };
-    const baseline = [...baselineArmorItems, ...baselineWeaponItems, ...baselineOffHandItems]
+    const baseline = [...baselineArmorItems, ...baselineOffHandItems]
         .find(item => item.name === mergedRecipe.name);
     const level = Number(baseline?.level || mergedRecipe.levelRequirement || LEGACY_RECIPE_LEVELS[mergedRecipe.name] || 1);
     if (mergedRecipe.category === "Weapons" || mergedRecipe.category === "Shields") {
@@ -455,8 +485,11 @@ for (const recipe of [...recipes, ...baselineRecipes]) {
             || inferDamageFocusByName(mergedRecipe.name);
     }
     const authoredFamily = baseline?.family || mergedRecipe.damageFocus;
-    mergedRecipe.ingredients = buildEconomyIngredients(mergedRecipe.name, level, authoredFamily, mergedRecipe.category);
+    if (!mergedRecipe.weaponChassis) {
+        mergedRecipe.ingredients = buildEconomyIngredients(mergedRecipe.name, level, authoredFamily, mergedRecipe.category);
+    }
     recipeByName.set(mergedRecipe.name, mergedRecipe);
 }
 
 window.recipes = Array.from(recipeByName.values());
+window.retiredRecipes = retiredWeaponRecipes;

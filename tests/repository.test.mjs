@@ -13,6 +13,13 @@ import chips from '../src/items/chips/index.js';
 import materials from '../src/items/materials/index.js';
 import weapons from '../src/items/weapons/index.js';
 import {
+  WEAPON_CHASSIS_DEFINITIONS,
+  WEAPON_CHASSIS_GRADES,
+  WEAPON_DAMAGE_CORE_DEFINITIONS,
+  resolveWeaponChassisTemplate,
+  weaponChassisTemplates
+} from '../src/items/weapons/chassisCatalog.js';
+import {
   WEAPON_FAMILY_DEFINITIONS,
   WEAPON_TAG_DEFINITIONS,
   validateWeaponTaxonomy
@@ -53,6 +60,9 @@ function evaluateClassic(relativePath, expression, extraGlobals = {}) {
   const window = {
     bionics,
     chips,
+    weaponChassisDefinitions: WEAPON_CHASSIS_DEFINITIONS,
+    weaponDamageCoreDefinitions: WEAPON_DAMAGE_CORE_DEFINITIONS,
+    weaponChassisTemplates,
     ...suppliedWindow,
     coreboundConfig: {
       developerMode: true,
@@ -117,6 +127,58 @@ test('every weapon has a validated family, mechanical tags, and supported progre
   }
 });
 
+test('weapon chassis cover every family at six fixed grades and resolve every damage core', () => {
+  const families = Object.keys(WEAPON_FAMILY_DEFINITIONS);
+  assert.equal(weaponChassisTemplates.length, families.length * 6);
+  assert.deepEqual(WEAPON_CHASSIS_GRADES.map(grade => grade.level), [1, 10, 20, 30, 40, 50]);
+  assert.deepEqual(Object.keys(WEAPON_DAMAGE_CORE_DEFINITIONS), [
+    'kinetic', 'slashing', 'pyro', 'cryo', 'electric', 'corrosive', 'radiation'
+  ]);
+
+  for (const grade of WEAPON_CHASSIS_GRADES) {
+    for (const family of families) {
+      const name = `${grade.label} ${WEAPON_FAMILY_DEFINITIONS[family].label} Chassis`;
+      const template = weaponChassisTemplates.find(item => item.name === name);
+      assert.ok(template, `missing chassis: ${name}`);
+      assert.equal(template.levelRequirement, grade.level);
+      assert.equal(template.weaponFamily, family);
+      for (const damageType of Object.keys(WEAPON_DAMAGE_CORE_DEFINITIONS)) {
+        const resolved = resolveWeaponChassisTemplate(template, damageType, () => 0);
+        assert.deepEqual(Object.keys(resolved.weaponBaseDamage), [damageType]);
+        assert.equal(resolved.chassisTemplateName, template.name);
+        assert.match(resolved.name, new RegExp(WEAPON_DAMAGE_CORE_DEFINITIONS[damageType].label));
+      }
+    }
+  }
+});
+
+test('mixed chassis families randomize one- and two-handed subtypes per craft', () => {
+  for (const family of ['blades', 'impact', 'conduits']) {
+    const template = weaponChassisTemplates.find(item =>
+      item.weaponFamily === family && item.levelRequirement === 30
+    );
+    const light = resolveWeaponChassisTemplate(template, 'corrosive', () => 0);
+    const heavy = resolveWeaponChassisTemplate(template, 'corrosive', () => 0.999999);
+    assert.ok(light.weaponTags.includes('oneHanded'), `${family} did not produce its one-handed subtype`);
+    assert.ok(heavy.weaponTags.includes('twoHanded'), `${family} did not produce its two-handed subtype`);
+    assert.ok(heavy.weaponTags.includes('deliberate'), `${family} heavy subtype lost its cadence tag`);
+    if (family === 'blades') assert.ok(light.weaponTags.includes('rapid'), 'light blades lost their rapid cadence tag');
+    assert.notEqual(light.weaponType, heavy.weaponType);
+    assert.deepEqual(Object.keys(light.weaponBaseDamage), ['corrosive']);
+    assert.deepEqual(Object.keys(heavy.weaponBaseDamage), ['corrosive']);
+  }
+
+  for (const family of ['sidearms', 'rifles', 'projectors', 'ordnance']) {
+    const template = weaponChassisTemplates.find(item =>
+      item.weaponFamily === family && item.levelRequirement === 30
+    );
+    const first = resolveWeaponChassisTemplate(template, 'radiation', () => 0);
+    const last = resolveWeaponChassisTemplate(template, 'radiation', () => 0.999999);
+    assert.equal(first.weaponType, last.weaponType, `${family} unexpectedly randomized handling`);
+    assert.deepEqual(first.weaponTags, last.weaponTags);
+  }
+});
+
 test('kinetic and slashing component ladders use dedicated 512px icons', () => {
   const componentNames = [
     'Stabilizer',
@@ -145,7 +207,7 @@ test('recipes and disassembly only reference registered items', () => {
   const recipes = evaluateClassic('recipes.js', 'window.recipes');
   const badOutputs = recipes.filter(recipe => !itemNames.has(recipe.name)).map(recipe => recipe.name);
   const badIngredients = recipes.flatMap(recipe =>
-    Object.keys(recipe.ingredients || {})
+    [recipe.ingredients || {}, ...Object.values(recipe.ingredientsByDamage || {})].flatMap(ingredients => Object.keys(ingredients))
       .filter(name => !itemNames.has(name))
       .map(name => `${recipe.name} -> ${name}`)
   );
@@ -158,6 +220,30 @@ test('recipes and disassembly only reference registered items', () => {
   assert.equal(badOutputs.length, 0, `recipes with missing outputs: ${badOutputs.join(', ')}`);
   assert.equal(badIngredients.length, 0, `recipes with missing ingredients: ${badIngredients.join(', ')}`);
   assert.equal(badDisassembly.length, 0, `missing disassembly materials: ${badDisassembly.join(', ')}`);
+});
+
+test('ordinary weapon recipes are retired while chassis recipes preserve full combination coverage', () => {
+  const result = evaluateClassic('recipes.js', `({
+    active: window.recipes,
+    retired: window.retiredRecipes
+  })`);
+  const chassisRecipes = result.active.filter(recipe => recipe.weaponChassis);
+  assert.equal(chassisRecipes.length, 42);
+  assert.equal(result.retired.length, 49);
+  assert.equal(result.retired.every(recipe => recipe.retired === true), true);
+  assert.equal(result.retired.some(retired => result.active.some(recipe => recipe.name === retired.name)), false);
+  assert.equal(chassisRecipes.every(recipe => recipe.damageOptions.length === 7), true);
+  assert.equal(chassisRecipes.every(recipe => Object.keys(recipe.ingredientsByDamage).length === 7), true);
+  assert.equal(result.active.some(recipe => recipe.name === 'Makeshift Laser Sword'), true);
+  assert.equal(result.active.some(recipe => recipe.name === 'Scorpion Sword'), true);
+  assert.equal(result.active.some(recipe => recipe.name === 'Fire Spewer Mk1'), true);
+
+  const fabricationSource = read('fabrication.js');
+  assert.match(fabricationSource, /selectedWeaponFamily/);
+  assert.match(fabricationSource, /ingredientsByDamage/);
+  assert.match(fabricationSource, /craftingOptions:\s*fabrication\.recipe\.craftingOptions/);
+  assert.match(fabricationSource, /window\.retiredRecipes/);
+  assert.match(fabricationSource, /window\.resolveWeaponChassisTemplate/);
 });
 
 test('loot pools, enemy tables, locations, and gathering references resolve', () => {
@@ -1416,7 +1502,8 @@ test('fabrication ingredients are sourced no later than their recipe output', ()
       const outputLevel = typeof authoredLevel === 'number'
         ? authoredLevel
         : Number(authoredLevel?.min ?? authoredLevel?.max);
-      return Object.keys(recipe.ingredients || {}).flatMap(ingredient => {
+      const ingredientSets = [recipe.ingredients || {}, ...Object.values(recipe.ingredientsByDamage || {})];
+      return ingredientSets.flatMap(ingredients => Object.keys(ingredients)).flatMap(ingredient => {
         const source = MATERIAL_ACQUISITION[ingredient];
         if (!source) return [recipe.name + ' -> ' + ingredient + ' (unsourced)'];
         if (Number.isFinite(outputLevel) && source.level > outputLevel) {
@@ -1450,9 +1537,11 @@ test('fabrication economy uses compact recipes with progression-scaled bulk cost
       : Number(authoredLevel?.min ?? authoredLevel?.max ?? 1);
     const band = level <= 5 ? 0 : level <= 10 ? 1 : level <= 20 ? 2 : level <= 30 ? 3 : level <= 40 ? 4 : 5;
     const ingredientNames = Object.keys(recipe.ingredients || {});
+    const allIngredientNames = [recipe.ingredients || {}, ...Object.values(recipe.ingredientsByDamage || {})]
+      .flatMap(ingredients => Object.keys(ingredients));
     const totalUnits = Object.values(recipe.ingredients || {}).reduce((sum, quantity) => sum + Number(quantity), 0);
     bands[band].push(totalUnits);
-    ingredientNames.forEach(name => usedMaterials.add(name));
+    allIngredientNames.forEach(name => usedMaterials.add(name));
 
     assert.ok(ingredientNames.length >= 3 && ingredientNames.length <= 6,
       `${recipe.name} uses ${ingredientNames.length} ingredient types`);

@@ -535,7 +535,9 @@ function validateGameStateSnapshot(state, options = {}) {
     if (knownItemNames) {
         const inspectItem = (item, context) => {
             if (!item?.name) errors.push(`${context} item is missing a name`);
-            else if (!knownItemNames.has(item.name)) warnings.push(`${context} references retired item: ${item.name}`);
+            else if (!knownItemNames.has(item.name) && !knownItemNames.has(item.chassisTemplateName)) {
+                warnings.push(`${context} references retired item: ${item.name}`);
+            }
         };
         state.inventory.forEach((item, index) => inspectItem(item, `inventory[${index}]`));
         Object.keys(state.materialInventory || {}).forEach(name => {

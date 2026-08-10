@@ -43,11 +43,11 @@ const DAMAGE_FOCUS_OPTIONS = [
     { id: 'pyro', label: 'Pyro' },
     { id: 'cryo', label: 'Cryo' },
     { id: 'electric', label: 'Electric' },
-    { id: 'chemical', label: 'Chemical' },
+    { id: 'corrosive', label: 'Corrosive' },
     { id: 'radiation', label: 'Radiation' }
 ];
 
-const DAMAGE_FOCUS_CATEGORIES = new Set(['Weapons', 'Off-Hands']);
+const DAMAGE_FOCUS_CATEGORIES = new Set(['Off-Hands']);
 const missingDamageFocusWarnings = new Set();
 
 window.registerCoreboundInitializer(() => {
@@ -83,12 +83,62 @@ window.addEventListener('screenChanged', (event) => {
 let selectedCategory = null;
 let fabricationSearchQuery = '';
 const selectedDamageFocusByCategory = {
-    'Weapons': 'all',
     'Off-Hands': 'all'
 };
+let selectedWeaponFamily = 'all';
+const selectedChassisDamageByRecipe = {};
 
 function getRecipeItemTemplate(recipe) {
     return window.items ? window.items.find(i => i.name === recipe.name) : null;
+}
+
+function isWeaponChassisRecipe(recipe) {
+    return recipe?.weaponChassis === true;
+}
+
+function getChassisDamageOptions(recipe) {
+    if (!isWeaponChassisRecipe(recipe)) return [];
+    return (recipe.damageOptions || []).filter(damageType => window.weaponDamageCoreDefinitions?.[damageType]);
+}
+
+function getSelectedChassisDamage(recipe, craftingOptions = null) {
+    const options = getChassisDamageOptions(recipe);
+    const requested = craftingOptions?.damageType || selectedChassisDamageByRecipe[recipe.name];
+    if (options.includes(requested)) return requested;
+    return options.includes('kinetic') ? 'kinetic' : options[0];
+}
+
+function resolveRecipeForFabrication(recipe, craftingOptions = null) {
+    if (!isWeaponChassisRecipe(recipe)) return recipe;
+    const damageType = getSelectedChassisDamage(recipe, craftingOptions);
+    const ingredients = recipe.ingredientsByDamage?.[damageType];
+    if (!damageType || !ingredients) {
+        throw new TypeError(`Weapon chassis recipe ${recipe.name} has no valid damage-core ingredients.`);
+    }
+    return {
+        ...recipe,
+        ingredients: { ...ingredients },
+        craftingOptions: { damageType }
+    };
+}
+
+function getRecipePreviewTemplate(recipe, itemTemplate, craftingOptions = null) {
+    if (!itemTemplate || !isWeaponChassisRecipe(recipe)) return itemTemplate;
+    const damageType = getSelectedChassisDamage(recipe, craftingOptions);
+    return window.resolveWeaponChassisTemplate(itemTemplate, damageType, () => 0);
+}
+
+function getFabricationOutputLabel(recipe) {
+    if (!isWeaponChassisRecipe(recipe)) return recipe.name;
+    const damageType = getSelectedChassisDamage(recipe, recipe.craftingOptions);
+    const core = window.weaponDamageCoreDefinitions?.[damageType];
+    return `${recipe.name} · ${core?.label || damageType} Core`;
+}
+
+function findRestorableRecipe(recipeName) {
+    return window.recipes?.find(candidate => candidate.name === recipeName)
+        || window.retiredRecipes?.find(candidate => candidate.name === recipeName)
+        || null;
 }
 
 function normalizeType(value) {
@@ -97,8 +147,9 @@ function normalizeType(value) {
 
 function normalizeDamageFocus(value) {
     const normalized = (value || '').toString().trim().toLowerCase();
-    const allowed = new Set(['kinetic', 'slashing', 'pyro', 'cryo', 'electric', 'chemical', 'radiation']);
-    return allowed.has(normalized) ? normalized : null;
+    const canonical = normalized === 'chemical' ? 'corrosive' : normalized;
+    const allowed = new Set(['kinetic', 'slashing', 'pyro', 'cryo', 'electric', 'corrosive', 'radiation']);
+    return allowed.has(canonical) ? canonical : null;
 }
 
 function getRecipeLevel(recipe) {
@@ -159,6 +210,7 @@ function getCategoryRecipes() {
     if (!window.recipes) return grouped;
 
     window.recipes.forEach(recipe => {
+        if (recipe.retired) return;
         const category = getRecipeCategory(recipe);
         if (!category || !grouped[category]) return;
         grouped[category].push(recipe);
@@ -201,6 +253,11 @@ function getRecipeDisplayType(itemTemplate) {
 }
 
 function getRecipeSubtitle(recipe, itemTemplate) {
+    if (isWeaponChassisRecipe(recipe)) {
+        const definition = window.weaponChassisDefinitions?.[recipe.name];
+        const level = getRecipeLevel(recipe);
+        return `${definition?.familyLabel || 'Weapon'} Chassis · Level ${level}`;
+    }
     const displayType = getRecipeDisplayType(itemTemplate);
     const level = getRecipeLevel(recipe);
     if (Number.isFinite(level) && level !== Number.MAX_SAFE_INTEGER) {
@@ -258,7 +315,7 @@ function renderDamageFocusControls(container, category) {
         button.textContent = option.label;
         button.addEventListener('click', () => {
             selectedDamageFocusByCategory[category] = option.id;
-            refreshDamageFocusControls(container, category);
+            refreshFabricationSubcategoryControls(container, category);
             displayCategoryRecipes(category);
         });
         subcategoryRow.appendChild(button);
@@ -267,9 +324,35 @@ function renderDamageFocusControls(container, category) {
     container.appendChild(subcategoryRow);
 }
 
-function refreshDamageFocusControls(container, category) {
+function renderWeaponFamilyControls(container, category) {
+    if (category !== 'Weapons') return;
+    const options = [
+        { id: 'all', label: 'All Families' },
+        ...Object.entries(window.coreboundWeaponTaxonomy?.families || {}).map(([id, definition]) => ({
+            id,
+            label: definition.label
+        }))
+    ];
+    const subcategoryRow = document.createElement('div');
+    subcategoryRow.className = 'fabrication-subcategories';
+    options.forEach(option => {
+        const button = document.createElement('button');
+        button.className = `fab-subcategory-tab ${selectedWeaponFamily === option.id ? 'active' : ''}`;
+        button.textContent = option.label;
+        button.addEventListener('click', () => {
+            selectedWeaponFamily = option.id;
+            refreshFabricationSubcategoryControls(container, category);
+            displayCategoryRecipes(category);
+        });
+        subcategoryRow.appendChild(button);
+    });
+    container.appendChild(subcategoryRow);
+}
+
+function refreshFabricationSubcategoryControls(container, category) {
     container.querySelectorAll('.fabrication-subcategories').forEach(node => node.remove());
-    renderDamageFocusControls(container, category);
+    if (category === 'Weapons') renderWeaponFamilyControls(container, category);
+    else renderDamageFocusControls(container, category);
 }
 
 function getFabricationDurationMs(recipe) {
@@ -297,7 +380,10 @@ function scheduleFabrication(recipe, remainingMs = FABRICATION_DURATION_MS) {
 function getFabricationState() {
     return Object.values(ongoingFabrications).map(fabrication => ({
         recipeName: fabrication.recipe.name,
-        remainingMs: Math.max(0, fabrication.durationMs - (Date.now() - fabrication.startTime))
+        remainingMs: Math.max(0, fabrication.durationMs - (Date.now() - fabrication.startTime)),
+        craftingOptions: fabrication.recipe.craftingOptions
+            ? { ...fabrication.recipe.craftingOptions }
+            : undefined
     }));
 }
 
@@ -311,12 +397,12 @@ function restoreFabricationState(savedFabrications) {
     if (!Array.isArray(savedFabrications)) return;
     const [activeJob, ...legacyExtraJobs] = savedFabrications;
     if (activeJob) {
-        const recipe = window.recipes?.find(candidate => candidate.name === activeJob.recipeName);
-        if (recipe) scheduleFabrication(recipe, activeJob.remainingMs);
+        const recipe = findRestorableRecipe(activeJob.recipeName);
+        if (recipe) scheduleFabrication(resolveRecipeForFabrication(recipe, activeJob.craftingOptions), activeJob.remainingMs);
     }
     legacyExtraJobs.forEach(saved => {
-        const recipe = window.recipes?.find(candidate => candidate.name === saved.recipeName);
-        if (recipe) refundMaterials(recipe.ingredients);
+        const recipe = findRestorableRecipe(saved.recipeName);
+        if (recipe) refundMaterials(resolveRecipeForFabrication(recipe, saved.craftingOptions).ingredients);
     });
     if (legacyExtraJobs.length > 0) {
         logMessage('Older concurrent fabrication jobs were cancelled and their materials refunded.');
@@ -415,7 +501,7 @@ function renderFabricationActivePanel() {
         entry.dataset.recipeName = recipeName;
         entry.innerHTML = `
             <div class="fabrication-active-entry-header">
-                <div class="fabrication-active-name">${recipeName}</div>
+                <div class="fabrication-active-name">${getFabricationOutputLabel(fabrication.recipe)}</div>
                 <div class="fabrication-active-meta">${remainingSec.toFixed(1)}s remaining</div>
             </div>
             <div class="progress-container fabrication-active-progress">
@@ -444,7 +530,9 @@ function startFabrication(recipe) {
         return;
     }
 
-    if (!hasRequiredMaterials(recipe.ingredients)) {
+    const fabricationRecipe = resolveRecipeForFabrication(recipe);
+
+    if (!hasRequiredMaterials(fabricationRecipe.ingredients)) {
         logMessage('You do not have the required materials to fabricate this item.');
         return;
     }
@@ -459,13 +547,13 @@ function startFabrication(recipe) {
         return;
     }
 
-    removeMaterialsFromInventory(recipe.ingredients);
+    removeMaterialsFromInventory(fabricationRecipe.ingredients);
     updateInventoryDisplay();
-    scheduleFabrication(recipe);
+    scheduleFabrication(fabricationRecipe);
 
     renderFabricationActivePanel();
     displayFabricationRecipes();
-    logMessage(`Started fabricating: ${recipe.name}`);
+    logMessage(`Started fabricating: ${getFabricationOutputLabel(fabricationRecipe)}`);
 }
 
 function stopFabrication(recipe) {
@@ -475,13 +563,13 @@ function stopFabrication(recipe) {
     clearInterval(fabrication.intervalId);
     delete ongoingFabrications[recipe.name];
 
-    refundMaterials(recipe.ingredients);
+    refundMaterials(fabrication.recipe.ingredients);
 
     renderFabricationActivePanel();
     syncAllFabricationUI();
     displayFabricationRecipes();
 
-    logMessage(`Fabrication of ${recipe.name} has been stopped. Materials refunded.`);
+    logMessage(`Fabrication of ${getFabricationOutputLabel(fabrication.recipe)} has been stopped. Materials refunded.`);
 }
 
 function completeFabrication(recipe) {
@@ -491,16 +579,23 @@ function completeFabrication(recipe) {
     clearInterval(fabrication.intervalId);
     delete ongoingFabrications[recipe.name];
 
-    const itemTemplate = window.items ? window.items.find(i => i.name === recipe.name) : null;
+    const completedRecipe = fabrication.recipe;
+    const itemTemplate = window.items ? window.items.find(i => i.name === completedRecipe.name) : null;
     if (itemTemplate) {
         try {
-            const craftedItem = generateItemInstance(itemTemplate);
+            const outputTemplate = isWeaponChassisRecipe(completedRecipe)
+                ? window.resolveWeaponChassisTemplate(
+                    itemTemplate,
+                    getSelectedChassisDamage(completedRecipe, completedRecipe.craftingOptions)
+                )
+                : itemTemplate;
+            const craftedItem = generateItemInstance(outputTemplate);
 
             if (!isMaterialItem(craftedItem) && !hasInventorySpace(1)) {
                 if (typeof showWarningPopup === 'function') {
                     showWarningPopup('Your inventory is full. Crafted item cannot be added. Materials have been refunded.');
                 }
-                refundMaterials(recipe.ingredients);
+                refundMaterials(completedRecipe.ingredients);
             } else {
                 addItemToInventory(craftedItem);
                 logMessage(`You have fabricated: ${craftedItem.name}`);
@@ -511,13 +606,13 @@ function completeFabrication(recipe) {
             }
         } catch (error) {
             console.error('Error generating item:', error);
-            logMessage(`Error fabricating ${recipe.name}. Please try again.`);
-            refundMaterials(recipe.ingredients);
+            logMessage(`Error fabricating ${completedRecipe.name}. Please try again.`);
+            refundMaterials(completedRecipe.ingredients);
         }
     } else {
-        console.error(`Item template not found for ${recipe.name}`);
-        logMessage(`Fabrication completed, but item template for ${recipe.name} was not found.`);
-        refundMaterials(recipe.ingredients);
+        console.error(`Item template not found for ${completedRecipe.name}`);
+        logMessage(`Fabrication completed, but item template for ${completedRecipe.name} was not found.`);
+        refundMaterials(completedRecipe.ingredients);
     }
 
     renderFabricationActivePanel();
@@ -567,7 +662,7 @@ function displayFabricationRecipes() {
             
             // Update selected category and refresh display
             selectedCategory = category;
-            refreshDamageFocusControls(fabricationCategories, category);
+            refreshFabricationSubcategoryControls(fabricationCategories, category);
             displayCategoryRecipes(category);
             
             // Play select sound if available
@@ -579,7 +674,7 @@ function displayFabricationRecipes() {
     });
     
     fabricationCategories.appendChild(tabsContainer);
-    refreshDamageFocusControls(fabricationCategories, selectedCategory);
+    refreshFabricationSubcategoryControls(fabricationCategories, selectedCategory);
     
     // Display recipes for currently selected category
     displayCategoryRecipes(selectedCategory);
@@ -604,6 +699,12 @@ function displayCategoryRecipes(category) {
         if (selectedFocus !== 'all') {
             categoryRecipes = categoryRecipes.filter(recipe => getRecipeDamageFocus(recipe, category) === selectedFocus);
         }
+    }
+
+    if (category === 'Weapons' && selectedWeaponFamily !== 'all') {
+        categoryRecipes = categoryRecipes.filter(recipe =>
+            (recipe.weaponFamily || getRecipeItemTemplate(recipe)?.weaponFamily) === selectedWeaponFamily
+        );
     }
 
     categoryRecipes.sort((a, b) => {
@@ -637,6 +738,10 @@ function createRecipeCard(recipe) {
     card.dataset.recipeName = recipe.name;
     const itemTemplate = getRecipeItemTemplate(recipe);
     const inProgress = !!ongoingFabrications[recipe.name];
+    const selectedRecipe = inProgress
+        ? ongoingFabrications[recipe.name].recipe
+        : resolveRecipeForFabrication(recipe);
+    const previewTemplate = getRecipePreviewTemplate(recipe, itemTemplate, selectedRecipe.craftingOptions);
     const fabricatorBusy = !inProgress && Object.keys(ongoingFabrications).length > 0;
     const requiredLevel = getRecipeLevel(recipe);
     const levelLocked = Number.isFinite(requiredLevel) && requiredLevel !== Number.MAX_SAFE_INTEGER && player.level < requiredLevel;
@@ -646,7 +751,7 @@ function createRecipeCard(recipe) {
     header.className = 'recipe-header';
     header.innerHTML = `
         <div class="recipe-name">${recipe.name}</div>
-        <div class="recipe-type">${getRecipeSubtitle(recipe, itemTemplate)}</div>
+        <div class="recipe-type">${getRecipeSubtitle(recipe, previewTemplate)}</div>
     `;
     card.appendChild(header);
     if (levelLocked) {
@@ -669,7 +774,33 @@ function createRecipeCard(recipe) {
         body.appendChild(description);
     }
 
-    const modifierPreview = getRecipeModifierPreview(recipe, itemTemplate);
+    if (isWeaponChassisRecipe(recipe)) {
+        const selectorPanel = document.createElement('label');
+        selectorPanel.className = 'chassis-core-selector';
+        const selectorTitle = document.createElement('span');
+        selectorTitle.textContent = 'Damage Core';
+        const selector = document.createElement('select');
+        const selectedDamage = getSelectedChassisDamage(recipe, selectedRecipe.craftingOptions);
+        getChassisDamageOptions(recipe).forEach(damageType => {
+            const core = window.weaponDamageCoreDefinitions[damageType];
+            const option = document.createElement('option');
+            option.value = damageType;
+            option.textContent = `${core.label} — ${core.coreLabel}`;
+            option.selected = damageType === selectedDamage;
+            selector.appendChild(option);
+        });
+        selector.disabled = inProgress;
+        selector.addEventListener('click', event => event.stopPropagation());
+        selector.addEventListener('change', event => {
+            selectedChassisDamageByRecipe[recipe.name] = event.target.value;
+            displayCategoryRecipes('Weapons');
+        });
+        selectorPanel.appendChild(selectorTitle);
+        selectorPanel.appendChild(selector);
+        body.appendChild(selectorPanel);
+    }
+
+    const modifierPreview = getRecipeModifierPreview(recipe, previewTemplate);
     if (modifierPreview) {
         const previewNote = document.createElement('div');
         previewNote.className = 'recipe-modifier-preview';
@@ -690,8 +821,8 @@ function createRecipeCard(recipe) {
     ingredientsList.className = 'ingredients-list';
     
     // Handle ingredients as an object (not an array)
-    for (const itemName in recipe.ingredients) {
-        const quantity = recipe.ingredients[itemName];
+    for (const itemName in selectedRecipe.ingredients) {
+        const quantity = selectedRecipe.ingredients[itemName];
         const hasIngredient = hasRequiredMaterial(itemName, quantity);
         
         const li = document.createElement('li');
@@ -734,7 +865,7 @@ function createRecipeCard(recipe) {
     button.className = 'fab-button';
     button.textContent = inProgress ? 'Cancel Fabrication' : (fabricatorBusy ? 'Fabricator Busy' : 'Fabricate');
 
-    const canCraft = hasRequiredMaterials(recipe.ingredients);
+    const canCraft = hasRequiredMaterials(selectedRecipe.ingredients);
     button.disabled = inProgress ? false : (!canCraft || fabricatorBusy);
 
     if (inProgress) {
@@ -756,10 +887,10 @@ function createRecipeCard(recipe) {
     card.appendChild(body);
     
     // Add data for tooltip if needed
-    if (itemTemplate) {
+    if (previewTemplate) {
         // Add tooltip data (ranges for shop/fabricator previews)
         card.setAttribute('data-has-tooltip', 'true');
-        card.setAttribute('data-tooltip-content', getItemTooltipContent(itemTemplate, true));
+        card.setAttribute('data-tooltip-content', getItemTooltipContent(previewTemplate, true));
         // Make the card look interactive
         card.style.cursor = 'pointer';
     }

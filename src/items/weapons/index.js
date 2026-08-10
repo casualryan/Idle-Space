@@ -20,6 +20,7 @@ import dualPoolTestStaff from './dualPoolTestStaff.js';
 import wiredTestDagger from './wiredTestDagger.js';
 import bigBruteBasher from './bigBruteBasher.js';
 import ionizingWhip from './ionizingWhip.js';
+import { weaponChassisTemplates } from './chassisCatalog.js';
 // Corebound baseline main-hand weapons (Synthetic Dominion)
 import bentImpactRod from './bentImpactRod.js';
 import scrapMaul from './scrapMaul.js';
@@ -98,6 +99,7 @@ const rawWeapons = [
   wiredTestDagger,
   bigBruteBasher,
   ionizingWhip,
+  ...weaponChassisTemplates,
   bentImpactRod,
   scrapMaul,
   pneumaticHammer,
