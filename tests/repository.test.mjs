@@ -1968,6 +1968,107 @@ test('save UI only reports manual success after a confirmed write', () => {
   assert.doesNotMatch(read('index.html'), /id="load-game"/);
 });
 
+test('character detail export captures the complete balance-facing build', () => {
+  const exportPlayer = {
+    name: 'Balance Test',
+    level: 50,
+    experience: 12345,
+    currentHealth: 975,
+    currentShield: 420,
+    passivePoints: 3,
+    passiveTreeVersion: 6,
+    passiveAllocations: { 'test-passive': 1 },
+    gearPassiveBonuses: {},
+    passiveBonuses: { healthPercent: 25 },
+    equippedSkillId: 'heavyStyle',
+    combatStyleAllocations: {
+      heavyStyle: { nodes: { 'heavy-choice': 1 } }
+    },
+    baseStats: { maxHealth: 100 },
+    totalStats: { health: 1000, energyShield: 500, attackSpeed: 1.25 },
+    gatheringSkills: { Mining: { level: 8, experience: 200 } },
+    activeBuffs: [],
+    activeDebuffs: [],
+    equipment: {
+      mainHand: {
+        name: 'Terminus Breaker',
+        type: 'Weapon',
+        slot: 'mainHand',
+        icon: 'icons/test.png',
+        description: 'presentation-only copy',
+        levelRequirement: 50,
+        weaponBaseDamage: { kinetic: 200 },
+        rolledModifiers: [{ id: 'weaponDamage', grade: 5, value: 45 }],
+        rollGroups: [{ id: 'possibleAffix' }]
+      },
+      offHand: null,
+      head: null,
+      chest: null,
+      legs: null,
+      feet: null,
+      gloves: null,
+      bionicSlots: [null, null, null, null]
+    }
+  };
+  const heavyStyleDefinition = {
+    id: 'heavyStyle',
+    name: 'Heavy Style',
+    description: 'Committed attacks.',
+    base: { damageMultiplier: 1.85 },
+    tree: {
+      nodes: [{
+        id: 'heavy-choice',
+        name: 'Singular Force',
+        description: 'Stronger direct damage.',
+        tier: 3,
+        tierName: 'Doctrine',
+        unlockLevel: 41,
+        modifiers: { multiply: { damageMultiplier: 1.3 } },
+        mechanics: []
+      }]
+    }
+  };
+  const exportText = evaluateClassic(
+    'characterExport.js',
+    `buildCharacterDetailsExport(player, {
+      recalculate: false,
+      generatedAt: new Date('2026-08-10T12:00:00.000Z'),
+      currency: 7654,
+      completedLocations: { 'Corebound Terminus': 2 },
+      locationDefinitions: [{ name: 'Corebound Terminus', locationCategory: 'endgame', endgameTier: 4, recommendedLevel: 50 }]
+    })`,
+    {
+      window: {
+        combatStyles: [heavyStyleDefinition],
+        registerCoreboundInitializer: () => {}
+      },
+      player: exportPlayer,
+      getPassiveNode: id => id === 'test-passive' ? {
+        id,
+        name: 'Hardened Core',
+        sector: 'kinetic',
+        type: 'notable',
+        description: 'A defensive allocation.',
+        effects: { healthPercent: 25 }
+      } : null,
+      getPassiveEffectLines: () => ['+25% Maximum Health']
+    }
+  );
+
+  assert.match(exportText, /Level: 50/);
+  assert.match(exportText, /Highest Endgame Tier Cleared: 4/);
+  assert.match(exportText, /Active Style: Heavy Style \(heavyStyle\)/);
+  assert.match(exportText, /Singular Force \(heavy-choice\)/);
+  assert.match(exportText, /Terminus Breaker/);
+  assert.match(exportText, /"grade": 5/);
+  assert.match(exportText, /Hardened Core \(test-passive\)/);
+  assert.match(exportText, /Effect: \+25% Maximum Health/);
+  assert.match(exportText, /"health": 1000/);
+  assert.match(exportText, /Corebound Terminus: 2 clear\(s\)/);
+  assert.doesNotMatch(exportText, /icons\/test\.png/);
+  assert.doesNotMatch(exportText, /possibleAffix/);
+});
+
 test('async runtime loading cannot miss the one-time DOMContentLoaded event', () => {
   const mainSource = read('src/main.js');
   assert.match(mainSource, /window\.registerCoreboundInitializer/);

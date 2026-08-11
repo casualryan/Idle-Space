@@ -38,5 +38,6 @@ export const RUNTIME_SCRIPTS = [
   'combatUI.js',
   'delveUI.js',
   'combat.js',
-  'codex.js'
+  'codex.js',
+  'characterExport.js'
 ];
