@@ -234,9 +234,9 @@ test('ordinary weapon recipes are retired while chassis recipes preserve full co
   assert.equal(result.retired.some(retired => result.active.some(recipe => recipe.name === retired.name)), false);
   assert.equal(chassisRecipes.every(recipe => recipe.damageOptions.length === 7), true);
   assert.equal(chassisRecipes.every(recipe => Object.keys(recipe.ingredientsByDamage).length === 7), true);
-  assert.equal(result.active.some(recipe => recipe.name === 'Makeshift Laser Sword'), true);
-  assert.equal(result.active.some(recipe => recipe.name === 'Scorpion Sword'), true);
-  assert.equal(result.active.some(recipe => recipe.name === 'Fire Spewer Mk1'), true);
+  assert.equal(result.active.some(recipe => recipe.name === 'Makeshift Laser Sword'), false);
+  assert.equal(result.active.some(recipe => recipe.name === 'Scorpion Sword'), false);
+  assert.equal(result.active.some(recipe => recipe.name === 'Fire Spewer Mk1'), false);
 
   const fabricationSource = read('fabrication.js');
   assert.match(fabricationSource, /selectedWeaponFamily/);

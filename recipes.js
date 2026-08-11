@@ -18,11 +18,8 @@ const progressionChipRecipes = (window.chips || [])
     }));
 
 const recipes = [
-    { name: 'Makeshift Laser Sword', category: 'Weapons', levelRequirement: 1 },
     { name: 'Metal Carapace', category: 'Armor' },
     { name: 'Heavy Metal Boots', category: 'Boots' },
-    { name: 'Scorpion Sword', category: 'Weapons' },
-    { name: 'Fire Spewer Mk1', category: 'Weapons' },
     { name: 'Scrap Metal Boots', category: 'Scrap Armor' },
     { name: 'Scrap Metal Helmet', category: 'Scrap Armor' },
     { name: 'Scrap Metal Trousers', category: 'Scrap Armor' },
@@ -319,14 +316,11 @@ const FABRICATION_THEME_QUANTITIES = Object.freeze({
 });
 
 const LEGACY_RECIPE_LEVELS = Object.freeze({
-    'Makeshift Laser Sword': 1,
     'Metal Carapace': 20,
     'Reaction Enhancer': 4,
     'Health Exchanger': 5,
     'Kinetic Booster': 1,
     'Heavy Metal Boots': 10,
-    'Scorpion Sword': 15,
-    'Fire Spewer Mk1': 10,
     'Scrap Metal Boots': 1,
     'Scrap Metal Helmet': 1,
     'Scrap Metal Trousers': 1,
@@ -443,11 +437,7 @@ const weaponChassisRecipes = (window.weaponChassisTemplates || []).map(template 
     };
 });
 
-const LEGACY_RECIPE_DAMAGE_FOCUS = {
-    "Makeshift Laser Sword": "radiation",
-    "Scorpion Sword": "slashing",
-    "Fire Spewer Mk1": "pyro"
-};
+const LEGACY_RECIPE_DAMAGE_FOCUS = {};
 
 function normalizeRecipeDamageFocus(rawFocus) {
     if (!rawFocus) return null;
