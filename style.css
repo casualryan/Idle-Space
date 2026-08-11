@@ -1277,6 +1277,23 @@ hr {
     color: #7fa7c6;
 }
 
+.settings-export-status {
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(0, 255, 204, 0.28);
+    background: rgba(0, 40, 48, 0.72);
+    color: #a6fff2;
+    font-size: 0.72em;
+    line-height: 1.45;
+}
+
+.settings-export-status.is-error {
+    border-color: rgba(255, 102, 128, 0.55);
+    background: rgba(70, 16, 28, 0.72);
+    color: #ffb3c0;
+}
+
 .settings-action-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
