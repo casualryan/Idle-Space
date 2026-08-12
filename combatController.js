@@ -4,298 +4,412 @@
 // 2. CORE COMBAT LOOP
 // ============================================================================
 
-// Fix startCombat function to avoid recursive issues
-function startCombat() {
-    if (isCombatActive) {
-        console.log("Combat already active");
-        return;
+const ENEMY_SLOT_ORDER = Object.freeze([
+    'top-center', 'top-left', 'top-right', 'bottom-center', 'bottom-left', 'bottom-right'
+]);
+const DEFAULT_TARGET_SLOT_PRIORITY = Object.freeze([1, 4, 0, 3, 2, 5]);
+
+function getLivingEnemies() {
+    return (Array.isArray(encounterEnemies) ? encounterEnemies : []).filter(candidate => candidate && candidate.currentHealth > 0);
+}
+
+function getEnemyByCombatId(combatId) {
+    return (Array.isArray(encounterEnemies) ? encounterEnemies : []).find(candidate => candidate?._combatId === combatId) || null;
+}
+
+function getDefaultEnemyTarget() {
+    const living = getLivingEnemies();
+    return living.sort((a, b) => {
+        const aPriority = DEFAULT_TARGET_SLOT_PRIORITY.indexOf(Number(a._slotIndex));
+        const bPriority = DEFAULT_TARGET_SLOT_PRIORITY.indexOf(Number(b._slotIndex));
+        return (aPriority < 0 ? 99 : aPriority) - (bPriority < 0 ? 99 : bPriority);
+    })[0] || null;
+}
+
+function selectEnemyTarget(targetOrId, options = {}) {
+    const target = typeof targetOrId === 'string' ? getEnemyByCombatId(targetOrId) : targetOrId;
+    if (!target || target.currentHealth <= 0) return false;
+    selectedEnemyId = target._combatId;
+    enemy = target;
+    if (!options.silent && typeof logMessage === 'function') logMessage(`Target locked: ${target.name}.`);
+    if (typeof updateEnemyStatsDisplay === 'function') updateEnemyStatsDisplay();
+    return true;
+}
+
+function ensureSelectedEnemyTarget() {
+    const selected = getEnemyByCombatId(selectedEnemyId);
+    if (selected?.currentHealth > 0) {
+        enemy = selected;
+        return selected;
+    }
+    const fallback = getDefaultEnemyTarget();
+    if (fallback) selectEnemyTarget(fallback, { silent: true });
+    else {
+        selectedEnemyId = null;
+        enemy = null;
+    }
+    return fallback;
+}
+
+function clearTauntOverride(options = {}) {
+    const previous = tauntOverride ? getEnemyByCombatId(tauntOverride.enemyId) : null;
+    tauntOverride = null;
+    if (!options.silent && previous && typeof logMessage === 'function') {
+        logMessage(`${previous.name}'s taunt expires. Attacks return to the selected target.`);
+    }
+}
+
+function getEffectivePlayerTarget(now = Date.now()) {
+    if (tauntOverride) {
+        const taunter = getEnemyByCombatId(tauntOverride.enemyId);
+        if (taunter?.currentHealth > 0 && Number(tauntOverride.expiresAt) > now) return taunter;
+        clearTauntOverride({ silent: !taunter });
+    }
+    return ensureSelectedEnemyTarget();
+}
+
+function activateEnemyTaunt(source, durationSeconds) {
+    if (!source || source.currentHealth <= 0) return false;
+    const duration = Math.max(0.25, Number(durationSeconds) || 0);
+    tauntOverride = {
+        enemyId: source._combatId,
+        expiresAt: Date.now() + duration * 1000
+    };
+    if (typeof logMessage === 'function') {
+        logMessage(`${source.name} taunts the player for ${duration.toFixed(duration % 1 ? 1 : 0)} seconds.`);
+    }
+    if (typeof updateEnemyStatsDisplay === 'function') updateEnemyStatsDisplay();
+    return true;
+}
+
+function processEnemyTaunts(deltaTime) {
+    getEffectivePlayerTarget();
+    const livingEnemies = getLivingEnemies();
+    if (livingEnemies.length < 2) return;
+    let readyTaunter = null;
+    for (const candidate of livingEnemies) {
+        const ability = candidate.tauntAbility;
+        if (!ability) continue;
+        candidate._tauntCooldownRemaining = Math.max(
+            0,
+            Number(candidate._tauntCooldownRemaining ?? ability.initialDelay ?? ability.cooldown ?? 10) - deltaTime
+        );
+        if (!readyTaunter && candidate._tauntCooldownRemaining <= 0) readyTaunter = candidate;
     }
 
-    if (!currentLocation) {
-        console.error("No current location set. Cannot start combat.");
-        return;
-    }
+    if (tauntOverride || !readyTaunter) return;
+    readyTaunter._tauntCooldownRemaining = Math.max(1, Number(readyTaunter.tauntAbility.cooldown) || 10);
+    activateEnemyTaunt(readyTaunter, readyTaunter.tauntAbility.duration);
+}
 
-    if (window.activityManager && typeof window.activityManager.isActivityActive === 'function' && window.activityManager.isActivityActive()) {
-        window.activityManager.cancelActivity('combatStart', { silent: true });
-        if (typeof syncGatheringStateFromManager === 'function') {
-            syncGatheringStateFromManager();
+function getEncounterEnemyCount(location, random = Math.random) {
+    if (!location || location.developerOnly || Number(location.maxEnemies) === 1) return 1;
+    const level = Math.max(1, Number(location.recommendedLevel) || 1);
+    let distribution;
+    if (level < 10) distribution = [[1, 0.85], [2, 0.15]];
+    else if (level < 20) distribution = [[1, 0.25], [2, 0.6], [3, 0.15]];
+    else if (level < 30) distribution = [[2, 0.25], [3, 0.55], [4, 0.2]];
+    else if (level < 40) distribution = [[3, 0.25], [4, 0.55], [5, 0.2]];
+    else if (level < 50) distribution = [[4, 0.25], [5, 0.55], [6, 0.2]];
+    else distribution = [[4, 0.1], [5, 0.3], [6, 0.6]];
+
+    const roll = Math.min(0.999999, Math.max(0, typeof random === 'function' ? random() : Number(random) || 0));
+    let cumulative = 0;
+    for (const [count, weight] of distribution) {
+        cumulative += weight;
+        if (roll < cumulative) return count;
+    }
+    return distribution[distribution.length - 1][0];
+}
+
+function selectWeightedEncounterEnemies(location, count, random = Math.random) {
+    const authored = Array.isArray(location?.enemies) ? location.enemies : [];
+    const selected = [];
+    const selectedRareNames = new Set();
+
+    for (let slot = 0; slot < Math.max(1, Math.min(6, Number(count) || 1)); slot++) {
+        const eligible = authored.filter(entry => Number(entry.spawnRate || 1) > 1 || !selectedRareNames.has(entry.name));
+        if (eligible.length === 0) break;
+        const totalWeight = eligible.reduce((sum, entry) => sum + Math.max(1, Number(entry.spawnRate) || 1), 0);
+        let roll = (typeof random === 'function' ? random() : Math.random()) * totalWeight;
+        let chosen = eligible[eligible.length - 1];
+        for (const entry of eligible) {
+            roll -= Math.max(1, Number(entry.spawnRate) || 1);
+            if (roll < 0) {
+                chosen = entry;
+                break;
+            }
         }
-        logMessage('Non-combat activity paused for combat.');
+        selected.push(chosen);
+        if (Number(chosen.spawnRate || 1) <= 1) selectedRareNames.add(chosen.name);
+    }
+    return selected;
+}
+
+function findEnemyTemplate(monsterName) {
+    const registry = Array.isArray(window.enemies) ? window.enemies : [];
+    const direct = registry.find(candidate => candidate.name === monsterName);
+    if (direct) return direct;
+    const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return registry.find(candidate => normalize(candidate?.name) === normalize(monsterName)) || null;
+}
+
+function createEnemyInstance(monsterName, isEmpowered, slotIndex, rewardScale) {
+    const template = findEnemyTemplate(monsterName);
+    if (!template) throw new Error(`Enemy template not found: ${monsterName}`);
+    const instance = JSON.parse(JSON.stringify(template));
+    instance.activeBuffs = [];
+    instance.activeDebuffs = [];
+    instance.effects = instance.effects || [];
+    instance._slotIndex = slotIndex;
+    instance._slotName = ENEMY_SLOT_ORDER[slotIndex] || `slot-${slotIndex}`;
+    instance._combatId = `${instance.id || String(monsterName).replace(/[^a-z0-9]/gi, '-')}-${encounterSerial}-${slotIndex}`;
+    instance._rewardScale = Math.max(0, Number(rewardScale) || 0);
+    instance._tauntCooldownRemaining = Math.max(0, Number(instance.tauntAbility?.initialDelay ?? 0));
+    instance._defeatHandled = false;
+
+    if (isEmpowered) {
+        instance.isEmpowered = true;
+        instance.health = Math.round(Number(instance.health || 1) * 1.5);
+        instance.energyShield = Math.round(Number(instance.energyShield || 0) * 1.5);
+        for (const damageType of Object.keys(instance.damageTypes || {})) {
+            instance.damageTypes[damageType] = Math.round(Number(instance.damageTypes[damageType] || 0) * 1.5);
+        }
+        instance.name = `Empowered ${instance.name}`;
+    }
+
+    instance.currentHealth = instance.health;
+    instance.currentShield = instance.energyShield || 0;
+    if (typeof calculateEnemyStats === 'function') calculateEnemyStats(instance);
+    ensureEntityInitialization(instance, false);
+    return instance;
+}
+
+function assignEncounterExperienceRewards(group) {
+    const allocations = group.map(candidate => {
+        const empoweredMultiplier = candidate.isEmpowered ? 1.5 : 1;
+        const exact = Math.max(0, Number(candidate.experienceValue || 0))
+            * Math.max(0, Number(candidate._rewardScale ?? 1))
+            * empoweredMultiplier;
+        return { candidate, exact, awarded: Math.floor(exact) };
+    });
+    let remainder = Math.max(0, Math.floor(allocations.reduce((sum, entry) => sum + entry.exact, 0) + 1e-9))
+        - allocations.reduce((sum, entry) => sum + entry.awarded, 0);
+    allocations.sort((a, b) => (b.exact - Math.floor(b.exact)) - (a.exact - Math.floor(a.exact)));
+    for (const allocation of allocations) {
+        if (remainder <= 0) break;
+        allocation.awarded++;
+        remainder--;
+    }
+    for (const allocation of allocations) {
+        allocation.candidate._experienceReward = allocation.awarded;
+        allocation.candidate._experienceRewardIncludesEmpowerment = true;
+    }
+}
+
+function spawnEnemyEncounter(encounterEntries) {
+    const entries = Array.isArray(encounterEntries) ? encounterEntries : [];
+    if (entries.length === 0) return false;
+    encounterSerial++;
+    const rewardScale = 1 / entries.length;
+    encounterEnemies = entries.map((entry, slotIndex) => createEnemyInstance(
+        entry.name,
+        Boolean(entry.isEmpowered),
+        slotIndex,
+        rewardScale
+    ));
+    assignEncounterExperienceRewards(encounterEnemies);
+    selectedEnemyId = null;
+    tauntOverride = null;
+    enemyAttackTimers = {};
+    enemyNextAttackTimes = {};
+    ensureSelectedEnemyTarget();
+    clearLog();
+    if (typeof updateEnemyStatsDisplay === 'function') updateEnemyStatsDisplay();
+    if (!isCombatActive) startCombat();
+    for (const spawned of encounterEnemies) logMessage(`A ${spawned.name} appears!`);
+    return true;
+}
+
+function spawnEnemy() {
+    if (!currentLocation?.enemies?.length) return null;
+    const entry = selectWeightedEncounterEnemies(currentLocation, 1)[0];
+    if (!entry) return null;
+    spawnEnemyEncounter([{ name: entry.name, isEmpowered: false }]);
+    return enemy;
+}
+
+function spawnEnemyForSequence(monsterName, isEmpowered = false) {
+    spawnEnemyEncounter([{ name: monsterName, isEmpowered }]);
+}
+
+function startCombat() {
+    if (isCombatActive) return;
+    if (!currentLocation) {
+        console.error('No current location set. Cannot start combat.');
+        return;
+    }
+    if (window.activityManager?.isActivityActive?.()) {
+        window.activityManager.cancelActivity('combatStart', { silent: true });
+        if (typeof syncGatheringStateFromManager === 'function') syncGatheringStateFromManager();
     } else if (isGathering) {
         stopGatheringActivity();
     }
-
-    // Recalculate combat stats without healing between delve encounters.
-    console.log("Starting combat - preparing player stats");
-    preparePlayerForCombat();
-    if (typeof resetCombatStyleState === 'function') resetCombatStyleState(player);
-
-    isCombatActive = true;
-
-    // Initialize enemy (but don't call spawnEnemy recursively from spawnEnemyForSequence)
-    if (!enemy) {
+    if (getLivingEnemies().length === 0) {
         spawnEnemy();
-    }
-
-    // Player buffs and debuffs were cleared while preserving current resources.
-
-    if (enemy) {
-        clearBuffs(enemy);
-        ensureEntityInitialization(enemy, false);
-    } else {
-        console.error("Failed to spawn enemy");
-        stopCombat('enemySpawnFailed');
         return;
     }
 
-    // Ensure both attack timers are reset
+    preparePlayerForCombat();
+    if (typeof resetCombatStyleState === 'function') resetCombatStyleState(player);
+    isCombatActive = true;
     playerAttackTimer = 0;
     enemyAttackTimer = 0;
-
-    // Initialize attack times based on attack speeds
+    enemyAttackTimers = {};
+    enemyNextAttackTimes = {};
     refreshPlayerAttackInterval();
-    enemyNextAttackTime = 1 / (enemy.totalStats.attackSpeed || 1);
-
+    for (const candidate of getLivingEnemies()) {
+        clearBuffs(candidate);
+        ensureEntityInitialization(candidate, false);
+        enemyAttackTimers[candidate._combatId] = 0;
+        enemyNextAttackTimes[candidate._combatId] = 1 / (candidate.totalStats.attackSpeed || 1);
+    }
     startHealthRegen();
-
-    // Start combat loop
     lastCombatLoopTime = Date.now();
     combatInterval = setInterval(combatLoop, 100);
-    console.log("Combat started.");
-
     setFleeControlState({ visible: true });
-
-    // Debug output player stats
-    console.log("Player stats at combat start:", {
-        currentHealth: player.currentHealth,
-        totalHealth: player.totalStats.health,
-        currentShield: player.currentShield,
-        totalShield: player.totalStats.energyShield
-    });
-
-    // Force update displays immediately
+    if (typeof setDelveCombatUIActive === 'function') setDelveCombatUIActive(true);
     updatePlayerStatsDisplay();
     updateEnemyStatsDisplay();
-
-    // Update the adventure locations display (e.g., change to 'Flee' button)
     displayAdventureLocations();
 }
 
 function combatLoop() {
     if (!isCombatActive) return;
-
-    let now = Date.now();
-    let deltaTime = (now - lastCombatLoopTime) / 1000;
+    const now = Date.now();
+    const deltaTime = Math.max(0, (now - lastCombatLoopTime) / 1000);
     lastCombatLoopTime = now;
+    processEnemyTaunts(deltaTime);
 
-    // Process attack timers
     if (player) {
-        // Initialize player attack time if needed
-        if (playerNextAttackTime <= 0) {
-            refreshPlayerAttackInterval();
-        }
-
-        // Player attack timer
+        if (playerNextAttackTime <= 0) refreshPlayerAttackInterval();
         playerAttackTimer += deltaTime;
         if (playerAttackTimer >= playerNextAttackTime) {
             playerAttackTimer = 0;
             refreshPlayerAttackInterval();
-
-            // Only call playerAttack if player and enemy both exist
-            if (player && enemy) {
-                playerAttack();
-            }
+            if (getEffectivePlayerTarget()) playerAttack();
         }
-
-        // Update player progress bar
-        let playerProgress = Math.min((playerAttackTimer / playerNextAttackTime) * 100, 100);
-        setAttackProgressBar('player', playerProgress);
+        setAttackProgressBar('player', Math.min((playerAttackTimer / playerNextAttackTime) * 100, 100));
     }
 
-    // Process enemy attack timer separately to avoid null issues
-    if (enemy && enemy.totalStats) {
-        // Initialize enemy attack time if needed
-        if (enemyNextAttackTime <= 0) {
-            enemyNextAttackTime = 1 / (enemy.totalStats.attackSpeed || 1);
+    for (const attacker of getLivingEnemies()) {
+        const id = attacker._combatId;
+        let nextAttack = Number(enemyNextAttackTimes[id]) || (1 / (attacker.totalStats.attackSpeed || 1));
+        let timer = Number(enemyAttackTimers[id]) || 0;
+        timer += deltaTime;
+        if (timer >= nextAttack) {
+            timer = 0;
+            nextAttack = 1 / (attacker.totalStats.attackSpeed || 1);
+            enemyAttack(attacker);
+            if (!isCombatActive || player.currentHealth <= 0) return;
         }
-
-        // Enemy attack timer
-        enemyAttackTimer += deltaTime;
-        if (enemyAttackTimer >= enemyNextAttackTime) {
-            enemyAttackTimer = 0;
-            enemyNextAttackTime = 1 / (enemy.totalStats.attackSpeed || 1);
-
-            // Only call enemyAttack if player and enemy both exist
-            if (player && enemy) {
-                enemyAttack();
-            }
-        }
-
-        // Update enemy progress bar
-        let enemyProgress = Math.min((enemyAttackTimer / enemyNextAttackTime) * 100, 100);
-        setAttackProgressBar('enemy', enemyProgress);
+        enemyAttackTimers[id] = timer;
+        enemyNextAttackTimes[id] = nextAttack;
     }
 
-    // Safely process entity buffs and debuffs
     try {
-        if (player) {
-            processBuffs(player, deltaTime);
-            if (player.currentHealth > 0) {
-                if (window.processDebuffs && Array.isArray(player.activeDebuffs)) {
-                    window.processDebuffs(player, deltaTime);
-                }
-            }
+        processBuffs(player, deltaTime);
+        if (player.currentHealth > 0 && window.processDebuffs && Array.isArray(player.activeDebuffs)) {
+            window.processDebuffs(player, deltaTime);
         }
-
-        if (enemy) {
-            if (enemy.activeBuffs) {
-                processBuffs(enemy, deltaTime);
-            }
-            if (enemy.currentHealth > 0) {
-                // Process debuffs on the enemy
-                if (window.processDebuffs && typeof window.processDebuffs === 'function' && enemy.activeDebuffs) {
-                    window.processDebuffs(enemy, deltaTime);
-                }
+        for (const candidate of getLivingEnemies()) {
+            if (candidate.activeBuffs) processBuffs(candidate, deltaTime);
+            if (window.processDebuffs && Array.isArray(candidate.activeDebuffs)) {
+                window.processDebuffs(candidate, deltaTime);
             }
         }
     } catch (error) {
-        console.error("Error processing effects:", error);
+        console.error('Error processing combat effects:', error);
     }
 
-    // Check end conditions
-    if (player && player.currentHealth <= 0) {
+    if (player.currentHealth <= 0) {
         stopCombat('playerDefeated');
         return;
     }
-    else if (enemy && enemy.currentHealth <= 0) {
-        // We handle that in applyDamage
-    }
-
-    // Update displays at end of loop
     updatePlayerStatsDisplay();
     updateEnemyStatsDisplay();
 }
 
-// Function to stop combat
-function stopCombat(reason) {
-    // Allow delveCompleted to proceed even if combat is already inactive
-    if (!isCombatActive && !isDelveInProgress && reason !== 'delveCompleted') {
-        console.log("Combat already inactive. stopCombat() aborted.");
-        return;
-    }
+function clearCombatantDebuffs(combatant) {
+    for (const debuff of [...(combatant?.activeDebuffs || [])]) debuff.onRemove?.(combatant);
+    if (combatant) combatant.activeDebuffs = [];
+}
 
+function resetEncounterState() {
+    for (const candidate of Array.isArray(encounterEnemies) ? encounterEnemies : []) {
+        clearCombatantDebuffs(candidate);
+        clearBuffs(candidate);
+    }
+    encounterEnemies = [];
+    enemy = null;
+    selectedEnemyId = null;
+    tauntOverride = null;
+    enemyAttackTimers = {};
+    enemyNextAttackTimes = {};
+    enemyAttackTimer = 0;
+    enemyNextAttackTime = 0;
+}
+
+function stopCombat(reason) {
+    if (!isCombatActive && !isDelveInProgress && reason !== 'delveCompleted') return;
     if (isCombatActive) {
         isCombatActive = false;
         clearInterval(combatInterval);
         combatInterval = null;
     }
-
-    // Clear any inter-fight timers
     if (interFightPauseTimer) {
         clearTimeout(interFightPauseTimer);
         interFightPauseTimer = null;
     }
-
-    // Log the reason combat was stopped
-    if (reason) {
-        logMessage(`Combat stopped due to: ${reason}`);
-    }
-
-    // Reset combat UI and timers
     playerAttackTimer = 0;
-    enemyAttackTimer = 0;
-    playerNextAttackTime = 0;  // Reset playerNextAttackTime
-    enemyNextAttackTime = 0;   // Reset enemyNextAttackTime
+    playerNextAttackTime = 0;
     if (typeof resetCombatStyleState === 'function') resetCombatStyleState(player);
     resetAttackProgressBars();
     setFleeControlState({ visible: false, enabled: true });
 
-    // Only restore player health when fleeing or completing a delve
-    // NOT between delve fights
     if (reason === 'playerFled' || reason === 'delveCompleted' || reason === 'playerDefeated') {
         player.currentHealth = player.totalStats.health;
         player.currentShield = player.totalStats.energyShield;
         updatePlayerStatsDisplay();
-
-        // Always restart health regeneration after combat ends with fleeing, defeat, or delve completion
         startHealthRegen();
     }
+    clearCombatantDebuffs(player);
 
-    // Clear any active debuffs on the player and enemy
-    if (player && player.activeDebuffs && player.activeDebuffs.length > 0) {
-        for (const debuff of player.activeDebuffs) {
-            if (debuff.onRemove) {
-                debuff.onRemove(player);
-            }
-        }
-        player.activeDebuffs = [];
-    }
-
-    if (enemy && enemy.activeDebuffs && enemy.activeDebuffs.length > 0) {
-        for (const debuff of enemy.activeDebuffs) {
-            if (debuff.onRemove) {
-                debuff.onRemove(enemy);
-            }
-        }
-        enemy.activeDebuffs = [];
-    }
-
-    // Handle delve state based on reason
     if (isDelveInProgress) {
         if (reason === 'playerFled' || reason === 'playerDefeated') {
             stopDelveWithFailure();
-
-            // Return to adventure location selection
             isDelveInProgress = false;
             currentDelveLocation = null;
             currentMonsterIndex = 0;
-            displayAdventureLocations();
-
-            // Restart health regeneration as we're no longer in a delve
             stopHealthRegen();
             startHealthRegen();
-        }
-        else if (reason === 'enemyDefeated') {
-            dropLoot(enemy);
-
-            // Don't end the delve, we'll handle the next monster
+        } else if (reason === 'enemyDefeated') {
             currentMonsterIndex++;
-
-            // Every encounter starts clean; buffs and debuffs do not carry forward.
             clearBuffs(player);
-            if (enemy) {
-                clearBuffs(enemy);
-            }
-
-            if (
-                currentDelveLocation
-                && currentMonsterIndex < currentDelveLocation.numFights
-                && typeof refreshEnergyShieldBetweenDelveEncounters === 'function'
-            ) {
+            if (currentDelveLocation && currentMonsterIndex < currentDelveLocation.numFights) {
                 refreshEnergyShieldBetweenDelveEncounters();
             }
-
-            // Health persists between delve fights; Energy Shield is restored above.
-            // Wait 3 seconds before beginning the next fight
-            interFightPauseTimer = setTimeout(() => {
-                beginNextMonsterInSequence();
-            }, 3000);
+            resetEncounterState();
+            updateEnemyStatsDisplay();
+            interFightPauseTimer = setTimeout(beginNextMonsterInSequence, 3000);
+            return;
         }
     }
 
-    // Handle delve completion outside the isDelveInProgress condition
     if (reason === 'delveCompleted') {
-        console.log("stopCombat - delveCompleted - before setting flags - isDelveInProgress:", isDelveInProgress);
-        // Mark success regardless of current isDelveInProgress flag value
         isDelveInProgress = false;
         currentDelveLocation = null;
         currentMonsterIndex = 0;
-        console.log("stopCombat - delveCompleted - after setting flags - isDelveInProgress:", isDelveInProgress);
-
-        // Call displayAdventureLocations to refresh the UI
-        displayAdventureLocations();
-        // Auto re-deploy if user has it enabled
         try {
             const auto = localStorage.getItem('autoRedeploy') === 'true';
             if (auto && window.lastDelveLocation && !hasDelveClaimCacheRewards()) {
@@ -303,183 +417,36 @@ function stopCombat(reason) {
             } else if (auto && hasDelveClaimCacheRewards()) {
                 logMessage('Auto re-deploy paused until the Delve Claim Cache is cleared.');
             }
-        } catch (e) { /* ignore */ }
-        console.log("stopCombat - delveCompleted - after displayAdventureLocations");
-
-        // Restart health regeneration as we're no longer in a delve
+        } catch (error) { /* local storage is optional */ }
         stopHealthRegen();
         startHealthRegen();
     }
 
-    // Non-delve combat: award loot directly to inventory
-    if (reason === 'enemyDefeated' && enemy && !isDelveInProgress) {
-        dropLoot(enemy);
-    }
-
-    // Clean up combat state
-    if (enemy) clearBuffs(enemy);
-    enemy = null;
+    resetEncounterState();
     updateEnemyStatsDisplay();
     initializeEnemyStatsDisplay();
-
-    // Stop health regeneration if we're completely stopping combat, but not for inter-fight pauses
-    if (!isDelveInProgress || reason === 'playerFled' || reason === 'playerDefeated' || reason === 'delveCompleted') {
-        stopHealthRegen();
-    }
+    if (typeof setDelveCombatUIActive === 'function') setDelveCombatUIActive(false);
+    displayAdventureLocations();
+    if (!isDelveInProgress || ['playerFled', 'playerDefeated', 'delveCompleted'].includes(reason)) stopHealthRegen();
 }
 
-// Function to flee combat
 function fleeCombat() {
-    if (isCombatActive) {
+    if (isCombatActive || isDelveInProgress) {
         stopCombat('playerFled');
-        logMessage("You have fled from combat.");
+        logMessage('You have fled from combat.');
         currentLocation = null;
-    } else {
-        logMessage("You are not in combat.");
-        // If not in combat, but a countdown is active, cancel it
-        if (adventureStartCountdownInterval) {
-            clearInterval(adventureStartCountdownInterval);
-            adventureStartCountdownInterval = null;
-            hideNextEnemyTimer();
-            logMessage("You have canceled the adventure.");
-            currentLocation = null;
-            displayAdventureLocations();
-        }
+    } else if (adventureStartCountdownInterval) {
+        clearInterval(adventureStartCountdownInterval);
+        adventureStartCountdownInterval = null;
+        hideNextEnemyTimer();
+        currentLocation = null;
     }
-
-    // Update the adventure locations display
     displayAdventureLocations();
 }
 
 // ============================================================================
 // 3. ENTITY MANAGEMENT
 // ============================================================================
-
-// Define spawnEnemy function
-function spawnEnemy() {
-    if (!currentLocation || !currentLocation.enemies || currentLocation.enemies.length === 0) {
-        console.error("No enemies defined for current location.");
-        return null;
-    }
-
-    // Create a pool of enemies based on spawn rates
-    let enemyPool = [];
-    for (let locEnemy of currentLocation.enemies) {
-        // Use weight/spawnRate to determine how many copies go into the pool
-        const weight = locEnemy.spawnRate || 1;
-        for (let i = 0; i < weight; i++) {
-            enemyPool.push(locEnemy.name);
-        }
-    }
-
-    if (enemyPool.length === 0) {
-        console.error("Enemy pool is empty.");
-        return null;
-    }
-
-    // Select a random enemy from the pool
-    const randomIndex = Math.floor(Math.random() * enemyPool.length);
-    const selectedEnemyName = enemyPool[randomIndex];
-
-    // Now spawn this enemy
-    spawnEnemyForSequence(selectedEnemyName, false);
-}
-
-function spawnEnemyForSequence(monsterName, isEmpowered = false) {
-    // Reset attack timers
-    playerAttackTimer = 0;
-    enemyAttackTimer = 0;
-
-	// Look up the enemy template (prefer window.enemies if available)
-	const enemyPool = (Array.isArray(window.enemies) && window.enemies.length)
-		? window.enemies
-		: (typeof enemies !== 'undefined' ? enemies : []);
-	const enemyTemplate = enemyPool.find(e => e.name === monsterName);
-	if (!enemyTemplate) {
-		// Fallback: try a tolerant comparison ignoring punctuation/case
-		const normalize = (s) => (s || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
-		const target = normalize(monsterName);
-		const fallback = enemyPool.find(e => e && normalize(e.name) === target) || null;
-		if (!fallback) {
-			console.error(`Enemy template not found: ${monsterName}`);
-			stopCombat('enemyTemplateNotFound');
-			return;
-		}
-		// use fallback if found
-		enemy = JSON.parse(JSON.stringify(fallback));
-	} else {
-		// Clone from the template
-		enemy = JSON.parse(JSON.stringify(enemyTemplate));
-	}
-
-	// Initialize basic properties
-	enemy.activeBuffs = [];
-	enemy.effects = enemy.effects || [];
-
-    // Initialize enemy's current health
-    enemy.currentHealth = enemy.health;
-    enemy.currentShield = enemy.energyShield || 0;
-
-    // Calculate initial totalStats using the centralized function
-    if (typeof calculateEnemyStats === 'function') {
-        calculateEnemyStats(enemy);
-    } else {
-        console.error("calculateEnemyStats function not found during enemy spawn!");
-    }
-
-    // Apply empowered bonuses if applicable
-    if (isEmpowered) {
-        enemy.isEmpowered = true;
-        // Boost stats
-        enemy.health = Math.round(enemy.health * 1.5);
-        enemy.currentHealth = enemy.health; // Reset current health to new max
-
-        if (enemy.energyShield) {
-            enemy.energyShield = Math.round(enemy.energyShield * 1.5);
-            enemy.currentShield = enemy.energyShield;
-        }
-
-        // Boost all damage types by 50%
-        if (enemy.damageTypes) {
-            for (let damageType in enemy.damageTypes) {
-                enemy.damageTypes[damageType] = Math.round(enemy.damageTypes[damageType] * 1.5);
-            }
-        }
-
-        // Add 'Empowered' to the name
-        enemy.name = "Empowered " + enemy.name;
-
-        // Update totalStats again after empowerment using the centralized function
-        if (typeof calculateEnemyStats === 'function') {
-            calculateEnemyStats(enemy);
-        } else {
-            console.error("calculateEnemyStats function not found after empowerment!");
-        }
-
-        // Add a visual indicator
-        logMessage(`An empowered ${monsterName} appears!`);
-    }
-
-    clearLog();
-    updateEnemyStatsDisplay();
-
-    // Initialize attack timers if combat is already active
-    if (isCombatActive) {
-        refreshPlayerAttackInterval();
-        enemyNextAttackTime = 1 / (enemy.totalStats.attackSpeed || 1);
-    }
-
-    if (!isCombatActive) {
-        startCombat();
-    }
-
-    setFleeControlState({ enabled: true });
-
-    logMessage(`A ${enemy.name} appears!`);
-
-    // Debug info
-    console.log("Enemy spawned:", enemy);
-}
 
 // Add this function to ensure entities are properly initialized
 function ensureEntityInitialization(entity, isPlayer) {

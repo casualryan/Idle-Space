@@ -171,7 +171,7 @@ const debuffs = {
             }
             // Update UI
             if (target === player && typeof updatePlayerStatsDisplay === 'function') updatePlayerStatsDisplay();
-            else if (target === enemy && typeof updateEnemyStatsDisplay === 'function') updateEnemyStatsDisplay();
+            else if (target?.isEnemy && typeof updateEnemyStatsDisplay === 'function') updateEnemyStatsDisplay();
         },
         onRemove: function(target) {
             if (target.totalStats && target.totalStats.defenseTypes) {
@@ -183,7 +183,7 @@ const debuffs = {
             console.log(`${target.name} no longer has Exposed Weakness.`);
             // Update UI
              if (target === player && typeof updatePlayerStatsDisplay === 'function') updatePlayerStatsDisplay();
-             else if (target === enemy && typeof updateEnemyStatsDisplay === 'function') updateEnemyStatsDisplay();
+             else if (target?.isEnemy && typeof updateEnemyStatsDisplay === 'function') updateEnemyStatsDisplay();
         }
     },
     "ablaze": {
@@ -725,7 +725,7 @@ function processDebuffs(entity, deltaTime) {
     // Update UI if available
     if (entity === player && typeof updatePlayerDebuffsUI === 'function') {
         updatePlayerDebuffsUI();
-    } else if (entity === enemy && typeof updateEnemyDebuffsUI === 'function') {
+    } else if (entity?.isEnemy && typeof updateEnemyDebuffsUI === 'function') {
         updateEnemyDebuffsUI();
     }
 }

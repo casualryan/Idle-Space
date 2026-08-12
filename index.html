@@ -222,105 +222,51 @@
         <div id="adventure-screen" class="screen">
             <h2>Delve</h2>
             <div id="delve-controls"></div>
-            <h3>Delve Locations</h3>
+            <h3 id="delve-locations-heading">Delve Locations</h3>
             <div id="adventure-locations"></div>
-            <div class="container combat-dashboard">
-                <section class="stats combatant-panel player-panel" id="player-stats">
-                    <header class="combat-panel-header">
-                        <div>
-                            <span class="combat-panel-kicker">Operator</span>
-                            <h2 id="player-name">Player</h2>
-                        </div>
-                        <div class="combat-identity-meta">
-                            <span>LV <strong id="player-level">1</strong></span>
-                            <span id="player-experience">0 / 0</span>
-                        </div>
-                    </header>
+            <div id="delve-combat-stage" class="delve-combat-stage hidden" aria-hidden="true">
+                <div class="combat-stage-tools" aria-label="Delve utilities">
+                    <button id="delve-bag-toggle" class="combat-stage-tool" type="button" aria-expanded="false">Open Bag</button>
+                    <button id="combat-log-toggle" class="combat-stage-tool" type="button" aria-expanded="false">Combat Log</button>
+                </div>
 
-                    <div class="resource-stack">
-                        <div class="resource-label"><span>Integrity</span><span class="hp-text" id="player-hp-text">0 / 0</span></div>
+                <section id="player-stats" class="combat-card player-combat-card" aria-label="Player combat status">
+                    <div class="combat-card-portrait player-portrait">
+                        <img src="character-silhouette.svg" alt="Player portrait">
+                        <div id="player-effects-bar" class="combat-card-effects"></div>
+                    </div>
+                    <h2 id="player-name">Player</h2>
+                    <div class="compact-resource">
+                        <div class="compact-resource-label"><span>Integrity</span><span id="player-hp-text">0 / 0</span></div>
                         <div class="hp-bar-container"><div id="player-hp-bar" class="hp-bar"></div></div>
-                        <div class="resource-label"><span>Energy Shield</span><span class="es-text" id="player-es-text">0 / 0</span></div>
+                    </div>
+                    <div class="compact-resource">
+                        <div class="compact-resource-label"><span>Energy Shield</span><span id="player-es-text">0 / 0</span></div>
                         <div class="es-bar-container"><div id="player-es-bar" class="es-bar"></div></div>
                     </div>
-
-                    <div id="player-effects-bar" class="effects-bar"></div>
-
-                    <div class="attack-cycle">
-                        <span>Attack Cycle</span>
-                        <div class="progress-container"><div id="player-attack-progress-bar" class="progress-bar attack-bar"></div></div>
-                    </div>
-
-                    <div class="combat-metric-grid">
-                        <div id="player-total-dps" class="combat-dps-card"></div>
-                        <div class="combat-metric"><span>Speed</span><strong id="player-attack-speed">0</strong></div>
-                        <div class="combat-metric"><span>Crit</span><strong id="player-crit-chance">0%</strong></div>
-                        <div class="combat-metric"><span>Crit Power</span><strong id="player-crit-multiplier">0</strong></div>
-                    </div>
-
-                    <div class="combat-readout-grid">
-                        <section><h3>Damage Output</h3><ul id="player-damage-types" class="stat-list"></ul><div id="player-damage-type-modifiers"></div></section>
-                        <section><h3>Resistances</h3><ul id="player-defense-types" class="stat-list"></ul></section>
-                    </div>
-
-                    <details class="advanced-telemetry">
-                        <summary>Advanced Telemetry</summary>
-                        <div class="telemetry-grid">
-                            <section><h3>Combat</h3><div>Precision <span id="player-precision"></span></div><div>Deflection <span id="player-deflection"></span></div><div>Health Regen <span id="player-health-regen"></span>/s</div></section>
-                            <section><h3>Efficiency</h3><div>Armor <span id="player-armor-efficiency"></span>%</div><div>Weapon <span id="player-weapon-efficiency"></span>%</div><div>Bionic <span id="player-bionic-efficiency"></span>%</div><div>Bionic Sync <span id="player-bionic-sync"></span>%</div></section>
-                            <section><h3>Combo</h3><div>Chance <span id="player-combo-attack"></span>%</div><div>Effectiveness <span id="player-combo-effectiveness"></span>%</div><div>Extra Attacks <span id="player-additional-combo-attacks"></span></div></section>
-                            <section><h3>Mastery</h3><div>Kinetic <span id="player-kinetic-mastery"></span></div><div>Slashing <span id="player-slashing-mastery"></span></div><div>Sever Chance <span id="player-severed-limb-chance"></span>%</div><div>Sever Cap <span id="player-max-severed-limbs"></span></div></section>
-                        </div>
-                    </details>
+                    <div class="visually-hidden"><div id="player-attack-progress-bar"></div></div>
                 </section>
 
-                <section class="stats combatant-panel enemy-panel" id="enemy-stats">
-                    <header class="combat-panel-header">
-                        <div>
-                            <span class="combat-panel-kicker">Hostile Contact</span>
-                            <h2 id="enemy-name">No Enemy</h2>
-                        </div>
-                        <div id="next-enemy-timer" class="next-enemy-timer" style="display: none;">Next signal <strong id="next-enemy-countdown">2</strong>s</div>
-                    </header>
-
-                    <div class="resource-stack">
-                        <div class="resource-label"><span>Integrity</span><span class="hp-text" id="enemy-hp-text">0 / 0</span></div>
-                        <div class="hp-bar-container"><div id="enemy-hp-bar" class="hp-bar"></div></div>
-                        <div class="resource-label"><span>Energy Shield</span><span class="es-text" id="enemy-es-text">0 / 0</span></div>
-                        <div class="es-bar-container"><div id="enemy-es-bar" class="es-bar"></div></div>
-                    </div>
-
-                    <div id="enemy-effects-bar" class="effects-bar"></div>
-
-                    <div class="attack-cycle">
-                        <span>Attack Cycle</span>
-                        <div class="progress-container"><div id="enemy-attack-progress-bar" class="progress-bar attack-bar"></div></div>
-                    </div>
-
-                    <div class="combat-metric-grid">
-                        <div id="enemy-total-dps" class="combat-dps-card"></div>
-                        <div class="combat-metric"><span>Speed</span><strong id="enemy-attack-speed">—</strong></div>
-                        <div class="combat-metric"><span>Crit</span><strong id="enemy-crit-chance">—</strong></div>
-                        <div class="combat-metric"><span>Crit Power</span><strong id="enemy-crit-multiplier">—</strong></div>
-                    </div>
-
-                    <div class="combat-readout-grid">
-                        <section><h3>Damage Output</h3><ul id="enemy-damage-types" class="stat-list"></ul></section>
-                        <section><h3>Resistances</h3><ul id="enemy-defense-types" class="stat-list"></ul></section>
-                    </div>
+                <section class="enemy-formation" aria-label="Enemy formation">
+                    <div id="enemy-combat-grid" class="enemy-combat-grid"></div>
                 </section>
 
-                <section id="delve-bag-container" class="delve-bag operations-panel">
-                    <header class="operations-panel-header"><span>Field Recovery</span><h2>Delve Bag</h2></header>
-                    <div id="delve-bag-credits" class="delve-bag-credits">Credits: 0</div>
-                    <ul id="delve-bag-items"><li class="delve-bag-empty">No recovered items</li></ul>
-                </section>
+                <aside id="delve-bag-drawer" class="combat-drawer" aria-hidden="true">
+                    <section id="delve-bag-container" class="delve-bag operations-panel">
+                        <header class="operations-panel-header"><span>Field Recovery</span><h2>Delve Bag</h2></header>
+                        <button class="combat-drawer-close" type="button" data-close-combat-drawer="delve-bag-drawer" aria-label="Close Delve Bag">&times;</button>
+                        <div id="delve-bag-credits" class="delve-bag-credits">Credits: 0</div>
+                        <ul id="delve-bag-items"><li class="delve-bag-empty">No recovered items</li></ul>
+                    </section>
+                </aside>
 
-                <section class="combat-log operations-panel">
-                    <header class="operations-panel-header"><span>Live Feed</span><h2>Combat Log</h2></header>
-                    <div id="log-messages"></div>
-                    <button id="combat-log-popout" type="button">Pop Out</button>
-                </section>
+                <aside id="combat-log-drawer" class="combat-drawer" aria-hidden="true">
+                    <section class="combat-log operations-panel">
+                        <header class="operations-panel-header"><span>Live Feed</span><h2>Combat Log</h2></header>
+                        <button class="combat-drawer-close" type="button" data-close-combat-drawer="combat-log-drawer" aria-label="Close Combat Log">&times;</button>
+                        <div id="log-messages"></div>
+                    </section>
+                </aside>
             </div>
         </div>
 

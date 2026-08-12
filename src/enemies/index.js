@@ -44,11 +44,21 @@ function normalizeLegacyDefenses(defenseTypes = {}) {
     };
 }
 
+function getEnemyPortraitPath(template) {
+    const slug = String(template.id || template.name || 'enemy')
+        .replace(/^cb_/, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+    return `images/enemies/${slug}.png`;
+}
+
 function normalizeEnemy(template, options = {}) {
     const enemy = {
         ...template,
         isEnemy: true,
         level: Number(template.level || 1),
+        portrait: template.portrait || getEnemyPortraitPath(template),
         defenseTypes: normalizeLegacyDefenses(template.defenseTypes)
     };
     // The weighted-pool system is authoritative; legacy direct drops are inert.

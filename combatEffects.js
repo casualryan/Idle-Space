@@ -113,7 +113,7 @@ function executeEffectAction(effect, source, target, sourceDamage = 0) {
                 logMessage(`${source.name}'s energy shield is fully restored!`);
                 if (source === player) {
                     updatePlayerStatsDisplay();
-                } else if (source === enemy) {
+                } else if (source?.isEnemy) {
                     updateEnemyStatsDisplay();
                 }
             }
@@ -126,7 +126,7 @@ function executeEffectAction(effect, source, target, sourceDamage = 0) {
                 logMessage(`${source.name}'s health is fully restored!`);
                 if (source === player) {
                     updatePlayerStatsDisplay();
-                } else if (source === enemy) {
+                } else if (source?.isEnemy) {
                     updateEnemyStatsDisplay();
                 }
             }
@@ -185,20 +185,32 @@ function coerceDamagePacket(packetOrTarget, legacyDamage, legacyTargetName, lega
 }
 
 function handleDefeatedCombatant(target) {
-    if (!target || target.currentHealth > 0) return;
+    if (!target || target.currentHealth > 0 || target._defeatHandled) return;
 
     if (target.isPlayer) {
         stopCombat('playerDefeated');
         return;
     }
 
+    target._defeatHandled = true;
     try {
-        const xpValue = typeof target.experienceValue === 'number' ? target.experienceValue : 0;
+        const baseXP = typeof target.experienceValue === 'number' ? target.experienceValue : 0;
+        const xpValue = Number.isFinite(target._experienceReward)
+            ? target._experienceReward
+            : baseXP * Math.max(0, Number(target._rewardScale ?? 1));
         awardXPWithZonePenalty(xpValue, target.name, target);
     } catch (error) {
         console.error('Unable to award enemy defeat experience:', error);
     }
-    stopCombat('enemyDefeated');
+    if (typeof dropLoot === 'function') dropLoot(target);
+    clearBuffs(target);
+    clearCombatantDebuffs(target);
+    delete enemyAttackTimers[target._combatId];
+    delete enemyNextAttackTimes[target._combatId];
+    if (tauntOverride?.enemyId === target._combatId) clearTauntOverride({ silent: true });
+    if (selectedEnemyId === target._combatId) ensureSelectedEnemyTarget();
+    if (typeof updateEnemyStatsDisplay === 'function') updateEnemyStatsDisplay();
+    if (getLivingEnemies().length === 0) stopCombat('enemyDefeated');
 }
 
 // Canonical entry point for applying a damage packet. The legacy positional
@@ -363,7 +375,7 @@ function healEntity(entity, amount) {
     addToCombatLog(`${entity.name} heals for ${Math.round(amount)} HP.`, '#48bf91'); // Green color
     if (entity === player) {
         updatePlayerStatsDisplay();
-    } else if (entity === enemy) {
+    } else if (entity?.isEnemy) {
         updateEnemyStatsDisplay();
     }
 }
@@ -419,10 +431,10 @@ function processBuffs(entity, deltaTime) {
         if (entity === player) {
             entity.calculateStats();
             updatePlayerStatsDisplay();
-        } else if (entity === enemy) {
+        } else if (entity?.isEnemy) {
             // Use calculateEnemyStats if available
             if (typeof calculateEnemyStats === 'function') {
-                calculateEnemyStats(enemy);
+                calculateEnemyStats(entity);
             }
             updateEnemyStatsDisplay();
         }
@@ -452,10 +464,10 @@ function clearBuffs(entity) {
     if (entity === player) {
         entity.calculateStats();
         updatePlayerStatsDisplay();
-    } else if (entity === enemy) {
+    } else if (entity?.isEnemy) {
         // Use the centralized function to recalculate enemy stats
         if (typeof calculateEnemyStats === 'function') {
-            calculateEnemyStats(enemy);
+            calculateEnemyStats(entity);
         } else {
             console.error("calculateEnemyStats function not found during clearBuffs!");
         }

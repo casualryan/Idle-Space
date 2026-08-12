@@ -11,7 +11,8 @@
             title: 'Combat',
             sections: [
                 ['Automatic Attacks', 'Combatants attack automatically according to attack speed. Precision improves damage rolls against enemy Deflection. Critical hits use the attacker’s critical multiplier.'],
-                ['Encounter Boundaries', 'Each fight creates a fresh enemy at full Health and Energy Shield. Your Health persists between delve encounters, while your Energy Shield reconstitutes to full after each victory before the next enemy appears. Buffs and debuffs are cleared between fights.'],
+                ['Targeting', 'A fight may contain up to six enemies. Click an enemy card to select it; combat defaults to the leftmost living target. Taunts temporarily redirect your attacks without changing that selection, so attacks return to your chosen target when the taunt expires.'],
+                ['Encounter Boundaries', 'Each fight creates a fresh enemy group at full Health and Energy Shield. Your Health persists between delve encounters, while your Energy Shield reconstitutes to full after the entire group is defeated. Buffs and debuffs are cleared between fights.'],
                 ['Damage-Type Debuffs', 'The dominant damage type of a hit has a base chance to apply one of its two inherent debuffs. Enemies and players follow the same application rules.']
             ]
         },
@@ -38,7 +39,7 @@
                 ['Temporary Loot', 'Drops and credits remain in the Delve Bag until the entire delve is completed. On success, materials and credits are collected automatically. Ordinary items move to the Delve Claim Cache unless automatic claiming is enabled and the entire batch fits.'],
                 ['Claim Cache', 'When an automatic item claim would overflow the inventory, the complete ordinary-item batch remains in the cache. Remaining items may be claimed, sold, or discarded, but starting another delve permanently destroys them. Auto re-deploy pauses while rewards are waiting.'],
                 ['Failure and Fleeing', 'Death and voluntary retreat both end the delve and destroy everything in its temporary bag.'],
-                ['Saving During a Delve', 'Loading a save restarts the current encounter with a fresh enemy while preserving completed encounters and the exact contents of the Delve Bag.']
+                ['Saving During a Delve', 'Loading a save restarts the current encounter with a fresh enemy group while preserving completed encounters and the exact contents of the Delve Bag.']
             ]
         },
         'fabrication': {

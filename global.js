@@ -1473,8 +1473,9 @@ function renderGlobalStatusBanner() {
         activityPercent = Math.max(0, Math.min(100, Number(activeActivity.progressPercent || 0)));
         activityText = `${typeLabel}: ${activeActivity.displayName} · ${Math.round(activityPercent)}% · ${formatBannerTimeRemaining(activeActivity.timeRemainingMs)}`;
     } else if (typeof isCombatActive !== 'undefined' && isCombatActive) {
+        const livingCount = typeof getLivingEnemies === 'function' ? getLivingEnemies().length : 1;
         const enemyName = (typeof enemy !== 'undefined' && enemy?.name) ? enemy.name : 'Enemy';
-        activityText = `Activity: Combat · ${enemyName}`;
+        activityText = `Activity: Combat · ${livingCount} hostile${livingCount === 1 ? '' : 's'} · Target ${enemyName}`;
     } else if (typeof isDelveInProgress !== 'undefined' && isDelveInProgress) {
         const locationName = (typeof currentDelveLocation !== 'undefined' && currentDelveLocation?.name)
             ? currentDelveLocation.name
@@ -1489,6 +1490,7 @@ function renderGlobalStatusBanner() {
     let combatText = 'Combat: Inactive';
     let combatClass = '';
     if (typeof isCombatActive !== 'undefined' && isCombatActive && typeof enemy !== 'undefined' && enemy) {
+        const livingCount = typeof getLivingEnemies === 'function' ? getLivingEnemies().length : 1;
         const playerMax = Math.max(1, Number(player?.totalStats?.health || player?.baseStats?.maxHealth || 1));
         const playerHp = Math.max(0, Math.floor(Number(player?.currentHealth || 0)));
         const enemyMax = Math.max(1, Math.floor(Number(enemy?.totalStats?.health || enemy?.currentHealth || 1)));
@@ -1500,7 +1502,7 @@ function renderGlobalStatusBanner() {
             combatClass = 'danger';
         }
         const enemyName = enemy?.name || 'Enemy';
-        combatText = `Combat: ${enemyName} · You ${playerHp}/${Math.floor(playerMax)} HP · Enemy ${enemyHp}/${enemyMax} HP`;
+        combatText = `Combat: ${livingCount} hostile${livingCount === 1 ? '' : 's'} · Target ${enemyName} ${enemyHp}/${enemyMax} HP · You ${playerHp}/${Math.floor(playerMax)} HP`;
     } else if (typeof isDelveInProgress !== 'undefined' && isDelveInProgress) {
         const locationName = (typeof currentDelveLocation !== 'undefined' && currentDelveLocation?.name)
             ? currentDelveLocation.name

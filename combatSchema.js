@@ -314,6 +314,7 @@ function validateEnemyCombatTemplate(template) {
     const name = template?.name || 'Unnamed enemy';
     if (!template || typeof template !== 'object') errors.push('template must be an object');
     if (!template?.name) errors.push('name is required');
+    if (!template?.portrait) errors.push('portrait is required');
     if (!(toFiniteCombatNumber(template?.health) > 0)) errors.push('health must be greater than zero');
     if (!(toFiniteCombatNumber(template?.attackSpeed) > 0)) errors.push('attackSpeed must be greater than zero');
 
@@ -327,6 +328,12 @@ function validateEnemyCombatTemplate(template) {
     const defenseTypes = template?.defenseTypes || {};
     const unknownDefenseTypes = Object.keys(defenseTypes).filter(type => !COMBAT_RESISTANCE_TYPES.includes(type));
     if (unknownDefenseTypes.length > 0) errors.push(`unknown resistance types: ${unknownDefenseTypes.join(', ')}`);
+
+    if (template?.tauntAbility) {
+        for (const field of ['initialDelay', 'duration', 'cooldown']) {
+            if (!(toFiniteCombatNumber(template.tauntAbility[field]) > 0)) errors.push(`taunt ${field} must be greater than zero`);
+        }
+    }
 
     return { valid: errors.length === 0, errors, name };
 }

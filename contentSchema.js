@@ -325,6 +325,14 @@ function validateCoreboundContent(registries = {}) {
 
     for (const enemy of enemies) {
         const name = enemy?.name || 'Unnamed enemy';
+        if (!/^images\/enemies\/[a-z0-9-]+\.png$/.test(String(enemy?.portrait || ''))) {
+            report('enemy', name, 'portrait must reference a generated enemy PNG');
+        }
+        if (enemy?.tauntAbility) {
+            for (const field of ['initialDelay', 'duration', 'cooldown']) {
+                if (!(Number(enemy.tauntAbility[field]) > 0)) report('enemy', name, `taunt ${field} must be positive`);
+            }
+        }
         for (const [tier, pools] of Object.entries(enemy?.lootConfig?.poolsByTier || {})) {
             if (!validTierIds.has(Number(tier))) report('enemy', name, `unknown loot tier: ${tier}`);
             if (!Array.isArray(pools)) report('enemy', name, `loot tier ${tier} pools must be an array`);

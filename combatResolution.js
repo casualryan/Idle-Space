@@ -155,6 +155,16 @@ function executeEquippedSkill(attacker, defender) {
 
             applyDamage(damageResult);
 
+            if (defender.currentHealth <= 0) {
+                lastDamageResult = damageResult;
+                aggregateTotal += damageResult.total;
+                for (const [type, amount] of Object.entries(damageResult.damage || {})) {
+                    aggregateDamage[type] = (aggregateDamage[type] || 0) + amount;
+                }
+                aggregateCritical = aggregateCritical || damageResult.isCritical;
+                break;
+            }
+
             if (!attacker || !defender) break;
 
             runIncomingHitDebuffs(attacker, defender, damageResult);
@@ -189,7 +199,7 @@ function executeEquippedSkill(attacker, defender) {
             if (typeof finishCombatStyleAttack === 'function') finishCombatStyleAttack(attacker, defender, profile, attackSummary);
         }
 
-        if (profile.comboAfterSkill !== false && lastDamageResult && attacker && defender) {
+        if (profile.comboAfterSkill !== false && lastDamageResult && attacker && defender?.currentHealth > 0) {
             processComboAttacks(attacker, defender, profile.comboFromAggregate && attackSummary ? attackSummary : lastDamageResult, profile);
         }
     } catch (error) {
@@ -201,10 +211,11 @@ function executeEquippedSkill(attacker, defender) {
 
 // Function for player attack — always uses equipped combat skill
 function playerAttack() {
-    executeEquippedSkill(player, enemy);
+    const target = typeof getEffectivePlayerTarget === 'function' ? getEffectivePlayerTarget() : enemy;
+    if (target) executeEquippedSkill(player, target);
 }
 
-function enemyAttack() {
+function enemyAttack(attacker = enemy) {
     // Exit early if combat is no longer active
     if (!isCombatActive) {
         console.log("enemyAttack called but combat is not active");
@@ -212,28 +223,28 @@ function enemyAttack() {
     }
 
     // Additional safety checks
-    if (!player || !enemy) {
+    if (!player || !attacker || attacker.currentHealth <= 0) {
         console.warn("enemyAttack called but player or enemy is null");
         return;
     }
 
     // Ensure entities are properly initialized
-    if (!ensureEntityInitialization(player, true) || !ensureEntityInitialization(enemy, false)) {
+    if (!ensureEntityInitialization(player, true) || !ensureEntityInitialization(attacker, false)) {
         console.warn("Entity initialization failed in enemyAttack");
         return;
     }
 
     try {
-        if (!runPreAttackDebuffs(enemy, player)) return;
+        if (!runPreAttackDebuffs(attacker, player)) return;
 
         // Get damage calculation with breakdown using the centralized function
         let damageResult;
          if (typeof calculateDamage === 'function') {
-             damageResult = calculateDamage(enemy, player);
+             damageResult = calculateDamage(attacker, player);
          } else {
              console.error("calculateDamage function not found!");
              damageResult = createDamagePacket({
-                 source: enemy,
+                 source: attacker,
                  target: player,
                  damage: {},
                  total: 0,
@@ -241,13 +252,13 @@ function enemyAttack() {
              });
          }
         if (typeof modifyIncomingDamageForCombatStyle === 'function') {
-            damageResult = modifyIncomingDamageForCombatStyle(player, enemy, damageResult);
+            damageResult = modifyIncomingDamageForCombatStyle(player, attacker, damageResult);
         }
 
         // Add combat log entry for damage info
         if (typeof addToCombatLog === 'function' && damageResult.total > 0) {
             const critText = damageResult.isCritical ? ' <span style="color: yellow; font-weight: bold;">(CRITICAL!)</span>' : '';
-            addToCombatLog(`${enemy.name} attacks for ${damageResult.total} damage${critText}`, '#ffffff', false);
+            addToCombatLog(`${attacker.name} attacks for ${damageResult.total} damage${critText}`, '#ffffff', false);
         }
 
         // Check again if player is null before proceeding
@@ -257,25 +268,25 @@ function enemyAttack() {
         }
 
         applyDamage(damageResult);
-        if (typeof recordCombatStyleIncomingHit === 'function') recordCombatStyleIncomingHit(player, enemy, damageResult);
-        runIncomingHitDebuffs(enemy, player, damageResult);
-        if (!isCombatActive || !player || !enemy) return;
-        if (damageResult.isCritical) tryApplySeveredLimbFromCritical(enemy, player);
-        runPostAttackDebuffs(enemy, player, damageResult);
+        if (typeof recordCombatStyleIncomingHit === 'function') recordCombatStyleIncomingHit(player, attacker, damageResult);
+        runIncomingHitDebuffs(attacker, player, damageResult);
+        if (!isCombatActive || !player || !attacker) return;
+        if (damageResult.isCritical) tryApplySeveredLimbFromCritical(attacker, player);
+        runPostAttackDebuffs(attacker, player, damageResult);
 
         // Check again after damage application if entities still exist
-        if (!player || !enemy) {
+        if (!player || !attacker) {
             console.warn("Entity became null after damage application in enemyAttack");
             return;
         }
 
         // Ensure both player and enemy have their effects arrays properly initialized
         player.effects = player.effects || [];
-        enemy.effects = enemy.effects || [];
+        attacker.effects = attacker.effects || [];
 
         // Process effects with explicit empty array check
-        if (enemy && enemy.effects && Array.isArray(enemy.effects) && enemy.effects.length > 0) {
-            processEffects(enemy, 'onHit', player, damageResult);
+        if (attacker.effects && Array.isArray(attacker.effects) && attacker.effects.length > 0) {
+            processEffects(attacker, 'onHit', player, damageResult);
         }
 
         // Check if player is still valid before proceeding
@@ -285,11 +296,11 @@ function enemyAttack() {
         }
 
         if (player && player.effects && Array.isArray(player.effects) && player.effects.length > 0) {
-            processEffects(player, 'whenHit', enemy, damageResult);
+            processEffects(player, 'whenHit', attacker, damageResult);
         }
 
         // Process combo attacks for enemy
-        processComboAttacks(enemy, player, damageResult);
+        processComboAttacks(attacker, player, damageResult);
 
     } catch (error) {
         console.error("Error in enemyAttack:", error);

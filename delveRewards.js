@@ -135,7 +135,8 @@ function addMonsterLootToDelveBag(monster) {
     }
 
     if (monster.currencyDrop) {
-        if (Math.random() < monster.currencyDrop.dropRate) {
+        const rewardScale = Math.max(0, Number(monster._rewardScale ?? 1));
+        if (Math.random() < monster.currencyDrop.dropRate * rewardScale) {
             const amt = getRandomInt(monster.currencyDrop.min, monster.currencyDrop.max);
 
             // Apply player currency modifiers if they exist
@@ -244,7 +245,7 @@ function calculateZoneXPPenaltyPercent() {
 
 function awardXPWithZonePenalty(baseXP, defeatedName, defeatedEnemy = null) {
     let xp = Math.floor(Number(baseXP) || 0);
-    if (defeatedEnemy?.isEmpowered) xp = Math.floor(xp * 1.5);
+    if (defeatedEnemy?.isEmpowered && !defeatedEnemy?._experienceRewardIncludesEmpowerment) xp = Math.floor(xp * 1.5);
     const penalty = calculateZoneXPPenaltyPercent();
     if (penalty > 0 && xp > 0) {
         // Apply penalty and round down per spec

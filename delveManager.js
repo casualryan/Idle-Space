@@ -47,6 +47,7 @@ function startAdventure(location) {
     isDelveInProgress = true;
     delveBag = { items: [], credits: 0 };
     updateDelveBagUI(); // Update UI when adventure starts
+    if (typeof setDelveCombatUIActive === 'function') setDelveCombatUIActive(true);
 
     // We rely on displayAdventureLocations() to hide the location buttons
     // and show the "Flee" button instead.
@@ -117,32 +118,16 @@ function beginNextMonsterInSequence() {
     // Keep the flee control active during the inter-fight pause.
     setFleeControlState({ visible: true, enabled: true });
 
-    // Create a pool of enemies based on spawn rates
-    let enemyPool = [];
-    for (let locEnemy of currentDelveLocation.enemies) {
-        // Use weight/spawnRate to determine how many copies go into the pool
-        const weight = locEnemy.spawnRate || 1;
-        for (let i = 0; i < weight; i++) {
-            enemyPool.push(locEnemy);
-        }
-    }
-
-    if (enemyPool.length === 0) {
+    const enemyCount = getEncounterEnemyCount(currentDelveLocation);
+    const selectedEnemies = selectWeightedEncounterEnemies(currentDelveLocation, enemyCount);
+    if (selectedEnemies.length === 0) {
         console.error("Enemy pool is empty.");
         stopCombat('enemyPoolEmpty');
         return;
     }
-
-    // Select a random enemy from the pool
-    const randomIndex = Math.floor(Math.random() * enemyPool.length);
-    const selectedEnemy = enemyPool[randomIndex];
-
-    // Check if this enemy should be empowered
-    let isEmpowered = false;
-    if (selectedEnemy.empoweredChance && Math.random() < selectedEnemy.empoweredChance) {
-        isEmpowered = true;
-    }
-
-    // Spawn the selected enemy
-    spawnEnemyForSequence(selectedEnemy.name, isEmpowered);
+    const encounterEntries = selectedEnemies.map(selectedEnemy => ({
+        name: selectedEnemy.name,
+        isEmpowered: Boolean(selectedEnemy.empoweredChance && Math.random() < selectedEnemy.empoweredChance)
+    }));
+    spawnEnemyEncounter(encounterEntries);
 }

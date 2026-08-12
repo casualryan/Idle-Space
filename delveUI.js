@@ -104,11 +104,9 @@ function updateDelveBagUI() {
         itemsList.id = 'delve-bag-items';
         delveBagContainer.appendChild(itemsList);
 
-        // Add to the DOM - place it after enemy stats
-        const enemyStats = document.getElementById('enemy-stats');
-        if (enemyStats && enemyStats.parentNode) {
-            enemyStats.parentNode.insertBefore(delveBagContainer, enemyStats.nextSibling);
-        }
+        // Recovery fallback for older markup: keep the bag inside its combat drawer.
+        const drawer = document.getElementById('delve-bag-drawer');
+        if (drawer) drawer.appendChild(delveBagContainer);
     }
 
     // Update credits display
@@ -164,7 +162,7 @@ function updateDelveBagUI() {
         }
     }
 
-    // Always show the delve bag (removed conditional display)
+    // The bag remains mounted for its drawer, but the drawer controls visibility.
     if (delveBagContainer) {
         delveBagContainer.style.display = 'block';
     }
@@ -180,6 +178,7 @@ function displayAdventureLocations() {
     }
 
     console.log("displayAdventureLocations - isDelveInProgress:", isDelveInProgress);
+    if (typeof setDelveCombatUIActive === 'function') setDelveCombatUIActive(Boolean(isDelveInProgress));
 
     // Clear previous UI
     delveControlsDiv.innerHTML = '';

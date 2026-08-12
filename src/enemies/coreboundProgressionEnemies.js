@@ -275,6 +275,21 @@ const DAMAGE_DESCRIPTIONS = {
     radiation: 'Its radiation attacks are checked by Chemical Resistance.'
 };
 
+const TAUNT_ABILITIES = Object.freeze({
+    shield: Object.freeze({ initialDelay: 3.5, duration: 3, cooldown: 11 }),
+    heavy: Object.freeze({ initialDelay: 5, duration: 2.5, cooldown: 14 }),
+    heavyShield: Object.freeze({ initialDelay: 2.5, duration: 4, cooldown: 9 })
+});
+
+function getEnemyPortraitPath(blueprint) {
+    const slug = String(blueprint.id || blueprint.name || 'enemy')
+        .replace(/^cb_/, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+    return `images/enemies/${slug}.png`;
+}
+
 function toEnemy(blueprint) {
     const baseHealth = getBaseHealth(blueprint.level);
     const baseShield = getBaseShield(blueprint.level);
@@ -294,6 +309,10 @@ function toEnemy(blueprint) {
         level: blueprint.level,
         zone: blueprint.zone,
         archetype: blueprint.archetype,
+        portrait: getEnemyPortraitPath(blueprint),
+        tauntAbility: TAUNT_ABILITIES[blueprint.archetype]
+            ? { ...TAUNT_ABILITIES[blueprint.archetype] }
+            : null,
         health: Math.round(tunedStats.health * zoneTuning.health),
         energyShield: Math.round(tunedStats.energyShield * zoneTuning.health),
         attackSpeed: tunedStats.attackSpeed,

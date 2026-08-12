@@ -89,6 +89,21 @@ test('all registered content has a unique name and required equipment level', ()
   assert.deepEqual(missingLevels, [], `equipment without a level requirement: ${missingLevels.join(', ')}`);
 });
 
+test('every registered enemy has a unique 256px portrait', () => {
+  const portraitPaths = enemies.map(enemy => enemy.portrait);
+  assert.equal(new Set(portraitPaths).size, enemies.length, 'enemy portraits must be unique');
+
+  for (const enemy of enemies) {
+    assert.match(enemy.portrait, /^images\/enemies\/[a-z0-9-]+\.png$/, `${enemy.name} has an invalid portrait path`);
+    const portraitPath = path.join(repositoryRoot, enemy.portrait);
+    assert.ok(fs.existsSync(portraitPath), `${enemy.name} portrait does not exist`);
+    const png = fs.readFileSync(portraitPath);
+    assert.equal(png.toString('hex', 0, 8), '89504e470d0a1a0a', `${enemy.name} portrait is not a PNG`);
+    assert.equal(png.readUInt32BE(16), 256, `${enemy.name} portrait is not 256px wide`);
+    assert.equal(png.readUInt32BE(20), 256, `${enemy.name} portrait is not 256px tall`);
+  }
+});
+
 test('every weapon has a validated family, mechanical tags, and supported progression', () => {
   const validation = validateWeaponTaxonomy(weapons);
   assert.equal(validation.valid, true, validation.errors.join('; '));
@@ -1563,6 +1578,8 @@ test('classic runtime evaluates in its declared order', () => {
   }
 
   assert.ok(runtimeInitializers.length > 0, 'classic runtime did not register its startup work');
+  assert.equal(sandbox.enemies.length, enemies.filter(enemy => !enemy.developerOnly).length, 'live encounter state replaced the enemy registry');
+  assert.deepEqual([...sandbox.encounterEnemies], [], 'live encounter state must begin empty');
 });
 
 test('save coordinator enforces one writer and keeps rotating recovery snapshots', () => {
@@ -1851,18 +1868,105 @@ test('enemy Codex presents interpreted combat and loot information', () => {
   assert.ok(enemies.every(enemy => !/Corebound progression enemy for zone/i.test(enemy.description || '')));
 });
 
-test('delve dashboard keeps primary stats visible and advanced telemetry collapsible', () => {
+test('delve combat stage uses compact cards, six target slots, and closed utility drawers', () => {
   const html = read('index.html');
   const requiredIds = [
-    'player-hp-bar', 'player-total-dps', 'player-damage-types', 'player-defense-types',
-    'enemy-hp-bar', 'enemy-total-dps', 'enemy-damage-types', 'enemy-defense-types',
-    'delve-bag-container', 'log-messages'
+    'delve-combat-stage', 'player-stats', 'player-hp-bar', 'player-es-bar',
+    'enemy-combat-grid', 'delve-bag-toggle', 'combat-log-toggle',
+    'delve-bag-drawer', 'combat-log-drawer', 'delve-bag-container', 'log-messages'
   ];
   for (const id of requiredIds) {
     assert.equal((html.match(new RegExp(`id=["']${id}["']`, 'g')) || []).length, 1, `${id} must appear exactly once`);
   }
-  assert.match(html, /<details class="advanced-telemetry">/);
-  assert.match(html, /class="container combat-dashboard"/);
+
+  const ui = read('combatUI.js');
+  const styles = read('style.css');
+  assert.match(ui, /for \(let slot = 0; slot < 6; slot\+\+\)/);
+  assert.match(ui, /selectEnemyTarget\(combatId\)/);
+  assert.match(ui, /function setDelveCombatUIActive\(active\)/);
+  assert.match(ui, /if \(!active\) closeCombatDrawers\(\)/);
+  assert.match(styles, /"top-left top-center top-right"\s*"bottom-left bottom-center bottom-right"/);
+  assert.match(styles, /\.enemy-combat-card:nth-child\(1\)\s*\{\s*grid-area:\s*top-center/);
+  assert.match(styles, /\.enemy-combat-card:nth-child\(6\)\s*\{\s*grid-area:\s*bottom-right/);
+});
+
+test('encounter sizing rises by area level while retaining smaller max-level groups', () => {
+  const result = JSON.parse(evaluateClassic(
+    'combatController.js',
+    `JSON.stringify({
+      level1: [getEncounterEnemyCount({ recommendedLevel: 1 }, () => 0), getEncounterEnemyCount({ recommendedLevel: 1 }, () => 0.9)],
+      level15: [getEncounterEnemyCount({ recommendedLevel: 15 }, () => 0.1), getEncounterEnemyCount({ recommendedLevel: 15 }, () => 0.4), getEncounterEnemyCount({ recommendedLevel: 15 }, () => 0.95)],
+      level25: [getEncounterEnemyCount({ recommendedLevel: 25 }, () => 0.1), getEncounterEnemyCount({ recommendedLevel: 25 }, () => 0.3), getEncounterEnemyCount({ recommendedLevel: 25 }, () => 0.9)],
+      level35: [getEncounterEnemyCount({ recommendedLevel: 35 }, () => 0.1), getEncounterEnemyCount({ recommendedLevel: 35 }, () => 0.3), getEncounterEnemyCount({ recommendedLevel: 35 }, () => 0.9)],
+      level45: [getEncounterEnemyCount({ recommendedLevel: 45 }, () => 0.1), getEncounterEnemyCount({ recommendedLevel: 45 }, () => 0.3), getEncounterEnemyCount({ recommendedLevel: 45 }, () => 0.9)],
+      level50: [getEncounterEnemyCount({ recommendedLevel: 50 }, () => 0.05), getEncounterEnemyCount({ recommendedLevel: 50 }, () => 0.2), getEncounterEnemyCount({ recommendedLevel: 50 }, () => 0.9)],
+      developer: getEncounterEnemyCount({ recommendedLevel: 50, developerOnly: true }, () => 0.9)
+    })`
+  ));
+
+  assert.deepEqual(result.level1, [1, 2]);
+  assert.deepEqual(result.level15, [1, 2, 3]);
+  assert.deepEqual(result.level25, [2, 3, 4]);
+  assert.deepEqual(result.level35, [3, 4, 5]);
+  assert.deepEqual(result.level45, [4, 5, 6]);
+  assert.deepEqual(result.level50, [4, 5, 6]);
+  assert.equal(result.developer, 1);
+});
+
+test('taunt redirects attacks without replacing the selected target', () => {
+  const combatants = [
+    { name: 'Shield', _combatId: 'shield', _slotIndex: 0, currentHealth: 100 },
+    { name: 'Selected', _combatId: 'selected', _slotIndex: 1, currentHealth: 100 },
+    { name: 'Right', _combatId: 'right', _slotIndex: 2, currentHealth: 100 }
+  ];
+  const result = JSON.parse(evaluateClassic(
+    'combatController.js',
+    `JSON.stringify((() => {
+      const defaultTarget = getDefaultEnemyTarget();
+      selectEnemyTarget(encounterEnemies[1], { silent: true });
+      const selectedBeforeTaunt = selectedEnemyId;
+      activateEnemyTaunt(encounterEnemies[0], 3);
+      const forcedTarget = getEffectivePlayerTarget()._combatId;
+      tauntOverride.expiresAt = 0;
+      const restoredTarget = getEffectivePlayerTarget()._combatId;
+      return { defaultTarget: defaultTarget._combatId, selectedBeforeTaunt, forcedTarget, restoredTarget, selectedAfterTaunt: selectedEnemyId };
+    })())`,
+    {
+      encounterEnemies: combatants,
+      enemy: null,
+      selectedEnemyId: null,
+      tauntOverride: null,
+      logMessage: () => {},
+      updateEnemyStatsDisplay: () => {}
+    }
+  ));
+
+  assert.deepEqual(result, {
+    defaultTarget: 'selected',
+    selectedBeforeTaunt: 'selected',
+    forcedTarget: 'shield',
+    restoredTarget: 'selected',
+    selectedAfterTaunt: 'selected'
+  });
+  assert.ok(enemies.some(enemy => enemy.tauntAbility), 'no enemy archetype received taunt');
+  assert.ok(enemies.filter(enemy => ['shield', 'heavy', 'heavyShield'].includes(enemy.archetype)).every(enemy => enemy.tauntAbility));
+});
+
+test('multi-enemy encounter rewards share the original encounter budget', () => {
+  const combat = readCombatRuntime();
+  assert.match(combat, /const rewardScale = 1 \/ entries\.length/);
+  const xpAllocations = JSON.parse(evaluateClassic(
+    'combatController.js',
+    `JSON.stringify((() => {
+      const group = Array.from({ length: 6 }, () => ({ experienceValue: 10, _rewardScale: 1 / 6 }));
+      assignEncounterExperienceRewards(group);
+      return group.map(enemy => enemy._experienceReward);
+    })())`
+  ));
+  assert.equal(xpAllocations.reduce((sum, value) => sum + value, 0), 10);
+  assert.match(combat, /Number\.isFinite\(target\._experienceReward\)/);
+  assert.match(read('lootHandler.js'), /dropChance \*= Math\.max\(0, Number\(enemy\._rewardScale \?\? 1\)\)/);
+  assert.match(read('delveRewards.js'), /dropRate \* rewardScale/);
 });
 
 test('consumable combat debuffs carry the approved mechanics', () => {
@@ -2110,7 +2214,7 @@ test('new-character, fabrication, empowered reward, and claim-cache rules remain
   const combat = readCombatRuntime();
   assert.match(read('global.js'), /const STARTING_CREDITS = 1000/);
   assert.match(read('fabrication.js'), /Object\.keys\(ongoingFabrications\)\.length > 0/);
-  assert.match(combat, /enemy\.isEmpowered = true/);
+  assert.match(combat, /instance\.isEmpowered = true/);
   assert.match(combat, /xp = Math\.floor\(xp \* 1\.5\)/);
   assert.match(combat, /Starting a new delve destroyed/);
   assert.match(combat, /Auto re-deploy paused until the Delve Claim Cache is cleared/);

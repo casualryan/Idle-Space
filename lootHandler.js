@@ -32,6 +32,7 @@ function shouldDropLoot(enemy, player) {
     if (!enemy.lootConfig) return false;
     
     let dropChance = enemy.lootConfig.baseDropChance || 0.5; // Default to 50% if not specified
+    dropChance *= Math.max(0, Number(enemy._rewardScale ?? 1));
     
     // Apply player loot luck modifier if it exists
     const lootLuck = Number(player?.totalStats?.lootLuck ?? player?.stats?.lootLuck ?? 0);
@@ -305,7 +306,8 @@ function handleLootDrop(enemy) {
     });
 
     if (enemy.currencyDrop) {
-        if (Math.random() < enemy.currencyDrop.dropRate) {
+        const rewardScale = Math.max(0, Number(enemy._rewardScale ?? 1));
+        if (Math.random() < enemy.currencyDrop.dropRate * rewardScale) {
             const currencyAmount = getRandomInt(enemy.currencyDrop.min, enemy.currencyDrop.max);
 
             let finalAmount = currencyAmount;

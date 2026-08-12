@@ -8,4 +8,5 @@ window.registerCoreboundInitializer(() => {
     updateDelveBagUI();
     createShieldPulseAnimation();
     initializeCombatLogPopout();
+    setDelveCombatUIActive(Boolean(isDelveInProgress));
 });
