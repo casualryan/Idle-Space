@@ -12,13 +12,20 @@ function setFleeControlState({ visible, enabled = true } = {}) {
 }
 
 function setAttackProgressBar(combatant, percent) {
-    const bar = document.getElementById(`${combatant}-attack-progress-bar`);
+    let bar = null;
+    if (combatant === 'player' || combatant?.isPlayer) {
+        bar = document.getElementById('player-attack-progress-bar');
+    } else if (combatant && typeof combatant === 'object') {
+        const card = [...document.querySelectorAll('.enemy-combat-card')]
+            .find(candidate => candidate.dataset.combatId === combatant._combatId);
+        bar = card?.querySelector('.enemy-attack-progress-bar') || null;
+    }
     if (bar) bar.style.width = `${Math.max(0, Math.min(100, Number(percent) || 0))}%`;
 }
 
 function resetAttackProgressBars() {
     setAttackProgressBar('player', 0);
-    setAttackProgressBar('enemy', 0);
+    document.querySelectorAll('.enemy-attack-progress-bar').forEach(bar => { bar.style.width = '0%'; });
 }
 
 function hideNextEnemyTimer() {
@@ -81,6 +88,7 @@ function updateEnemyStatsDisplay() {
                 <strong class="enemy-card-name">Empty Contact</strong>
                 <span class="compact-resource"><span class="compact-resource-label"><span>Integrity</span><span data-resource-text="health">0 / 0</span></span><span class="hp-bar-container"><span class="hp-bar"></span></span></span>
                 <span class="compact-resource"><span class="compact-resource-label"><span>Energy Shield</span><span data-resource-text="shield">0 / 0</span></span><span class="es-bar-container"><span class="es-bar"></span></span></span>
+                <span class="compact-resource attack-cycle"><span class="compact-resource-label"><span>Attack Time</span></span><span class="progress-container"><span class="progress-bar attack-bar enemy-attack-progress-bar"></span></span></span>
             `;
             card.addEventListener('click', () => {
                 const combatId = card.dataset.combatId;
@@ -105,6 +113,7 @@ function updateEnemyStatsDisplay() {
             card.querySelector('[data-resource-text="shield"]').textContent = '0 / 0';
             card.querySelector('.hp-bar').style.width = '0%';
             card.querySelector('.es-bar').style.width = '0%';
+            card.querySelector('.enemy-attack-progress-bar').style.width = '0%';
             card.querySelector('.enemy-target-state').textContent = '';
             renderCombatEffects(card.querySelector('.combat-card-effects'), null);
             continue;
@@ -129,6 +138,7 @@ function updateEnemyStatsDisplay() {
         if (portrait.getAttribute('src') !== candidate.portrait) portrait.src = candidate.portrait || 'icons/default-icon.png';
         portrait.alt = `${candidate.name} portrait`;
         card.querySelector('.enemy-target-state').textContent = forced ? 'TAUNTING' : (selected ? 'TARGET' : '');
+        if (candidate.currentHealth <= 0) card.querySelector('.enemy-attack-progress-bar').style.width = '0%';
         renderCombatEffects(card.querySelector('.combat-card-effects'), candidate);
         updateHPESBars(candidate, false);
     }

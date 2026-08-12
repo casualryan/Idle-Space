@@ -1872,6 +1872,7 @@ test('delve combat stage uses compact cards, six target slots, and closed utilit
   const html = read('index.html');
   const requiredIds = [
     'delve-combat-stage', 'player-stats', 'player-hp-bar', 'player-es-bar',
+    'player-attack-progress-bar',
     'enemy-combat-grid', 'delve-bag-toggle', 'combat-log-toggle',
     'delve-bag-drawer', 'combat-log-drawer', 'delve-bag-container', 'log-messages'
   ];
@@ -1882,12 +1883,16 @@ test('delve combat stage uses compact cards, six target slots, and closed utilit
   const ui = read('combatUI.js');
   const styles = read('style.css');
   assert.match(ui, /for \(let slot = 0; slot < 6; slot\+\+\)/);
+  assert.match(ui, /enemy-attack-progress-bar/);
+  assert.match(read('combatController.js'), /setAttackProgressBar\(attacker, Math\.min\(\(timer \/ nextAttack\) \* 100, 100\)\)/);
   assert.match(ui, /selectEnemyTarget\(combatId\)/);
   assert.match(ui, /function setDelveCombatUIActive\(active\)/);
   assert.match(ui, /if \(!active\) closeCombatDrawers\(\)/);
   assert.match(styles, /"top-left top-center top-right"\s*"bottom-left bottom-center bottom-right"/);
   assert.match(styles, /\.enemy-combat-card:nth-child\(1\)\s*\{\s*grid-area:\s*top-center/);
   assert.match(styles, /\.enemy-combat-card:nth-child\(6\)\s*\{\s*grid-area:\s*bottom-right/);
+  assert.match(styles, /#player-stats\.player-combat-card\s*\{[^}]*width:\s*min\(364px, 100%\)[^}]*height:\s*188px/s);
+  assert.match(styles, /\.enemy-combat-card\s*\{[^}]*height:\s*188px/s);
 });
 
 test('encounter sizing rises by area level while retaining smaller max-level groups', () => {

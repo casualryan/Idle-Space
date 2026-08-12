@@ -6236,7 +6236,7 @@ hr {
     display: grid;
     justify-items: center;
     gap: 22px;
-    min-height: 620px;
+    min-height: 735px;
     margin-top: 12px;
     padding: 34px 72px 48px;
     overflow: hidden;
@@ -6305,17 +6305,21 @@ hr {
 .player-combat-card {
     z-index: 2;
     display: grid;
-    grid-template-columns: 82px 1fr;
-    gap: 8px 12px;
-    width: min(390px, 100%);
-    min-height: 164px;
-    padding: 14px;
+    grid-template-columns: 94px minmax(0, 1fr);
+    gap: 9px 13px;
+    min-height: 188px;
+    padding: 13px;
     border-color: rgba(39, 232, 193, 0.6);
     box-shadow: 0 0 24px rgba(39, 232, 193, 0.1), 0 12px 26px rgba(0, 0, 0, 0.3);
 }
 
+#player-stats.player-combat-card {
+    width: min(364px, 100%);
+    height: 188px;
+}
+
 .player-combat-card .combat-card-portrait {
-    grid-row: 1 / 4;
+    grid-row: 1 / 5;
 }
 
 .combat-card h2,
@@ -6324,7 +6328,7 @@ hr {
     margin: 0;
     color: #effcff;
     font-family: 'Orbitron', sans-serif;
-    font-size: 13px;
+    font-size: 17px;
     line-height: 1.25;
     text-align: left;
     text-overflow: ellipsis;
@@ -6395,15 +6399,15 @@ hr {
     justify-content: space-between;
     gap: 8px;
     color: #a9c8d4;
-    font-size: 9px;
+    font-size: 11px;
     letter-spacing: 0.035em;
 }
 
 .compact-resource .hp-bar-container,
 .compact-resource .es-bar-container {
     width: 100%;
-    height: 8px;
-    min-height: 8px;
+    height: 10px;
+    min-height: 10px;
     overflow: visible;
     border-radius: 4px;
     background: rgba(0, 0, 0, 0.62);
@@ -6411,7 +6415,7 @@ hr {
 
 .enemy-formation {
     z-index: 2;
-    width: min(920px, 100%);
+    width: min(1200px, 100%);
 }
 
 .enemy-combat-grid {
@@ -6420,7 +6424,7 @@ hr {
     grid-template-areas:
         "top-left top-center top-right"
         "bottom-left bottom-center bottom-right";
-    gap: 14px;
+    gap: 18px;
 }
 
 .enemy-combat-card:nth-child(1) { grid-area: top-center; }
@@ -6432,10 +6436,12 @@ hr {
 
 .enemy-combat-card {
     display: grid;
-    grid-template-columns: 72px minmax(0, 1fr);
-    gap: 7px 10px;
-    min-height: 144px;
-    padding: 10px;
+    grid-template-columns: 94px minmax(0, 1fr);
+    gap: 9px 13px;
+    width: 100%;
+    height: 188px;
+    min-height: 188px;
+    padding: 13px;
     border-color: rgba(255, 102, 125, 0.42);
     text-align: left;
     cursor: pointer;
@@ -6447,7 +6453,7 @@ hr {
     border-color: rgba(255, 145, 160, 0.82);
 }
 
-.enemy-combat-card .combat-card-portrait { grid-row: 1 / 4; }
+.enemy-combat-card .combat-card-portrait { grid-row: 1 / 5; }
 .enemy-combat-card.selected {
     border-color: #4be5ff;
     box-shadow: 0 0 0 2px rgba(75, 229, 255, 0.18), 0 0 23px rgba(75, 229, 255, 0.17);
@@ -6479,6 +6485,25 @@ hr {
 }
 
 .enemy-combat-card.taunting .enemy-target-state { color: #ffbd45; }
+
+.combat-card .attack-cycle,
+.enemy-combat-card .attack-cycle {
+    margin: 0;
+}
+
+.combat-card .progress-container,
+.enemy-combat-card .progress-container {
+    width: 100%;
+    height: 10px;
+    margin: 0;
+    border-color: rgba(95, 236, 207, 0.48);
+    background: rgba(0, 0, 0, 0.62);
+}
+
+.enemy-combat-card .progress-bar.attack-bar {
+    background: linear-gradient(90deg, rgba(255, 70, 95, 0.45), #ff667d);
+    box-shadow: 0 0 10px rgba(255, 102, 125, 0.35);
+}
 
 .combat-drawer {
     position: fixed;
@@ -6517,7 +6542,7 @@ hr {
     .delve-combat-stage { padding: 54px 12px 32px; }
     .enemy-combat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: none; }
     .enemy-combat-card:nth-child(n) { grid-area: auto; }
-    .enemy-combat-card { grid-template-columns: 58px minmax(0, 1fr); }
+    .enemy-combat-card { grid-template-columns: 72px minmax(0, 1fr); }
 }
 
 .combat-dashboard > .stats,

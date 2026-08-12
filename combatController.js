@@ -315,6 +315,7 @@ function combatLoop() {
         }
         enemyAttackTimers[id] = timer;
         enemyNextAttackTimes[id] = nextAttack;
+        setAttackProgressBar(attacker, Math.min((timer / nextAttack) * 100, 100));
     }
 
     try {
