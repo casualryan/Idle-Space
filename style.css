@@ -5209,6 +5209,28 @@ hr {
     margin-bottom: 30px;
 }
 
+.codex-subpages { display: flex; gap: 8px; margin: 0 0 18px; }
+.codex-subpages button {
+    padding: 8px 14px;
+    border: 1px solid rgba(75, 220, 240, 0.35);
+    border-radius: 5px;
+    background: rgba(5, 31, 48, 0.82);
+    color: #a9cbd5;
+    font-family: 'Orbitron', sans-serif;
+    cursor: pointer;
+}
+.codex-subpages button.active { border-color: #55e4f7; color: #fff; box-shadow: 0 0 12px rgba(85, 228, 247, 0.18); }
+.codex-weapon-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.codex-weapon-family { padding: 14px; border: 1px solid rgba(93, 206, 224, 0.26); border-radius: 7px; background: rgba(3, 21, 34, 0.8); }
+.codex-weapon-family h3 { margin: 0 0 8px; color: #dffaff; }
+.codex-weapon-family p { min-height: 44px; margin: 0 0 10px; color: #9bbbc5; }
+.codex-weapon-family strong { color: #7de8f5; font-size: 12px; }
+.codex-propagation-table { width: 100%; border-collapse: collapse; color: #c8e5ec; }
+.codex-propagation-table th,
+.codex-propagation-table td { padding: 10px 12px; border-bottom: 1px solid rgba(102, 211, 228, 0.18); text-align: left; }
+.codex-propagation-table th { color: #75e5f2; font: 700 11px 'Orbitron', sans-serif; text-transform: uppercase; }
+.codex-propagation-table td:nth-child(3) { color: #ffe169; font-weight: 700; white-space: nowrap; }
+
 .codex-subtitle {
     color: #66ccff;
     font-size: 18px;
@@ -6299,6 +6321,70 @@ hr {
     background: linear-gradient(90deg, transparent, rgba(90, 205, 232, 0.22), transparent);
     pointer-events: none;
 }
+
+.propagation-effects-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.propagation-effect { position: absolute; display: block; pointer-events: none; }
+.propagation-line {
+    height: 4px;
+    transform-origin: 0 50%;
+    border-radius: 999px;
+    opacity: 0.95;
+    background: linear-gradient(90deg, transparent 0 5%, #d9fbff 45%, #69dff5 70%, transparent 100%);
+    filter: drop-shadow(0 0 5px #65eaff);
+    clip-path: inset(0 100% 0 0);
+    animation: propagation-flight 145ms ease-out forwards;
+}
+.propagation-line.propagation-chain { height: 3px; background: repeating-linear-gradient(90deg, #fff 0 7px, #63d9ff 8px 14px); animation-duration: 90ms; }
+.propagation-line.propagation-cleave { height: 7px; background: linear-gradient(90deg, transparent, #fff 40%, #ff708d 68%, transparent); }
+.propagation-line.propagation-barrage { height: 3px; background: linear-gradient(90deg, transparent, #fff 72%, #ffd166 84%, transparent); }
+.propagation-line.propagation-detonation { height: 6px; background: linear-gradient(90deg, transparent, #ffdf77, #ff6b35); }
+.propagation-line.arrived { opacity: 0; transition: opacity 70ms ease; }
+
+.propagation-impact {
+    width: 22px;
+    height: 22px;
+    margin: -11px;
+    border: 3px solid #d9fbff;
+    border-radius: 50%;
+    box-shadow: 0 0 12px #5de9ff, inset 0 0 8px #fff;
+    animation: propagation-impact 360ms ease-out forwards;
+}
+.propagation-impact.propagation-cleave { border-color: #ff708d; border-radius: 2px; transform: rotate(45deg); }
+.propagation-impact.propagation-splash { border-color: #ffb45e; }
+.propagation-impact.propagation-detonation { border-color: #ff6b35; box-shadow: 0 0 24px #ff6b35; }
+.propagation-impact.propagation-nova { border-color: #b58cff; box-shadow: 0 0 22px #b58cff; }
+.propagation-damage {
+    z-index: 2;
+    transform: translate(-50%, -50%);
+    color: #bff8ff;
+    font: 700 15px 'Orbitron', sans-serif;
+    text-shadow: 0 2px 4px #000, 0 0 7px #42dbff;
+    animation: propagation-number 600ms ease-out forwards;
+}
+.propagation-damage.critical { color: #ffe169; font-size: 18px; text-shadow: 0 2px 4px #000, 0 0 8px #ffd23f; }
+.propagation-pulse {
+    width: 30px;
+    height: 30px;
+    margin: -15px;
+    border: 3px solid #b58cff;
+    border-radius: 50%;
+    box-shadow: 0 0 20px #b58cff;
+    animation: propagation-pulse 280ms ease-out forwards;
+}
+.propagation-pulse.propagation-detonation { border-color: #ff813d; box-shadow: 0 0 24px #ff813d; }
+.enemy-combat-card.defeated.propagation-pending { opacity: 1; filter: none; }
+
+@keyframes propagation-flight { to { clip-path: inset(0 0 0 0); } }
+@keyframes propagation-impact { from { transform: scale(0.25); opacity: 1; } to { transform: scale(2.6); opacity: 0; } }
+@keyframes propagation-number { from { transform: translate(-50%, -20%) scale(0.8); opacity: 0; } 20% { opacity: 1; } to { transform: translate(-50%, -125%) scale(1); opacity: 0; } }
+@keyframes propagation-pulse { from { transform: scale(0.2); opacity: 1; } to { transform: scale(9); opacity: 0; } }
 
 .combat-stage-tools {
     position: absolute;

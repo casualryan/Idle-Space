@@ -263,6 +263,16 @@ function scaleDamagePacket(packet, multiplier) {
         damage[type] = Math.round(amount * scale * 10) / 10;
     }
 
+    const metadata = { ...packet.metadata };
+    if (metadata.unmitigatedDamage && typeof metadata.unmitigatedDamage === 'object') {
+        metadata.unmitigatedDamage = Object.fromEntries(
+            Object.entries(metadata.unmitigatedDamage).map(([type, amount]) => [
+                type,
+                Math.max(0, toFiniteCombatNumber(amount) * scale)
+            ])
+        );
+    }
+
     return createDamagePacket({
         source: packet.source,
         target: packet.target,
@@ -274,7 +284,7 @@ function scaleDamagePacket(packet, multiplier) {
         mitigated: packet.mitigated,
         tags: packet.tags,
         flags: packet.flags,
-        metadata: packet.metadata
+        metadata
     });
 }
 

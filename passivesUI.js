@@ -127,6 +127,7 @@ function formatPassiveEffectName(key, nestedKey = null) {
         deflection: 'Deflection', armorEfficiency: 'Armor Efficiency', weaponEfficiency: 'Weapon Efficiency',
         bionicEfficiency: 'Bionic Efficiency', bionicSync: 'Bionic Sync', comboAttack: 'Combo Attack Chance',
         comboEffectiveness: 'Combo Effectiveness', additionalComboAttacks: 'Additional Combo Attacks',
+        propagationTargets: 'Propagation Targets',
         severedLimbChance: 'Severed Limb Chance', maxSeveredLimbs: 'Maximum Severed Limbs',
         maxSeepingWoundStacks: 'Maximum Seeping Wound Stacks', damageRollFloorBonus: 'Minimum Damage Roll',
         debuffChanceBonus: 'Status Application Chance', debuffDurationBonus: 'Status Duration',

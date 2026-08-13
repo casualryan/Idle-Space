@@ -40,6 +40,7 @@ const COMBAT_RUNTIME_FILES = [
   'combatState.js',
   'combatController.js',
   'combatEffects.js',
+  'propagation.js',
   'combatResolution.js',
   'delveRewards.js',
   'delveManager.js',
@@ -372,6 +373,17 @@ test('radial passive tree is connected, stable, and honors allocation/refund rul
         familyTargets: PASSIVE_TREE_SECTOR_ORDER.map(sector => [...new Set(passives.filter(node => node.sector === sector && node.specialty === 'family').map(node => node.target))]),
         tagTargets: PASSIVE_TREE_SECTOR_ORDER.map(sector => [...new Set(passives.filter(node => node.sector === sector && node.specialty === 'tag').map(node => node.target))]),
         styleTargets: PASSIVE_TREE_SECTOR_ORDER.map(sector => [...new Set(passives.filter(node => node.sector === sector && node.specialty === 'style').map(node => node.target))]),
+        propagationWheels: PASSIVE_TREE_SECTOR_ORDER.map(sector => {
+          const notable = passives.find(node => node.id === sector + '-propagation-notable');
+          const minors = passives.filter(node => node.sector === sector && node.specialty === 'propagation' && node.type === 'minor');
+          return {
+            notableEffects: notable?.effects,
+            minorEffects: minors.map(node => node.effects),
+            minorCount: minors.length,
+            notableConnections: notable?.connections.length,
+            matchingDamage: minors.every(node => node.effects.damageTypes?.[sector] === 8 && Object.keys(node.effects).length === 1)
+          };
+        }),
         bridgeSeams: PASSIVE_BRIDGE_DEFINITIONS.map(bridge => {
           const nodes = passives.filter(node => node.sector === 'bridge'
             && node.sectors?.join('|') === bridge.sectors.join('|'));
@@ -392,16 +404,19 @@ test('radial passive tree is connected, stable, and honors allocation/refund rul
     })()`
   );
   assert.equal(result.validation.valid, true, result.validation.errors.join('; '));
-  assert.equal(result.nodeCount, 1490);
-  assert.equal(result.edgeCount, 1764);
-  assert.equal(result.clusterCount, 147);
-  assert.equal(result.notableCount, 210);
+  assert.equal(result.nodeCount, 1546);
+  assert.equal(result.edgeCount, 1827);
+  assert.equal(result.clusterCount, 154);
+  assert.equal(result.notableCount, 217);
   assert.equal(result.keystones, 35);
   assert.equal(result.jewels, 0);
   assert.equal(result.travelDegrees.every(degree => degree >= 3), true, 'travel roads still contain forced single-lane rail nodes');
   assert.equal(result.familyTargets.every(targets => targets.length === 7), true, 'weapon families are not distributed through every sector');
   assert.equal(result.tagTargets.every(targets => targets.length === 4), true, 'weapon tags are not distributed through every sector');
   assert.equal(result.styleTargets.every(targets => targets.length === 4), true, 'combat styles are not distributed through every sector');
+  assert.equal(result.propagationWheels.every(wheel => wheel.minorCount === 7 && wheel.notableConnections === 2), true, 'a propagation wheel lost its three/four route topology');
+  assert.equal(result.propagationWheels.every(wheel => wheel.notableEffects?.propagationTargets === 1 && Object.keys(wheel.notableEffects).length === 1), true, 'a propagation notable has the wrong effect package');
+  assert.equal(result.propagationWheels.every(wheel => wheel.matchingDamage), true, 'a propagation route minor is not exactly 8% matching damage');
   assert.equal(result.bridgeSeams.every(seam => seam.count === 2), true, 'an outer sector seam contains more than two passives');
   assert.equal(result.bridgeSeams.every(seam => seam.types.every(type => type === 'notable')), true, 'outer sector seams are not exclusively notables');
   assert.equal(result.bridgeSeams.every(seam => seam.names.join('|') === seam.expectedNames.join('|')), true, 'an outer sector seam lost its authored notable identities');
@@ -437,7 +452,7 @@ test('passive tree renderer uses a culled canvas graph with an incremental SVG i
   const overviewTypes = new Set(['origin', 'gateway', 'travel', 'connector', 'bridge', 'notable', 'keystone']);
   const overviewNodeCount = passiveDefinitions.filter(node => overviewTypes.has(node.type)).length;
 
-  assert.equal(overviewNodeCount, 496, 'overview detail unexpectedly includes the full minor-node population');
+  assert.equal(overviewNodeCount, 503, 'overview detail unexpectedly includes the full minor-node population');
   assert.ok(overviewNodeCount < passiveDefinitions.length / 2, 'overview detail does not substantially reduce live node count');
   assert.match(uiSource, /id="passive-tree-canvas"/, 'passive graph canvas layer is missing');
   assert.match(uiSource, /canvas\.getContext\('2d'\)/, 'passive graph does not initialize a 2D canvas renderer');
@@ -2237,6 +2252,96 @@ test('multi-enemy encounter rewards share the original encounter budget', () => 
   assert.match(combat, /Number\.isFinite\(target\._experienceReward\)/);
   assert.match(read('lootHandler.js'), /dropChance \*= Math\.max\(0, Number\(enemy\._rewardScale \?\? 1\)\)/);
   assert.match(read('delveRewards.js'), /dropRate \* rewardScale/);
+});
+
+test('weapon propagation profiles enforce coefficients, geometry, uniqueness, and Chain revisits', () => {
+  const rawResult = evaluateClassic(
+    'propagation.js',
+    `(() => {
+      const makeEnemies = () => Array.from({ length: 6 }, (_, slot) => ({
+        name: 'E' + slot,
+        id: 'e' + slot,
+        _combatId: 'e' + slot,
+        _slotIndex: slot,
+        currentHealth: 100,
+        currentShield: 0,
+        totalStats: { defenseTypes: {} }
+      }));
+      const packet = {
+        metadata: { unmitigatedDamage: { kinetic: 100 } },
+        damage: { kinetic: 100 },
+        total: 100,
+        isCritical: true,
+        damageRoll: 0.73,
+        tags: ['hit']
+      };
+      const resolveFamily = (family, primarySlot) => {
+        encounterEnemies = makeEnemies();
+        const attacker = {
+          isPlayer: true,
+          name: 'Player',
+          equipment: { mainHand: { weaponFamily: family } },
+          totalStats: { propagationTargets: 4, armorPenetration: 0 },
+          effects: []
+        };
+        let presentation = null;
+        queuePropagationPresentation = sequence => { presentation = sequence; };
+        window.coreboundPropagation.resolve(attacker, encounterEnemies[primarySlot], packet, { hitCount: 1, procOnHit: 'all', procOnCritical: 'all' }, 0, () => 0);
+        return presentation.events.map(event => event.targetId);
+      };
+      return {
+        profiles: window.coreboundPropagation.profiles,
+        cap: window.coreboundPropagation.targetCap,
+        trigger: window.coreboundPropagation.triggerCoefficient,
+        cleave: resolveFamily('blades', 0),
+        splash: resolveFamily('impact', 1),
+        barrage: resolveFamily('sidearms', 0),
+        chain: resolveFamily('rifles', 1),
+        nova: resolveFamily('conduits', 0)
+      };
+    })()`,
+    {
+      encounterEnemies: [],
+      queuePropagationPresentation: () => {},
+      capturePropagationFormationSnapshot: () => ({ anchors: {} }),
+      mitigateDamageMapForTarget: (_attacker, _target, damage) => ({
+        damage,
+        total: Math.round(Object.values(damage).reduce((sum, amount) => sum + amount, 0))
+      }),
+      createDamagePacket: input => ({ ...input }),
+      applyDamage: packet => ({
+        appliedDamage: packet.total,
+        shieldDamage: 0,
+        healthDamage: packet.total,
+        targetDefeated: false
+      }),
+      runIncomingHitDebuffs: () => {},
+      runSkillHitProcs: () => {},
+      addToCombatLog: () => {},
+      window: {
+        coreboundWeaponTaxonomy: { resolveWeapon: weapon => ({ family: weapon.weaponFamily }) }
+      }
+    }
+  );
+  const result = JSON.parse(JSON.stringify(rawResult));
+
+  assert.equal(result.cap, 5);
+  assert.equal(result.trigger, 0.3);
+  assert.deepEqual(Object.fromEntries(Object.entries(result.profiles).map(([family, profile]) => [family, [profile.id, profile.damageCoefficient]])), {
+    blades: ['cleave', 0.55],
+    impact: ['splash', 0.55],
+    sidearms: ['barrage', 0.45],
+    rifles: ['chain', 0.35],
+    projectors: ['barrage', 0.45],
+    ordnance: ['detonation', 0.35],
+    conduits: ['nova', 0.35]
+  });
+  assert.deepEqual(result.cleave, ['e1', 'e2', 'e3', 'e4', 'e5']);
+  assert.equal(new Set(result.splash).size, 5);
+  assert.equal(new Set(result.barrage).size, 5);
+  assert.equal(new Set(result.nova).size, 5);
+  assert.deepEqual(result.chain, ['e0', 'e1', 'e0', 'e1', 'e0']);
+  assert.match(read('debuffs.js'), /debuffChance \* triggerCoefficient/);
 });
 
 test('consumable combat debuffs carry the approved mechanics', () => {

@@ -62,6 +62,7 @@ const playerBaseStats = {
     comboAttack: 0,         // % chance to strike additional time after initial hit
     comboEffectiveness: 0,  // Increases damage dealt by combo attacks (base 20%)
     additionalComboAttacks: 0, // Number of additional combo hits beyond the first
+    propagationTargets: 0, // Additional targets beyond each weapon family's intrinsic target
     // Mastery system - increases damage for specific damage types
     kineticMastery: 0,      // Increases kinetic damage
     slashingMastery: 0,     // Increases slashing damage

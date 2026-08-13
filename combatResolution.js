@@ -54,7 +54,8 @@ function runIncomingHitDebuffs(attacker, defender, damageResult) {
 }
 
 function tryApplySeveredLimbFromCritical(attacker, defender) {
-    const chance = Math.max(0, Number(attacker?.totalStats?.severedLimbChance || 0));
+    const triggerCoefficient = Math.max(0, Number(attacker?._activeSkillProcCoefficient ?? 1));
+    const chance = Math.max(0, Number(attacker?.totalStats?.severedLimbChance || 0)) * triggerCoefficient;
     if (!defender || chance <= 0 || Math.random() * 100 >= chance) return false;
     return typeof applyDebuff === 'function'
         ? applyDebuff(defender, 'severedLimb', attacker)
@@ -155,23 +156,20 @@ function executeEquippedSkill(attacker, defender) {
 
             applyDamage(damageResult);
 
-            if (defender.currentHealth <= 0) {
-                lastDamageResult = damageResult;
-                aggregateTotal += damageResult.total;
-                for (const [type, amount] of Object.entries(damageResult.damage || {})) {
-                    aggregateDamage[type] = (aggregateDamage[type] || 0) + amount;
+            if (defender.currentHealth > 0 && attacker && defender) {
+                runIncomingHitDebuffs(attacker, defender, damageResult);
+                if (isCombatActive && attacker && defender) {
+                    runSkillHitProcs(attacker, defender, damageResult, profile, hit);
+                    if (typeof recordCombatStyleHit === 'function') recordCombatStyleHit(profile, damageResult);
                 }
-                aggregateCritical = aggregateCritical || damageResult.isCritical;
-                break;
             }
 
-            if (!attacker || !defender) break;
+            // Weapon propagation is resolved from this hit's immutable roll and
+            // critical result even when the primary target was defeated.
+            if (attacker?.isPlayer && typeof resolveWeaponPropagation === 'function') {
+                resolveWeaponPropagation(attacker, defender, damageResult, profile, hit);
+            }
 
-            runIncomingHitDebuffs(attacker, defender, damageResult);
-            if (!isCombatActive || !attacker || !defender) break;
-
-            runSkillHitProcs(attacker, defender, damageResult, profile, hit);
-            if (typeof recordCombatStyleHit === 'function') recordCombatStyleHit(profile, damageResult);
             lastDamageResult = damageResult;
             aggregateTotal += damageResult.total;
             aggregateCritical ||= damageResult.isCritical;
@@ -179,7 +177,7 @@ function executeEquippedSkill(attacker, defender) {
                 aggregateDamage[damageType] = (aggregateDamage[damageType] || 0) + amount;
             }
 
-            if (!defender) break;
+            if (!defender || defender.currentHealth <= 0 || !isCombatActive) break;
         }
 
         attacker._activeSkillDebuffBonus = 0;

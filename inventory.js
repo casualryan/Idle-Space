@@ -696,6 +696,7 @@ function renderEquipmentStatsPanel() {
             ${sectionRow('Crit Multiplier', `${(total.criticalMultiplier || 0).toFixed(2)}x`)}
             ${sectionRow('Precision', asInt(total.precision))}
             ${sectionRow('Deflection', asInt(total.deflection))}
+            ${sectionRow('Propagation Targets', Math.min(5, 1 + asInt(total.propagationTargets)))}
         </div>
         <div class="equipment-stat-section">
             <div class="equipment-stat-section-title">Damage Per Second</div>

@@ -16,6 +16,7 @@ const CONTENT_PASSIVE_STAT_KEYS = new Set([
     'healthRegen', 'precision', 'deflection', 'defenseTypes', 'armorEfficiency',
     'weaponEfficiency', 'bionicEfficiency', 'bionicSync', 'comboAttack', 'comboEffectiveness',
     'additionalComboAttacks', 'severedLimbChance', 'maxSeveredLimbs', 'maxSeepingWoundStacks',
+    'propagationTargets',
     'damageRollFloorBonus', 'debuffChanceBonus', 'debuffDurationBonus', 'directDamageMultiplier',
     'dotDamageMultiplier', 'damageVsDebuffed', 'damageTakenReduction', 'armorPenetration',
     'attackTimeModifier', ...CONTENT_CONDITIONAL_PASSIVE_KEYS

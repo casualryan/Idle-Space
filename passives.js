@@ -974,6 +974,88 @@ function createPassiveTree() {
         link(connector.id, closestCrossing.toId);
     }
 
+    // Every damage sector owns one dedicated propagation wheel. Add these
+    // after arterial routing so generated road repair cannot absorb a wheel
+    // node into the highway or sever an existing cluster entrance.
+    PASSIVE_TREE_SECTOR_ORDER.forEach((sectorId, sectorIndex) => {
+        const sector = PASSIVE_SECTOR_DEFINITIONS[sectorId];
+        const { travelIds } = sectorClusterIds[sectorId];
+        const propagationEntryId = travelIds[9];
+        const propagationEntry = authoredNodeById.get(propagationEntryId);
+        const routeLength = 330;
+        // These seven spoke directions are deliberately authored to occupy the
+        // open pocket beside each sector's tenth arterial node.
+        const direction = passivePolarPosition(1, 180 + sectorIndex * 45);
+        const placement = {
+            direction,
+            center: {
+                x: propagationEntry.x + direction.x * routeLength / 2,
+                y: propagationEntry.y + direction.y * routeLength / 2
+            }
+        };
+        const awayX = placement.direction.x;
+        const awayY = placement.direction.y;
+        const perpendicularX = -awayY;
+        const perpendicularY = awayX;
+        const propagationNotableId = `${sectorId}-propagation-notable`;
+        const propagationNotablePosition = {
+            x: Math.round(propagationEntry.x + awayX * routeLength),
+            y: Math.round(propagationEntry.y + awayY * routeLength)
+        };
+        const propagationMinorEffects = { damageTypes: { [sector.damageType]: 8 } };
+        const createPropagationRoute = (side, count) => {
+            const routeIds = [];
+            for (let index = 1; index <= count; index++) {
+                const progress = index / (count + 1);
+                const arc = Math.sin(progress * Math.PI) * (side === 'short' ? 72 : -82);
+                const id = `${sectorId}-propagation-${side}-${index}`;
+                addNode({
+                    id,
+                    name: `${sector.label} Propagation`,
+                    description: `8% increased ${sector.label} damage on the route to the sector's propagation notable.`,
+                    sector: sectorId,
+                    cluster: `${sector.label} Propagation`,
+                    specialty: 'propagation',
+                    type: 'minor',
+                    depth: 10.5,
+                    x: Math.round(propagationEntry.x + awayX * routeLength * progress + perpendicularX * arc),
+                    y: Math.round(propagationEntry.y + awayY * routeLength * progress + perpendicularY * arc),
+                    effects: propagationMinorEffects
+                });
+                routeIds.push(id);
+            }
+            link(propagationEntryId, routeIds[0]);
+            routeIds.slice(1).forEach((id, index) => link(routeIds[index], id));
+            link(routeIds[routeIds.length - 1], propagationNotableId);
+            return routeIds;
+        };
+        addNode({
+            id: propagationNotableId,
+            name: `${sector.label} Propagation Target`,
+            description: '+1 Propagation Target.',
+            sector: sectorId,
+            cluster: `${sector.label} Propagation`,
+            specialty: 'propagation',
+            type: 'notable',
+            depth: 10.5,
+            ...propagationNotablePosition,
+            effects: { propagationTargets: 1 }
+        });
+        const shortRoute = createPropagationRoute('short', 3);
+        const longRoute = createPropagationRoute('long', 4);
+        clusters.push({
+            id: `${sectorId}-propagation-wheel`,
+            sector: sectorId,
+            label: `${sector.label} Propagation`,
+            specialty: 'propagation',
+            x: Math.round(placement.center.x),
+            y: Math.round(placement.center.y),
+            radius: 92,
+            propagation: true,
+            nodeIds: [...shortRoute, ...longRoute, propagationNotableId]
+        });
+    });
+
     const adjacency = Object.fromEntries(nodes.map(node => [node.id, []]));
     const edges = [...links].map(serialized => {
         const [from, to] = serialized.split('|');
@@ -1088,6 +1170,7 @@ function createEmptyPassiveBonuses() {
         comboAttack: 0,
         comboEffectiveness: 0,
         additionalComboAttacks: 0,
+        propagationTargets: 0,
         severedLimbChance: 0,
         maxSeveredLimbs: 0,
         maxSeepingWoundStacks: 0,

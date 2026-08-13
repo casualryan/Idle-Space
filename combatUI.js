@@ -126,6 +126,7 @@ function updateEnemyStatsDisplay() {
             selected ? 'selected' : '',
             forced ? 'taunting' : '',
             candidate.currentHealth <= 0 ? 'defeated' : '',
+            propagationPresentationPendingIds.has(candidate._combatId) ? 'propagation-pending' : '',
             candidate.isEmpowered ? 'empowered' : ''
         ].filter(Boolean).join(' ');
         card.disabled = candidate.currentHealth <= 0;
@@ -580,3 +581,180 @@ function initializeCombatLogPopout() {
 }
 
 window.setDelveCombatUIActive = setDelveCombatUIActive;
+
+// ---------------------------------------------------------------------------
+// Propagation presentation queue
+// ---------------------------------------------------------------------------
+
+const propagationPresentationPendingIds = new Set();
+let propagationPresentationQueue = [];
+let propagationPresentationActive = false;
+let propagationPresentationGeneration = 0;
+let propagationPresentationTimer = null;
+
+function getPropagationPresentationAnchor(entity) {
+    if (entity?.isPlayer) return document.getElementById('player-stats');
+    return [...document.querySelectorAll('.enemy-combat-card')]
+        .find(card => card.dataset.combatId === entity?._combatId) || null;
+}
+
+function capturePropagationFormationSnapshot(attacker, primaryTarget) {
+    const stage = document.getElementById('delve-combat-stage');
+    if (!stage) return null;
+    const stageRect = stage.getBoundingClientRect();
+    const anchors = {};
+    const entities = [attacker, primaryTarget, ...(Array.isArray(encounterEnemies) ? encounterEnemies : [])];
+    for (const entity of entities) {
+        if (!entity) continue;
+        const key = entity.isPlayer ? 'player' : String(entity._combatId || entity.id || entity.name);
+        if (anchors[key]) continue;
+        const element = getPropagationPresentationAnchor(entity);
+        if (!element) continue;
+        const rect = element.getBoundingClientRect();
+        anchors[key] = Object.freeze({
+            x: rect.left - stageRect.left + rect.width / 2,
+            y: rect.top - stageRect.top + rect.height / 2,
+            width: rect.width,
+            height: rect.height
+        });
+    }
+    return Object.freeze({ anchors: Object.freeze(anchors) });
+}
+
+function createPropagationEffect(className, style = {}) {
+    const layer = document.getElementById('propagation-effects-layer');
+    if (!layer) return null;
+    const effect = document.createElement('span');
+    effect.className = `propagation-effect ${className}`;
+    Object.assign(effect.style, style);
+    layer.appendChild(effect);
+    return effect;
+}
+
+function createPropagationLine(origin, target, type) {
+    const deltaX = target.x - origin.x;
+    const deltaY = target.y - origin.y;
+    const distance = Math.hypot(deltaX, deltaY);
+    return createPropagationEffect(`propagation-line propagation-${type}`, {
+        left: `${origin.x}px`,
+        top: `${origin.y}px`,
+        width: `${distance}px`,
+        transform: `rotate(${Math.atan2(deltaY, deltaX)}rad)`
+    });
+}
+
+function renderPropagationImpact(sequence, event) {
+    const target = sequence.snapshot?.anchors?.[event.targetId];
+    if (!target) return;
+    const impact = createPropagationEffect(`propagation-impact propagation-${event.type}`, {
+        left: `${target.x}px`,
+        top: `${target.y}px`
+    });
+    const number = createPropagationEffect(`propagation-damage${event.critical ? ' critical' : ''}`, {
+        left: `${target.x}px`,
+        top: `${target.y - 20}px`
+    });
+    if (number) number.textContent = `-${Math.round(event.damage)}${event.critical ? '!' : ''}`;
+    setTimeout(() => impact?.remove(), 380);
+    setTimeout(() => number?.remove(), 620);
+}
+
+function renderSequentialPropagationEvent(sequence, event, done) {
+    const origin = sequence.snapshot?.anchors?.[event.originId];
+    const target = sequence.snapshot?.anchors?.[event.targetId];
+    if (!origin || !target) {
+        done();
+        return;
+    }
+    const line = createPropagationLine(origin, target, event.type);
+    const duration = event.type === 'chain' ? 35 : event.type === 'cleave' ? 45 : 55;
+    propagationPresentationTimer = setTimeout(() => {
+        line?.classList.add('arrived');
+        renderPropagationImpact(sequence, event);
+        propagationPresentationTimer = setTimeout(() => {
+            line?.remove();
+            done();
+        }, event.type === 'chain' ? 15 : 25);
+    }, duration);
+}
+
+function playPropagationSequence(sequence, complete) {
+    if (!sequence?.events?.length || !sequence.snapshot?.anchors) {
+        complete();
+        return;
+    }
+    const simultaneous = sequence.profile.id === 'nova' || sequence.profile.id === 'detonation';
+    if (simultaneous) {
+        const primary = sequence.snapshot.anchors[sequence.primaryTargetId];
+        const pulse = primary ? createPropagationEffect(`propagation-pulse propagation-${sequence.profile.id}`, {
+            left: `${primary.x}px`, top: `${primary.y}px`
+        }) : null;
+        const lines = sequence.events.map(event => {
+            const origin = sequence.snapshot.anchors[event.originId];
+            const target = sequence.snapshot.anchors[event.targetId];
+            return origin && target ? createPropagationLine(origin, target, event.type) : null;
+        });
+        propagationPresentationTimer = setTimeout(() => {
+            sequence.events.forEach(event => renderPropagationImpact(sequence, event));
+            lines.forEach(line => line?.classList.add('arrived'));
+            propagationPresentationTimer = setTimeout(() => {
+                pulse?.remove();
+                lines.forEach(line => line?.remove());
+                complete();
+            }, 120);
+        }, 80);
+        return;
+    }
+    let index = 0;
+    const next = () => {
+        if (index >= sequence.events.length) {
+            complete();
+            return;
+        }
+        renderSequentialPropagationEvent(sequence, sequence.events[index++], next);
+    };
+    next();
+}
+
+function runNextPropagationPresentation() {
+    if (propagationPresentationActive || propagationPresentationQueue.length === 0) return;
+    propagationPresentationActive = true;
+    const generation = propagationPresentationGeneration;
+    const queued = propagationPresentationQueue.shift();
+    playPropagationSequence(queued.sequence, () => {
+        if (generation !== propagationPresentationGeneration) return;
+        for (const event of queued.sequence.events) propagationPresentationPendingIds.delete(event.targetId);
+        queued.onComplete?.();
+        propagationPresentationActive = false;
+        if (typeof updateEnemyStatsDisplay === 'function') updateEnemyStatsDisplay();
+        runNextPropagationPresentation();
+    });
+}
+
+function queuePropagationPresentation(sequence, onComplete = null) {
+    for (const event of sequence?.events || []) {
+        if (event.targetDefeated) propagationPresentationPendingIds.add(event.targetId);
+    }
+    propagationPresentationQueue.push({ sequence, onComplete });
+    if (typeof updateEnemyStatsDisplay === 'function') updateEnemyStatsDisplay();
+    runNextPropagationPresentation();
+}
+
+function cancelPropagationPresentations() {
+    propagationPresentationGeneration++;
+    if (propagationPresentationTimer) clearTimeout(propagationPresentationTimer);
+    propagationPresentationTimer = null;
+    propagationPresentationQueue = [];
+    propagationPresentationActive = false;
+    propagationPresentationPendingIds.clear();
+    document.getElementById('propagation-effects-layer')?.replaceChildren();
+}
+
+function isPropagationPresentationBusy() {
+    return propagationPresentationActive || propagationPresentationQueue.length > 0;
+}
+
+window.capturePropagationFormationSnapshot = capturePropagationFormationSnapshot;
+window.queuePropagationPresentation = queuePropagationPresentation;
+window.cancelPropagationPresentations = cancelPropagationPresentations;
+window.isPropagationPresentationBusy = isPropagationPresentationBusy;

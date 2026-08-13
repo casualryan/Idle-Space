@@ -243,6 +243,7 @@ function validatePlayerStatSnapshot(stats) {
         'precision', 'deflection', 'healthRegen', 'armorEfficiency', 'weaponEfficiency',
         'bionicEfficiency', 'bionicSync', 'comboAttack', 'comboEffectiveness',
         'additionalComboAttacks', 'maxSeveredLimbs', 'maxSeepingWoundStacks',
+        'propagationTargets',
         'armorPenetration', 'damageRollFloorBonus', 'debuffChanceBonus', 'debuffDurationBonus',
         'statusResistance', 'statusDurationReduction',
         'directDamageMultiplier', 'dotDamageMultiplier', 'damageVsDebuffed', 'damageTakenReduction'
@@ -454,6 +455,7 @@ function applyPassiveStatPackage(stats, effects) {
     for (const key of [
         'armorEfficiency', 'weaponEfficiency', 'bionicEfficiency', 'bionicSync', 'armorPenetration',
         'comboAttack', 'comboEffectiveness', 'additionalComboAttacks',
+        'propagationTargets',
         'severedLimbChance', 'maxSeveredLimbs', 'maxSeepingWoundStacks'
     ]) stats[key] += Number(effects[key] || 0);
     for (const key of [
@@ -532,6 +534,7 @@ function calculatePlayerStats(playerObject) {
     if (stats.comboAttack === undefined) stats.comboAttack = 0;
     if (stats.comboEffectiveness === undefined) stats.comboEffectiveness = 0;
     if (stats.additionalComboAttacks === undefined) stats.additionalComboAttacks = 0;
+    if (stats.propagationTargets === undefined) stats.propagationTargets = 0;
     if (stats.kineticMastery === undefined) stats.kineticMastery = 0;
     if (stats.slashingMastery === undefined) stats.slashingMastery = 0;
     if (stats.severedLimbChance === undefined) stats.severedLimbChance = 0;
@@ -899,7 +902,7 @@ function calculateDamage(attacker, defender, attackContext = null) {
         if (typeof logMessage === 'function') logMessage(`${attacker.name || 'Attacker'} lands a critical hit!`);
     }
 
-    // 4. Apply Defender's Resistances (per damage type)
+    const unmitigatedDamage = {};
     for (let damageType in adjustedBaseDamages) {
         let adjustedBaseDamage = adjustedBaseDamages[damageType];
 
@@ -909,23 +912,12 @@ function calculateDamage(attacker, defender, attackContext = null) {
         // Determine the amount of rolled damage attributed to this type
         let damageAmountForType = rolledDamage * damageProportion;
 
-        // Apply defender's resistance for this damage type
-        let resistanceStat = matchDamageToDefense(damageType); // Assumes matchDamageToDefense exists
-        let resistanceValue = (defender.totalStats && defender.totalStats.defenseTypes) ? (defender.totalStats.defenseTypes[resistanceStat] || 0) : 0;
-
-        // Apply resistance formula (e.g., percentage reduction, capped at 80%)
-        const armorPenetration = Math.max(0, Number(attacker.totalStats.armorPenetration || 0));
-        resistanceValue = Math.max(0, resistanceValue - armorPenetration);
-        resistanceValue = Math.min(resistanceValue, 80); // Cap resistance
-        let damageReductionMultiplier = Math.max(0, 1 - (resistanceValue / 100)); // Ensure multiplier is not negative
-
-        const globalReduction = Math.min(0.75, Math.max(-0.5, Number(defender.totalStats.damageTakenReduction || 0)));
-        let finalDamageForType = damageAmountForType * damageReductionMultiplier * (1 - globalReduction);
-
-        // Store in final breakdown and add to total
-        finalDamageBreakdown[damageType] = Math.round(finalDamageForType * 10) / 10; // Round for display
-        totalDamageDealt += finalDamageForType;
+        unmitigatedDamage[damageType] = damageAmountForType;
     }
+
+    const mitigated = mitigateDamageMapForTarget(attacker, defender, unmitigatedDamage);
+    finalDamageBreakdown = mitigated.damage;
+    totalDamageDealt = mitigated.total;
 
     // Round total damage to nearest whole number
     totalDamageDealt = Math.round(totalDamageDealt);
@@ -939,9 +931,32 @@ function calculateDamage(attacker, defender, attackContext = null) {
         isCritical: isCriticalHit,
         damageRoll: damagePercentage,
         mitigated: true,
-        tags: ctx.tags || ['hit']
+        tags: ctx.tags || ['hit'],
+        metadata: { unmitigatedDamage }
     });
 }
+
+// Applies the target-facing half of hit calculation to an already rolled typed
+// damage map. Propagation reuses the primary hit's roll and critical result,
+// then calls this for each secondary target so their defenses remain independent.
+function mitigateDamageMapForTarget(attacker, defender, rawDamage = {}) {
+    const damage = {};
+    let total = 0;
+    for (const [damageType, rawAmount] of Object.entries(rawDamage || {})) {
+        const amount = Math.max(0, Number(rawAmount) || 0);
+        const resistanceStat = matchDamageToDefense(damageType);
+        let resistance = Number(defender?.totalStats?.defenseTypes?.[resistanceStat] || 0);
+        resistance -= Math.max(0, Number(attacker?.totalStats?.armorPenetration || 0));
+        resistance = Math.min(80, Math.max(0, resistance));
+        const globalReduction = Math.min(0.75, Math.max(-0.5, Number(defender?.totalStats?.damageTakenReduction || 0)));
+        const finalAmount = amount * (1 - resistance / 100) * (1 - globalReduction);
+        damage[damageType] = Math.round(finalAmount * 10) / 10;
+        total += finalAmount;
+    }
+    return { damage, total: Math.round(total) };
+}
+
+window.mitigateDamageMapForTarget = mitigateDamageMapForTarget;
 
 // Calculate enemy's total stats (simpler version, assumes enemy object has base stats)
 function calculateEnemyStats(enemyObject) {

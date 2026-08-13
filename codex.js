@@ -64,6 +64,7 @@
     const CATEGORY_DEFINITIONS = [
         ['new-player', 'New Player'],
         ['combat', 'Combat'],
+        ['weapon-types', 'Weapon Types'],
         ['damage-types', 'Damage Types'],
         ['passives', 'Passives'],
         ['debuffs', 'Debuffs'],
@@ -100,6 +101,108 @@
     function renderStaticPage(container, page) {
         appendPageTitle(container, page.title);
         page.sections.forEach(([subtitle, text]) => appendTextSection(container, subtitle, text));
+    }
+
+    function renderWeaponTypes(container) {
+        appendPageTitle(container, 'Weapon Types');
+        const tabs = document.createElement('nav');
+        tabs.className = 'codex-subpages';
+        const page = document.createElement('div');
+        page.className = 'codex-subpage-content';
+        container.append(tabs, page);
+
+        const definitions = window.coreboundWeaponTaxonomy?.families || {};
+        const profiles = window.coreboundPropagation?.profiles || {};
+        const familyOrder = ['blades', 'impact', 'sidearms', 'rifles', 'projectors', 'ordnance', 'conduits'];
+
+        const renderOverview = () => {
+            page.replaceChildren();
+            appendTextSection(
+                page,
+                'Weapon Families',
+                'A weapon family is its stable mechanical identity. Display names and tags may vary, but the family determines its intrinsic propagation behavior.'
+            );
+            const grid = document.createElement('div');
+            grid.className = 'codex-weapon-grid';
+            for (const family of familyOrder) {
+                const definition = definitions[family];
+                const profile = profiles[family];
+                const card = document.createElement('section');
+                card.className = 'codex-weapon-family';
+                const heading = document.createElement('h3');
+                heading.textContent = definition?.label || titleCase(family);
+                const description = document.createElement('p');
+                description.textContent = definition?.description || 'No chassis notes recorded.';
+                const propagation = document.createElement('strong');
+                propagation.textContent = `${profile?.label || 'Propagation'} · ${Math.round(Number(profile?.damageCoefficient || 0) * 100)}% secondary damage`;
+                card.append(heading, description, propagation);
+                grid.appendChild(card);
+            }
+            page.appendChild(grid);
+        };
+
+        const renderPropagation = () => {
+            page.replaceChildren();
+            appendTextSection(
+                page,
+                'Propagation',
+                'Every equipped weapon hits its primary target and one additional target when possible. Propagation Targets adds more secondaries, to a maximum of five. Secondary hits reuse the original damage roll and critical result, then check each target’s defenses independently.'
+            );
+            appendTextSection(
+                page,
+                'Triggered Effects',
+                'All propagation types use a 30% trigger coefficient for inherent debuffs and other on-hit or on-critical effects.'
+            );
+            const table = document.createElement('table');
+            table.className = 'codex-propagation-table';
+            table.innerHTML = '<thead><tr><th>Weapon family</th><th>Propagation</th><th>Damage</th><th>Targeting</th></tr></thead>';
+            const body = document.createElement('tbody');
+            const targeting = {
+                blades: 'Cleave through the target row, then overflow to the opposite row.',
+                impact: 'Splash through orthogonally connected enemies.',
+                sidearms: 'Fire sequentially at random unique enemies.',
+                rifles: 'Chain to an adjacent living enemy after each hit; later chains may revisit a target.',
+                projectors: 'Fire sequentially at random unique enemies.',
+                ordnance: 'Detonate into random unique enemies.',
+                conduits: 'Pulse into random unique enemies at once.'
+            };
+            for (const family of familyOrder) {
+                const definition = definitions[family];
+                const profile = profiles[family];
+                const row = document.createElement('tr');
+                [
+                    definition?.label || titleCase(family),
+                    profile?.label || '—',
+                    `${Math.round(Number(profile?.damageCoefficient || 0) * 100)}%`,
+                    targeting[family]
+                ].forEach(value => {
+                    const cell = document.createElement('td');
+                    cell.textContent = value;
+                    row.appendChild(cell);
+                });
+                body.appendChild(row);
+            }
+            table.appendChild(body);
+            page.appendChild(table);
+        };
+
+        const subpages = [
+            ['overview', 'Overview', renderOverview],
+            ['propagation', 'Propagation', renderPropagation]
+        ];
+        const displaySubpage = (id, render) => {
+            tabs.querySelectorAll('button').forEach(button => button.classList.toggle('active', button.dataset.subpage === id));
+            render();
+        };
+        subpages.forEach(([id, label, render]) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.dataset.subpage = id;
+            button.textContent = label;
+            button.addEventListener('click', () => displaySubpage(id, render));
+            tabs.appendChild(button);
+        });
+        displaySubpage('overview', renderOverview);
     }
 
     function renderDebuffs(container) {
@@ -457,6 +560,7 @@
             });
             if (categoryId === 'debuffs') renderDebuffs(content);
             else if (categoryId === 'enemies') renderEnemies(content);
+            else if (categoryId === 'weapon-types') renderWeaponTypes(content);
             else renderStaticPage(content, STATIC_PAGES[categoryId]);
         };
 

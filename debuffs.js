@@ -774,7 +774,8 @@ function tryApplyDebuffFromDamage(source, target, damageInfo) {
     }
     debuffChance += Number(source?.totalStats?.debuffChanceBonus || 0);
     debuffChance -= Math.max(0, Number(target?.totalStats?.statusResistance || 0));
-    debuffChance = Math.min(1, Math.max(0, debuffChance));
+    const triggerCoefficient = Math.max(0, Number(source?._activeSkillProcCoefficient ?? 1));
+    debuffChance = Math.min(1, Math.max(0, debuffChance * triggerCoefficient));
     const shouldApply = shouldApplyDebuff(debuffChance);
     console.log(`tryApplyDebuffFromDamage: shouldApplyDebuff() returned ${shouldApply}`);
     
