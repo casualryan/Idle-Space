@@ -11,6 +11,12 @@ import {
   resolveWeaponTaxonomy,
   validateWeaponTaxonomy
 } from './items/weapons/taxonomy.js';
+import {
+  WEAPON_CHASSIS_DEFINITIONS,
+  WEAPON_DAMAGE_CORE_DEFINITIONS,
+  resolveWeaponChassisTemplate,
+  weaponChassisTemplates
+} from './items/weapons/chassisCatalog.js';
 import { RUNTIME_SCRIPTS } from './runtimeScripts.js';
 
 const DEV_MODE_STORAGE_KEY = 'coreboundDeveloperMode';
@@ -52,6 +58,10 @@ window.coreboundWeaponTaxonomy = Object.freeze({
   resolveWeapon: resolveWeaponTaxonomy,
   validateWeapons: validateWeaponTaxonomy
 });
+window.weaponChassisDefinitions = WEAPON_CHASSIS_DEFINITIONS;
+window.weaponDamageCoreDefinitions = WEAPON_DAMAGE_CORE_DEFINITIONS;
+window.weaponChassisTemplates = weaponChassisTemplates;
+window.resolveWeaponChassisTemplate = resolveWeaponChassisTemplate;
 
 window.loadItems = function loadItems() {
   window.items = [

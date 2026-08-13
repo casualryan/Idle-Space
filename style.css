@@ -107,6 +107,19 @@ body, body * {
     font-size: 0.8em;
 }
 
+.chip-conflict-warning {
+    display: none;
+    margin: 0 0 10px;
+    padding: 9px 12px;
+    border: 1px solid #ff5d73;
+    border-radius: 6px;
+    background: rgba(92, 0, 18, 0.72);
+    color: #ffd7dd;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    box-shadow: 0 0 12px rgba(255, 93, 115, 0.18);
+}
+
 .global-status-left {
     color: #cfe9ff;
     white-space: nowrap;
@@ -2170,7 +2183,9 @@ hr {
 
 /* But make buttons still clickable */
 .recipe-card button,
-.recipe-card button * {
+.recipe-card button *,
+.recipe-card select,
+.recipe-card select * {
     pointer-events: auto;
 }
 
@@ -2222,6 +2237,34 @@ hr {
     font-size: 14px;
     margin-bottom: 15px;
     line-height: 1.4;
+}
+
+.chassis-core-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0 0 12px;
+    color: #66ffcc;
+    font-size: 12px;
+    font-family: 'Orbitron', sans-serif;
+}
+
+.chassis-core-selector select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid #2f7ea5;
+    border-radius: 4px;
+    background: #00152b;
+    color: #e2f4ff;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.chassis-core-selector select:disabled {
+    cursor: not-allowed;
+    color: #718395;
+    border-color: #34485c;
 }
 
 .recipe-ingredients {

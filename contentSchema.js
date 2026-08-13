@@ -36,7 +36,7 @@ const CONTENT_STYLE_MECHANICS = new Set([
 const CONTENT_ITEM_TEMPLATE_KEYS = new Set([
     'name', 'description', 'icon', 'color', 'type', 'slot', 'weaponType', 'weaponFamily',
     'weaponFamilyLabel', 'weaponTags', 'levelRequirement',
-    'developerOnly', 'stackable', 'quantity', 'salePrice', 'sellValue', 'isDisassembleable',
+    'developerOnly', 'disableRandomModifiers', 'stackable', 'quantity', 'salePrice', 'sellValue', 'isDisassembleable',
     'disassembleResults', 'effects', 'passiveBonuses', 'rollGroups', 'wires',
     'weaponBaseDamage', 'weaponLocalFlatDamage', 'weaponLocalTypeIncrease',
     'weaponLocalGroupIncrease', 'weaponDamageConversion', 'weaponLocalAttackSpeedPercent',
@@ -48,6 +48,8 @@ const CONTENT_ITEM_TEMPLATE_KEYS = new Set([
     'energyShieldBonus', 'energyShieldBonusPercent', 'energyShieldBonusPercentRange',
     'precision', 'deflection', 'healthRegen', 'armorEfficiency', 'weaponEfficiency',
     'bionicEfficiency', 'bionicSync', 'armorPenetration', 'debuffChanceBonus',
+    'debuffDurationBonus', 'damageRollFloorBonus', 'directDamageMultiplier',
+    'dotDamageMultiplier', 'damageVsDebuffed', 'damageTakenReduction',
     'statusResistance', 'statusDurationReduction', 'comboAttack', 'comboEffectiveness',
     'additionalComboAttacks', 'kineticMastery', 'slashingMastery', 'severedLimbChance',
     'maxSeveredLimbs', 'maxSeepingWoundStacks', ...RESERVED_ITEM_STAT_KEYS
@@ -291,14 +293,34 @@ function validateCoreboundContent(registries = {}) {
         if (!recipe?.ingredients || typeof recipe.ingredients !== 'object') report('recipe', name, 'ingredients are required');
         const output = itemByName.get(name);
         const outputLevel = getAuthoredMinimum(output?.levelRequirement ?? output?.level);
-        for (const [ingredient, quantity] of Object.entries(recipe?.ingredients || {})) {
-            if (!itemNames.has(ingredient)) report('recipe', name, `unknown ingredient: ${ingredient}`);
-            if (!(Number(quantity) > 0)) report('recipe', name, `invalid ingredient quantity: ${ingredient}`);
-            const source = materialAcquisition[ingredient];
-            if (!source) {
-                report('recipe', name, `ingredient has no documented acquisition source: ${ingredient}`);
-            } else if (Number.isFinite(outputLevel) && Number(source.level) > outputLevel) {
-                report('recipe', name, `${ingredient} first appears at level ${source.level}, after this level ${outputLevel} recipe`);
+        const ingredientSets = [{ label: 'default', ingredients: recipe?.ingredients || {} }];
+        if (recipe?.weaponChassis) {
+            const damageOptions = Array.isArray(recipe.damageOptions) ? recipe.damageOptions : [];
+            if (damageOptions.length !== COMBAT_DAMAGE_TYPES.length
+                || damageOptions.some(type => !COMBAT_DAMAGE_TYPES.includes(type))) {
+                report('recipe', name, 'weapon chassis must support every canonical damage type');
+            }
+            if (!recipe.ingredientsByDamage || typeof recipe.ingredientsByDamage !== 'object') {
+                report('recipe', name, 'weapon chassis requires ingredientsByDamage');
+            } else {
+                for (const damageType of damageOptions) {
+                    ingredientSets.push({
+                        label: `${damageType} core`,
+                        ingredients: recipe.ingredientsByDamage[damageType] || {}
+                    });
+                }
+            }
+        }
+        for (const ingredientSet of ingredientSets) {
+            for (const [ingredient, quantity] of Object.entries(ingredientSet.ingredients)) {
+                if (!itemNames.has(ingredient)) report('recipe', name, `unknown ${ingredientSet.label} ingredient: ${ingredient}`);
+                if (!(Number(quantity) > 0)) report('recipe', name, `invalid ${ingredientSet.label} ingredient quantity: ${ingredient}`);
+                const source = materialAcquisition[ingredient];
+                if (!source) {
+                    report('recipe', name, `${ingredientSet.label} ingredient has no documented acquisition source: ${ingredient}`);
+                } else if (Number.isFinite(outputLevel) && Number(source.level) > outputLevel) {
+                    report('recipe', name, `${ingredient} first appears at level ${source.level}, after this level ${outputLevel} ${ingredientSet.label} recipe`);
+                }
             }
         }
         if (recipe?.craftingTime !== undefined && Number(recipe.craftingTime) !== 5) {

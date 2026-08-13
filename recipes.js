@@ -1,25 +1,31 @@
 // Older authored outputs that predate the generated level 1-50 equipment spine.
 // Their ingredient maps are built by the same economy rules as every other recipe.
+const progressionBionicRecipes = (window.bionics || [])
+    .filter(item => item && !item.developerOnly)
+    .map(item => ({
+        name: item.name,
+        category: 'Bionics',
+        craftingTime: 5,
+        levelRequirement: item.levelRequirement
+    }));
+const progressionChipRecipes = (window.chips || [])
+    .filter(item => item && !item.developerOnly && item.color !== 'black')
+    .map(item => ({
+        name: item.name,
+        category: 'Chips',
+        craftingTime: 5,
+        levelRequirement: item.levelRequirement
+    }));
+
 const recipes = [
-    { name: 'Makeshift Laser Sword', category: 'Weapons', levelRequirement: 1 },
     { name: 'Metal Carapace', category: 'Armor' },
-    { name: 'Reaction Enhancer', category: 'Bionics', craftingTime: 5 },
-    { name: 'Health Exchanger', category: 'Bionics', craftingTime: 5 },
-    { name: 'Kinetic Booster', category: 'Bionics' },
     { name: 'Heavy Metal Boots', category: 'Boots' },
-    { name: 'Scorpion Sword', category: 'Weapons' },
-    { name: 'Fire Spewer Mk1', category: 'Weapons' },
     { name: 'Scrap Metal Boots', category: 'Scrap Armor' },
     { name: 'Scrap Metal Helmet', category: 'Scrap Armor' },
     { name: 'Scrap Metal Trousers', category: 'Scrap Armor' },
     { name: 'Scrap Chest Plate', category: 'Scrap Armor' },
-    { name: 'Cryo Booster', category: 'Bionics' },
-    { name: 'Electric Booster', category: 'Bionics' },
-    { name: 'Slashing Booster', category: 'Bionics' },
-    { name: 'Chemical Booster', category: 'Bionics' },
-    { name: 'Radiation Booster', category: 'Bionics' },
-    { name: 'Health Module', category: 'Bionics' },
-    { name: 'Pyro Booster', category: 'Bionics' }
+    ...progressionBionicRecipes,
+    ...progressionChipRecipes
 ];
 
 const baselineArmorItems = [
@@ -134,7 +140,10 @@ const baselineArmorItems = [
     { name: "Stormstep Reactor Gloves", level: 50, category: "Gloves" }
 ];
 
-const baselineWeaponItems = [
+// These ordinary weapon templates remain registered so existing items, loot,
+// equipment, and saves remain valid. Their individual recipes are retired in
+// favor of family chassis recipes below.
+const retiredBaselineWeaponItems = [
     { name: "Bent Impact Rod", level: 1, family: "kinetic" },
     { name: "Scrap Maul", level: 5, family: "kinetic" },
     { name: "Pneumatic Hammer", level: 11, family: "kinetic" },
@@ -307,14 +316,11 @@ const FABRICATION_THEME_QUANTITIES = Object.freeze({
 });
 
 const LEGACY_RECIPE_LEVELS = Object.freeze({
-    'Makeshift Laser Sword': 1,
     'Metal Carapace': 20,
     'Reaction Enhancer': 4,
     'Health Exchanger': 5,
     'Kinetic Booster': 1,
     'Heavy Metal Boots': 10,
-    'Scorpion Sword': 15,
-    'Fire Spewer Mk1': 10,
     'Scrap Metal Boots': 1,
     'Scrap Metal Helmet': 1,
     'Scrap Metal Trousers': 1,
@@ -400,15 +406,38 @@ function createProgressionRecipe({ name, level, category, family }) {
 
 const baselineRecipes = [
     ...baselineArmorItems.map(item => createProgressionRecipe(item)),
-    ...baselineWeaponItems.map(item => createProgressionRecipe({ ...item, category: "Weapons" })),
     ...baselineOffHandItems.map(item => createProgressionRecipe({ ...item, category: "Shields" }))
 ];
 
-const LEGACY_RECIPE_DAMAGE_FOCUS = {
-    "Makeshift Laser Sword": "radiation",
-    "Scorpion Sword": "slashing",
-    "Fire Spewer Mk1": "pyro"
-};
+const retiredWeaponRecipes = retiredBaselineWeaponItems.map(item => ({
+    ...createProgressionRecipe({ ...item, category: "Weapons" }),
+    retired: true,
+    levelRequirement: item.level
+}));
+
+const weaponChassisRecipes = (window.weaponChassisTemplates || []).map(template => {
+    const level = Number(template.levelRequirement?.min ?? template.levelRequirement?.max ?? template.levelRequirement ?? 1);
+    const ingredientsByDamage = Object.fromEntries(
+        Object.entries(window.weaponDamageCoreDefinitions || {}).map(([damageType, core]) => [
+            damageType,
+            buildEconomyIngredients(template.name, level, core.materialFamily, 'Weapons')
+        ])
+    );
+    return {
+        name: template.name,
+        category: 'Weapons',
+        craftingTime: 5,
+        levelRequirement: level,
+        weaponChassis: true,
+        weaponFamily: template.weaponFamily,
+        damageOptions: Object.keys(ingredientsByDamage),
+        ingredientsByDamage,
+        ingredients: ingredientsByDamage.kinetic,
+        description: template.description
+    };
+});
+
+const LEGACY_RECIPE_DAMAGE_FOCUS = {};
 
 function normalizeRecipeDamageFocus(rawFocus) {
     if (!rawFocus) return null;
@@ -434,11 +463,11 @@ function inferDamageFocusByName(name) {
 }
 
 const recipeByName = new Map();
-for (const recipe of [...recipes, ...baselineRecipes]) {
+for (const recipe of [...recipes, ...baselineRecipes, ...weaponChassisRecipes]) {
     const mergedRecipe = { ...recipe };
-    const baseline = [...baselineArmorItems, ...baselineWeaponItems, ...baselineOffHandItems]
+    const baseline = [...baselineArmorItems, ...baselineOffHandItems]
         .find(item => item.name === mergedRecipe.name);
-    const level = Number(baseline?.level || LEGACY_RECIPE_LEVELS[mergedRecipe.name] || mergedRecipe.levelRequirement || 1);
+    const level = Number(baseline?.level || mergedRecipe.levelRequirement || LEGACY_RECIPE_LEVELS[mergedRecipe.name] || 1);
     if (mergedRecipe.category === "Weapons" || mergedRecipe.category === "Shields") {
         const legacyFocus = LEGACY_RECIPE_DAMAGE_FOCUS[mergedRecipe.name];
         mergedRecipe.damageFocus = normalizeRecipeDamageFocus(mergedRecipe.damageFocus)
@@ -446,8 +475,11 @@ for (const recipe of [...recipes, ...baselineRecipes]) {
             || inferDamageFocusByName(mergedRecipe.name);
     }
     const authoredFamily = baseline?.family || mergedRecipe.damageFocus;
-    mergedRecipe.ingredients = buildEconomyIngredients(mergedRecipe.name, level, authoredFamily, mergedRecipe.category);
+    if (!mergedRecipe.weaponChassis) {
+        mergedRecipe.ingredients = buildEconomyIngredients(mergedRecipe.name, level, authoredFamily, mergedRecipe.category);
+    }
     recipeByName.set(mergedRecipe.name, mergedRecipe);
 }
 
 window.recipes = Array.from(recipeByName.values());
+window.retiredRecipes = retiredWeaponRecipes;

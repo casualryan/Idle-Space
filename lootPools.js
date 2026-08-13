@@ -126,8 +126,21 @@ const LOOT_POOLS = {
     epicTech: { tier: 5, items: [lootEntry('AI Core Fragment', 55), lootEntry('Phase Converter', 35)] },
     legendaryComponents: { tier: 6, items: [lootEntry('Quantum Core', 40)] },
     exceptionalPrecision: { tier: 4, items: [lootEntry('Targeting Module', 100)] },
-    exceptionalTech: { tier: 5, items: [lootEntry('AI Core Fragment', 60), lootEntry('Neural Network Module', 40), lootEntry('Phase Converter', 35)] },
-    exceptionalApex: { tier: 6, items: [lootEntry('Quantum Core', 100)] }
+    exceptionalTech: { tier: 5, items: [
+        lootEntry('AI Core Fragment', 60), lootEntry('Neural Network Module', 40), lootEntry('Phase Converter', 35),
+        lootEntry('Kinetic Driver Chip II', 5), lootEntry('Slashing Edge Chip II', 5),
+        lootEntry('Pyro Injector Chip II', 5), lootEntry('Cryo Injector Chip II', 5),
+        lootEntry('Electric Injector Chip II', 5), lootEntry('Corrosive Injector Chip II', 5),
+        lootEntry('Radiation Injector Chip II', 5), lootEntry('Integrity Buffer Chip II', 8),
+        lootEntry('Shield Buffer Chip II', 8), lootEntry('Emergency Recovery Chip', 8)
+    ] },
+    exceptionalApex: { tier: 6, items: [
+        lootEntry('Quantum Core', 100),
+        lootEntry('Redline Kernel', 12), lootEntry('Bastion Kernel', 12),
+        lootEntry('Recursive Strike Kernel', 12), lootEntry('Predator Kernel', 12),
+        lootEntry('Harmonic Bionic Kernel', 12), lootEntry('Critical Singularity Kernel', 12),
+        lootEntry('Reprisal Kernel', 12)
+    ] }
 };
 
 for (let zone = 1; zone <= 10; zone++) {

@@ -195,8 +195,14 @@ const ITEM_SCALAR_STAT_RULES = Object.freeze({
     bionicSync: { bionicSync: false },
     armorPenetration: { bionicSync: true },
     debuffChanceBonus: { bionicSync: true },
+    debuffDurationBonus: { bionicSync: true },
     statusResistance: { bionicSync: true },
     statusDurationReduction: { bionicSync: true },
+    damageRollFloorBonus: { bionicSync: true },
+    directDamageMultiplier: { bionicSync: true },
+    dotDamageMultiplier: { bionicSync: true },
+    damageVsDebuffed: { bionicSync: true },
+    damageTakenReduction: { bionicSync: true },
     comboAttack: { bionicSync: true },
     comboEffectiveness: { bionicSync: true },
     additionalComboAttacks: { bionicSync: true },
@@ -378,6 +384,49 @@ function applyItemModifiers(stats, item, options = {}) {
     }
 }
 
+function getEquippedChipState(playerObject) {
+    const blackChips = [];
+    const allChips = [];
+    const equipment = playerObject?.equipment || {};
+    const equippedItems = ['mainHand', 'offHand', 'head', 'chest', 'legs', 'feet', 'gloves']
+        .map(slot => ({ slot, item: equipment[slot] }))
+        .filter(entry => entry.item);
+
+    if (Array.isArray(equipment.bionicSlots)) {
+        equipment.bionicSlots.forEach((item, index) => {
+            if (item) equippedItems.push({ slot: `bionic-slot-${index}`, item });
+        });
+    }
+
+    equippedItems.forEach(({ slot, item }) => {
+        if (!Array.isArray(item.rolledWires)) return;
+        item.rolledWires.forEach((wire, wireIndex) => {
+            const chip = wire?.chip;
+            if (!chip || String(chip.type || '').toLowerCase() !== 'chip') return;
+            const entry = { chip, wire, item, slot, wireIndex };
+            allChips.push(entry);
+            if (String(chip.color || '').toLowerCase() === 'black') blackChips.push(entry);
+        });
+    });
+
+    return {
+        allChips,
+        blackChips,
+        blackCount: blackChips.length,
+        hasBlackConflict: blackChips.length > 1
+    };
+}
+
+function isEquippedChipEnabled(chip, chipState) {
+    if (!chip) return false;
+    if (String(chip.color || '').toLowerCase() !== 'black') return true;
+    const resolvedState = chipState || getEquippedChipState(window.player);
+    return resolvedState.blackCount === 1;
+}
+
+window.getEquippedChipState = getEquippedChipState;
+window.isEquippedChipEnabled = isEquippedChipEnabled;
+
 function getActiveWeaponTaxonomy(playerObject) {
     const mainHand = playerObject?.equipment?.mainHand;
     if (!mainHand) return null;
@@ -537,6 +586,7 @@ function calculatePlayerStats(playerObject) {
     // --- Apply Equipment ---
     let equipmentASBonus = 0; // Accumulator for attack speed % bonus from gear/bionics
     let mainHandLocalProfile = null;
+    const equippedChipState = getEquippedChipState(playerObject);
     
     // First apply non-bionic equipment to get base Bionic Sync value
     Object.keys(playerObject.equipment).forEach(slot => {
@@ -556,7 +606,7 @@ function calculatePlayerStats(playerObject) {
             // Apply slotted chip stats (if any)
             if (Array.isArray(item.rolledWires)) {
                 item.rolledWires.forEach(wire => {
-                    if (wire && wire.chip) {
+                    if (wire && wire.chip && isEquippedChipEnabled(wire.chip, equippedChipState)) {
                         applyItemModifiers(stats, wire.chip);
                     }
                 });
@@ -587,7 +637,7 @@ function calculatePlayerStats(playerObject) {
             // If bionics ever support wires, also apply slotted chip stats
             if (Array.isArray(bionic.rolledWires)) {
                 bionic.rolledWires.forEach(wire => {
-                    if (wire && wire.chip) {
+                    if (wire && wire.chip && isEquippedChipEnabled(wire.chip, equippedChipState)) {
                         applyItemModifiers(stats, wire.chip);
                     }
                 });

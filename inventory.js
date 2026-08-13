@@ -343,13 +343,48 @@ function recomputePlayerEffects() {
     if (Array.isArray(equipment.bionicSlots)) {
         equipped.push(...equipment.bionicSlots.filter(Boolean));
     }
-    player.effects = equipped.flatMap(item => Array.isArray(item.effects)
-        ? item.effects.map(effect => ({ ...effect, sourceSlot: item.slot || null, sourceItemName: item.name }))
-        : []);
+    const chipState = typeof getEquippedChipState === 'function'
+        ? getEquippedChipState(player)
+        : { blackCount: 0 };
+    player.effects = equipped.flatMap(item => {
+        const effects = Array.isArray(item.effects)
+            ? item.effects.map(effect => ({ ...effect, sourceSlot: item.slot || null, sourceItemName: item.name }))
+            : [];
+        if (!Array.isArray(item.rolledWires)) return effects;
+        item.rolledWires.forEach(wire => {
+            const chip = wire?.chip;
+            const enabled = typeof isEquippedChipEnabled !== 'function'
+                || isEquippedChipEnabled(chip, chipState);
+            if (!chip || !enabled || !Array.isArray(chip.effects)) return;
+            chip.effects.forEach(effect => effects.push({
+                ...effect,
+                sourceSlot: item.slot || null,
+                sourceItemName: chip.name,
+                sourceWireColor: wire.color
+            }));
+        });
+        return effects;
+    });
     return player.effects;
 }
 
+function countBlackChipsOnItem(item) {
+    if (!Array.isArray(item?.rolledWires)) return 0;
+    return item.rolledWires.filter(wire => (
+        wire?.chip && String(wire.chip.color || '').toLowerCase() === 'black'
+    )).length;
+}
+
+function wouldEquipItemCreateBlackChipConflict(item) {
+    if (!item || typeof getEquippedChipState !== 'function') return false;
+    const state = getEquippedChipState(player);
+    const replacing = item.slot && item.slot !== 'bionic' ? player?.equipment?.[item.slot] : null;
+    const retainedBlackChips = state.blackCount - countBlackChipsOnItem(replacing);
+    return retainedBlackChips + countBlackChipsOnItem(item) > 1;
+}
+
 window.recomputePlayerEffects = recomputePlayerEffects;
+window.wouldEquipItemCreateBlackChipConflict = wouldEquipItemCreateBlackChipConflict;
 
 // Function to equip an item from inventory
 function equipItem(item) {
@@ -368,6 +403,11 @@ function equipItem(item) {
     // Check if player meets level requirement
     if (item.levelRequirement && player.level < item.levelRequirement) {
         logMessage(`You need to be level ${item.levelRequirement} to equip this item.`);
+        return;
+    }
+
+    if (wouldEquipItemCreateBlackChipConflict(item)) {
+        logMessage('Equipping that item would activate more than one Black Chip. Remove a Black Chip first.');
         return;
     }
 
@@ -702,6 +742,10 @@ function renderEquipmentStatsPanel() {
     if (!player.equipment.mainHand) warnings.push('No main hand equipped.');
     if (!player.equipment.chest) warnings.push('No chest armor equipped.');
     if (equippedBionics.length === 0) warnings.push('No bionics equipped.');
+    const chipState = typeof getEquippedChipState === 'function' ? getEquippedChipState(player) : null;
+    if (chipState?.hasBlackConflict) {
+        warnings.unshift(`${chipState.blackCount} Black Chips detected. All Black Chips are disabled.`);
+    }
 
     buildPanel.innerHTML = `
         <h3>Build Summary</h3>
@@ -1651,6 +1695,7 @@ function openManageWiresWindow(item) {
         });
         if (changed) {
             player.calculateStats();
+            recomputePlayerEffects();
             updateInventoryDisplay();
             updateEquipmentDisplay();
             renderSlots();
@@ -1673,6 +1718,10 @@ function openManageWiresWindow(item) {
     function chipStatsHtml(chip) {
         if (!chip) return '<em>Empty</em>';
         const parts = [];
+        const chipState = typeof getEquippedChipState === 'function' ? getEquippedChipState(player) : null;
+        if (isBlackChip(chip) && chipState?.hasBlackConflict) {
+            parts.push('<strong style="color:#ff6b6b;">DISABLED — multiple Black Chips equipped</strong>');
+        }
         if (chip.damageTypes) {
             for (const dt in chip.damageTypes) parts.push(`+${chip.damageTypes[dt]} ${dt}`);
         }
@@ -1695,9 +1744,13 @@ function openManageWiresWindow(item) {
         (item.rolledWires || []).forEach((wire, idx) => {
             const slot = document.createElement('div');
             const border = colorHex[wire.color] || '#adb5bd';
+            const blackConflict = isBlackChip(wire.chip)
+                && typeof getEquippedChipState === 'function'
+                && getEquippedChipState(player).hasBlackConflict;
             slot.style.cssText = `min-width:120px; flex:0 0 auto; padding:8px; border:1px solid ${border}; border-radius:4px; background: rgba(0,20,45,0.4); cursor:pointer;`;
             slot.innerHTML = `<div style="color:${border}; font-weight:bold; margin-bottom:4px;">${capitalize(wire.color)} Wire</div>` +
                              `<div style="color:#cfe6ff; font-size:12px;">${wire.chip ? wire.chip.name : 'Empty'}</div>` +
+                             (blackConflict ? '<div style="color:#ff6b6b; font-size:11px; font-weight:bold; margin-top:4px;">DISABLED</div>' : '') +
                              (wire.chip ? `<div style="margin-top:6px;"><button data-act="remove" style="background:#3b0; color:#fff; border:1px solid #4d4; border-radius:3px; padding:3px 6px; cursor:pointer;">Remove</button></div>` : '');
             // Tooltip for this slot showing the slotted chip's stats
             slot.setAttribute('data-has-tooltip', 'true');
@@ -1710,6 +1763,7 @@ function openManageWiresWindow(item) {
                         addItemToInventory(wire.chip);
                         wire.chip = null;
                         player.calculateStats();
+                        recomputePlayerEffects();
                         updateInventoryDisplay();
                         updateEquipmentDisplay();
                         renderSlots();
@@ -1734,13 +1788,16 @@ function openManageWiresWindow(item) {
     function isBlackChip(chip) { return chip && chip.type === 'Chip' && (chip.color||'').toLowerCase() === 'black'; }
 
     function anyBlackChipEquipped() {
-        const slots = ['mainHand','offHand','head','chest','legs','feet','gloves'];
-        for (const slot of slots) {
-            const it = player.equipment[slot];
-            if (!it || !Array.isArray(it.rolledWires)) continue;
-            if (it.rolledWires.some(w => w.chip && isBlackChip(w.chip))) return true;
-        }
-        return false;
+        return typeof getEquippedChipState === 'function'
+            ? getEquippedChipState(player).blackCount > 0
+            : false;
+    }
+
+    function managedItemIsEquipped() {
+        const equipment = player?.equipment || {};
+        if (['mainHand','offHand','head','chest','legs','feet','gloves']
+            .some(slot => equipment[slot] === item)) return true;
+        return Array.isArray(equipment.bionicSlots) && equipment.bionicSlots.includes(item);
     }
 
     function renderChips() {
@@ -1771,7 +1828,7 @@ function openManageWiresWindow(item) {
                 if (selectedSlotIndex < 0) { logMessage('Select a wire slot first.'); return; }
                 const wire = item.rolledWires[selectedSlotIndex];
                 if (!canUseChipInSlot(chip, wire.color)) { logMessage('Chip color does not match this wire.'); return; }
-                if (isBlackChip(chip) && anyBlackChipEquipped() && !(wire.chip && isBlackChip(wire.chip))) { logMessage('Only one Black Chip may be equipped across all gear.'); return; }
+                if (isBlackChip(chip) && managedItemIsEquipped() && anyBlackChipEquipped() && !(wire.chip && isBlackChip(wire.chip))) { logMessage('Only one Black Chip may be equipped across all gear.'); return; }
                 // If slot already has chip, return it to inventory first
                 if (wire.chip) addItemToInventory(wire.chip);
                 // Remove this exact chip instance from inventory
@@ -1782,6 +1839,7 @@ function openManageWiresWindow(item) {
                 slotted.stackable = false;
                 wire.chip = slotted;
                 player.calculateStats();
+                recomputePlayerEffects();
                 updateInventoryDisplay();
                 updateEquipmentDisplay();
                 renderSlots();

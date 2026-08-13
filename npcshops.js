@@ -54,10 +54,7 @@ const npcs = [
             },
             { itemName: "Mod Pool Test Blade", price: 1, stock: 999, defaultStock: 999, levelReq: 1, developerOnly: true },
             { itemName: "Dual Pool Test Staff", price: 1, stock: 999, defaultStock: 999, levelReq: 1, developerOnly: true },
-            { itemName: "Wired Test Dagger", price: 1, stock: 999, defaultStock: 999, levelReq: 1, developerOnly: true },
-            { itemName: "Red Test Chip", price: 1, stock: 999, defaultStock: 999, levelReq: 1, developerOnly: true },
-            { itemName: "Critical Test Bionic", price: 1, stock: 999, defaultStock: 999, levelReq: 1, developerOnly: true },
-            { itemName: "Pyro Booster", price: 1, stock: 999, defaultStock: 999, levelReq: 1, developerOnly: true }
+            { itemName: "Wired Test Dagger", price: 1, stock: 999, defaultStock: 999, levelReq: 1, developerOnly: true }
         ]
     },
     // Nurse Jen's med-tech inventory was retired with the med-tech system.
