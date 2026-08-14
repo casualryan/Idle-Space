@@ -23,6 +23,8 @@ const COMBAT_DAMAGE_VFX_PRIORITY = Object.freeze([
 
 let combatVfxProjectiles = [];
 let combatVfxSlashes = [];
+let combatVfxImpacts = [];
+let combatVfxPressureWaves = [];
 let combatVfxParticles = [];
 let combatVfxShockwaves = [];
 let combatVfxAnimationFrame = null;
@@ -126,6 +128,15 @@ function pulseBladeTarget(targetOrId) {
     void card.offsetWidth;
     card.classList.add('blade-impact-hit');
     setTimeout(() => card.classList.remove('blade-impact-hit'), 280);
+}
+
+function pulseImpactTarget(targetOrId) {
+    const card = getCombatVfxTargetElement(targetOrId);
+    if (!card) return;
+    card.classList.remove('impact-strike-hit');
+    void card.offsetWidth;
+    card.classList.add('impact-strike-hit');
+    setTimeout(() => card.classList.remove('impact-strike-hit'), 320);
 }
 
 function buildBladeSlash(anchor, options = {}) {
@@ -256,8 +267,162 @@ function queueBladePropagationPresentation(sequence, complete) {
     return true;
 }
 
-const WEAPON_ATTACK_PRESENTERS = Object.freeze({ blades: queueBladePrimaryAttackPresentation });
-const WEAPON_PROPAGATION_PRESENTERS = Object.freeze({ blades: queueBladePropagationPresentation });
+function buildImpactFractures(center, radius, secondary, critical) {
+    const count = secondary ? 5 + Math.floor(Math.random() * 2) : 7 + Math.floor(Math.random() * 3);
+    const rotation = Math.random() * Math.PI * 2;
+    return Array.from({ length: count }, (_, index) => {
+        const angle = rotation + (index / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.24;
+        const perpendicularX = -Math.sin(angle);
+        const perpendicularY = Math.cos(angle);
+        const length = radius * (0.72 + Math.random() * 0.38);
+        const bend = (Math.random() - 0.5) * radius * 0.18;
+        const joint = {
+            x: center.x + Math.cos(angle) * length * 0.53 + perpendicularX * bend,
+            y: center.y + Math.sin(angle) * length * 0.53 + perpendicularY * bend
+        };
+        const end = {
+            x: center.x + Math.cos(angle) * length,
+            y: center.y + Math.sin(angle) * length
+        };
+        const branchDirection = angle + (index % 2 === 0 ? 1 : -1) * (0.34 + Math.random() * 0.24);
+        const branch = {
+            x: joint.x + Math.cos(branchDirection) * length * (0.2 + Math.random() * 0.17),
+            y: joint.y + Math.sin(branchDirection) * length * (0.2 + Math.random() * 0.17)
+        };
+        const extensionLength = critical ? length * (0.2 + Math.random() * 0.16) : 0;
+        return {
+            points: [center, joint, end],
+            branch: [joint, branch],
+            extension: [end, {
+                x: end.x + Math.cos(angle + (Math.random() - 0.5) * 0.18) * extensionLength,
+                y: end.y + Math.sin(angle + (Math.random() - 0.5) * 0.18) * extensionLength
+            }]
+        };
+    });
+}
+
+function buildImpactStrike(anchor, options = {}) {
+    const secondary = Boolean(options.secondary);
+    const scale = secondary ? 0.62 : 1;
+    const radius = Math.max(28, Math.min(anchor.width * 0.22, anchor.height * 0.34) * scale);
+    const center = {
+        x: anchor.x + (Math.random() - 0.5) * anchor.width * (secondary ? 0.05 : 0.08),
+        y: anchor.y + (Math.random() - 0.5) * anchor.height * (secondary ? 0.05 : 0.08)
+    };
+    const reducedMotion = Boolean(options.reducedMotion);
+    const critical = Boolean(options.critical);
+    return {
+        center,
+        radius,
+        palette: COMBAT_DAMAGE_VFX_PALETTE[options.damageType] || COMBAT_DAMAGE_VFX_PALETTE.kinetic,
+        fractures: buildImpactFractures(center, radius, secondary, critical),
+        critical,
+        secondary,
+        reducedMotion,
+        startedAt: performance.now() + Math.max(0, Number(options.delayMs) || 0),
+        durationMs: reducedMotion ? 210 : secondary ? 360 : 430,
+        aftershockDelayMs: reducedMotion ? 34 : 62,
+        impacted: false,
+        aftershocked: false,
+        onImpact: options.onImpact || null,
+        onFinish: options.onFinish || null
+    };
+}
+
+function queueImpactStrike(anchor, options = {}) {
+    combatVfxImpacts.push(buildImpactStrike(anchor, options));
+    ensureCombatVfxFrame();
+}
+
+function buildImpactPressureWave(origin, target, options = {}) {
+    const reducedMotion = Boolean(options.reducedMotion);
+    return {
+        start: { x: origin.x, y: origin.y },
+        end: { x: target.x, y: target.y },
+        palette: COMBAT_DAMAGE_VFX_PALETTE[options.damageType] || COMBAT_DAMAGE_VFX_PALETTE.kinetic,
+        secondary: true,
+        startedAt: performance.now() + Math.max(0, Number(options.delayMs) || 0),
+        durationMs: reducedMotion ? 72 : 108
+    };
+}
+
+function showImpactPropagationDamage(anchor, event, damageType) {
+    const layer = document.getElementById('propagation-effects-layer');
+    if (!layer) return;
+    const number = document.createElement('span');
+    number.className = `propagation-effect propagation-damage impact-propagation-damage${event.critical ? ' critical' : ''}`;
+    number.textContent = `-${Math.round(event.damage)}${event.critical ? '!' : ''}`;
+    number.style.left = `${anchor.x}px`;
+    number.style.top = `${anchor.y - 20}px`;
+    number.style.setProperty('--impact-damage-color', (COMBAT_DAMAGE_VFX_PALETTE[damageType] || COMBAT_DAMAGE_VFX_PALETTE.kinetic).glow);
+    layer.appendChild(number);
+    number.addEventListener('animationend', () => number.remove(), { once: true });
+}
+
+function queueImpactPrimaryAttackPresentation(attacker, target, damagePacket, context = {}) {
+    const surface = getCombatVfxSurface(!combatVfxAnimationFrame);
+    const anchor = surface ? getCombatVfxAnchor(target, surface) : null;
+    if (!surface || !anchor) return false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
+    queueImpactStrike(anchor, {
+        damageType: getDominantCombatDamageType(damagePacket),
+        critical: damagePacket.isCritical,
+        reducedMotion,
+        delayMs: Math.max(0, Number(context.hitIndex) || 0) * (reducedMotion ? 24 : 55),
+        onImpact: () => pulseImpactTarget(target)
+    });
+    return true;
+}
+
+function queueImpactPropagationPresentation(sequence, complete) {
+    const surface = getCombatVfxSurface(!combatVfxAnimationFrame);
+    if (!surface || !sequence?.events?.length) return false;
+    const anchors = sequence.snapshot?.anchors;
+    if (!anchors || sequence.events.some(event => !anchors[event.originId] || !anchors[event.targetId])) return false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
+    const damageType = sequence.dominantDamageType || 'kinetic';
+    const targetReadyAt = new Map([[sequence.primaryTargetId, 0]]);
+    let remainingEvents = sequence.events.length;
+    for (const event of sequence.events) {
+        const origin = anchors[event.originId];
+        const target = anchors[event.targetId];
+        const originReadyAt = targetReadyAt.get(event.originId) || 0;
+        const waveDelay = Math.max(
+            (reducedMotion ? 30 : 55) + event.index * (reducedMotion ? 20 : 38),
+            originReadyAt + (reducedMotion ? 30 : 55)
+        );
+        const wave = buildImpactPressureWave(origin, target, { damageType, reducedMotion, delayMs: waveDelay });
+        combatVfxPressureWaves.push(wave);
+        const impactDelay = waveDelay + wave.durationMs * 0.78;
+        targetReadyAt.set(event.targetId, impactDelay);
+        queueImpactStrike(target, {
+            damageType,
+            critical: event.critical,
+            secondary: true,
+            reducedMotion,
+            delayMs: impactDelay,
+            onImpact: () => {
+                pulseImpactTarget(event.targetId);
+                showImpactPropagationDamage(target, event, damageType);
+            },
+            onFinish: () => {
+                remainingEvents--;
+                if (remainingEvents === 0) complete();
+            }
+        });
+    }
+    ensureCombatVfxFrame();
+    return true;
+}
+
+const WEAPON_ATTACK_PRESENTERS = Object.freeze({
+    blades: queueBladePrimaryAttackPresentation,
+    impact: queueImpactPrimaryAttackPresentation
+});
+const WEAPON_PROPAGATION_PRESENTERS = Object.freeze({
+    blades: queueBladePropagationPresentation,
+    impact: queueImpactPropagationPresentation
+});
 
 function queuePlayerAttackPresentation(attacker, target, damagePacket, context = {}) {
     const family = getCombatVfxWeaponFamily(attacker);
@@ -489,6 +654,176 @@ function drawBladeSlash(context, slash, progress) {
     context.restore();
 }
 
+function traceImpactFracture(context, points, reveal) {
+    if (!Array.isArray(points) || points.length < 2 || reveal <= 0) return;
+    const scaled = clampCombatVfx(reveal) * (points.length - 1);
+    const fullSegments = Math.floor(scaled);
+    context.beginPath();
+    context.moveTo(points[0].x, points[0].y);
+    for (let index = 0; index < fullSegments; index++) {
+        context.lineTo(points[index + 1].x, points[index + 1].y);
+    }
+    if (fullSegments < points.length - 1) {
+        const fraction = scaled - fullSegments;
+        const start = points[fullSegments];
+        const end = points[fullSegments + 1];
+        context.lineTo(
+            start.x + (end.x - start.x) * fraction,
+            start.y + (end.y - start.y) * fraction
+        );
+    }
+}
+
+function spawnImpactStrikeParticles(impact, aftershock = false) {
+    const baseCount = impact.reducedMotion ? 5 : impact.secondary ? 10 : 18;
+    const particleCount = aftershock ? Math.ceil(baseCount * 0.55) : impact.critical ? baseCount + 5 : baseCount;
+    for (let index = 0; index < particleCount; index++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = (aftershock ? 45 : 70) + Math.random() * (impact.secondary ? 120 : 205);
+        const life = 0.2 + Math.random() * 0.34;
+        combatVfxParticles.push({
+            x: impact.center.x + Math.cos(angle) * Math.random() * impact.radius * 0.18,
+            y: impact.center.y + Math.sin(angle) * Math.random() * impact.radius * 0.18,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life,
+            maximumLife: life,
+            size: 1.5 + Math.random() * (impact.secondary ? 2.8 : 4.5),
+            color: index % 5 === 0 ? '#fffdf5' : index % 3 === 0 ? impact.palette.particle : impact.palette.glow,
+            drag: aftershock ? 0.88 : 0.92,
+            spin: angle + (Math.random() - 0.5) * 0.7
+        });
+    }
+}
+
+function drawImpactStrike(context, impact, progress, elapsedMs) {
+    const burstProgress = clampCombatVfx(progress / 0.24);
+    const ringProgress = 1 - Math.pow(1 - clampCombatVfx(progress / 0.46), 3);
+    const reveal = 1 - Math.pow(1 - clampCombatVfx(progress / 0.34), 2);
+    const fade = progress < 0.5 ? 1 : 1 - clampCombatVfx((progress - 0.5) / 0.5);
+    const flashAlpha = 1 - burstProgress;
+    const ringRadius = impact.radius * (0.18 + ringProgress * 0.98);
+
+    context.save();
+    context.globalCompositeOperation = 'lighter';
+
+    if (flashAlpha > 0) {
+        const flashRadius = impact.radius * (0.25 + burstProgress * 0.42);
+        const flash = context.createRadialGradient(
+            impact.center.x, impact.center.y, 0,
+            impact.center.x, impact.center.y, flashRadius
+        );
+        flash.addColorStop(0, '#ffffff');
+        flash.addColorStop(0.24, impact.palette.particle);
+        flash.addColorStop(0.62, impact.palette.glow);
+        flash.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        context.globalAlpha = flashAlpha;
+        context.fillStyle = flash;
+        context.beginPath();
+        context.arc(impact.center.x, impact.center.y, flashRadius, 0, Math.PI * 2);
+        context.fill();
+    }
+
+    context.globalAlpha = fade * 0.78;
+    context.strokeStyle = impact.palette.glow;
+    context.shadowColor = impact.palette.glow;
+    context.shadowBlur = impact.secondary ? 9 : 16;
+    context.lineWidth = impact.secondary ? 4 : impact.critical ? 7 : 6;
+    context.beginPath();
+    context.arc(impact.center.x, impact.center.y, ringRadius, 0, Math.PI * 2);
+    context.stroke();
+    context.globalAlpha = fade;
+    context.strokeStyle = '#fffdf5';
+    context.shadowBlur = impact.secondary ? 4 : 7;
+    context.lineWidth = impact.secondary ? 1.2 : 2;
+    context.stroke();
+
+    for (const fracture of impact.fractures) {
+        traceImpactFracture(context, fracture.points, reveal);
+        context.globalAlpha = fade * 0.72;
+        context.strokeStyle = impact.palette.accent;
+        context.shadowColor = impact.palette.glow;
+        context.shadowBlur = impact.secondary ? 5 : 9;
+        context.lineWidth = impact.secondary ? 3 : 5;
+        context.stroke();
+        traceImpactFracture(context, fracture.points, reveal);
+        context.globalAlpha = fade * 0.9;
+        context.strokeStyle = impact.palette.particle;
+        context.shadowBlur = impact.secondary ? 2 : 4;
+        context.lineWidth = impact.secondary ? 0.9 : 1.4;
+        context.stroke();
+        traceImpactFracture(context, fracture.branch, clampCombatVfx((reveal - 0.35) / 0.65));
+        context.globalAlpha = fade * 0.66;
+        context.strokeStyle = impact.palette.glow;
+        context.lineWidth = impact.secondary ? 1 : 1.6;
+        context.stroke();
+    }
+
+    if (impact.critical && elapsedMs >= impact.aftershockDelayMs) {
+        const aftershockProgress = clampCombatVfx((elapsedMs - impact.aftershockDelayMs) / (impact.secondary ? 190 : 230));
+        const aftershockEase = 1 - Math.pow(1 - aftershockProgress, 3);
+        const aftershockAlpha = 1 - aftershockProgress;
+        context.globalAlpha = aftershockAlpha * (impact.secondary ? 0.52 : 0.8);
+        context.strokeStyle = '#fffdf5';
+        context.shadowColor = impact.palette.glow;
+        context.shadowBlur = impact.secondary ? 8 : 15;
+        context.lineWidth = impact.secondary ? 2.2 : 3.6;
+        context.beginPath();
+        context.arc(
+            impact.center.x,
+            impact.center.y,
+            impact.radius * (0.12 + aftershockEase * 1.22),
+            0,
+            Math.PI * 2
+        );
+        context.stroke();
+        for (const fracture of impact.fractures) {
+            traceImpactFracture(context, fracture.extension, aftershockEase);
+            context.globalAlpha = aftershockAlpha * (impact.secondary ? 0.55 : 0.82);
+            context.strokeStyle = impact.palette.particle;
+            context.lineWidth = impact.secondary ? 0.9 : 1.5;
+            context.stroke();
+        }
+    }
+    context.restore();
+}
+
+function drawImpactPressureWave(context, wave, progress) {
+    const eased = 1 - Math.pow(1 - clampCombatVfx(progress), 2);
+    const x = wave.start.x + (wave.end.x - wave.start.x) * eased;
+    const y = wave.start.y + (wave.end.y - wave.start.y) * eased;
+    const angle = Math.atan2(wave.end.y - wave.start.y, wave.end.x - wave.start.x);
+    const alpha = Math.sin(Math.PI * clampCombatVfx(progress));
+    const size = 18 + eased * 16;
+
+    context.save();
+    context.translate(x, y);
+    context.rotate(angle);
+    context.globalCompositeOperation = 'lighter';
+    context.lineCap = 'round';
+    context.globalAlpha = alpha * 0.76;
+    context.strokeStyle = wave.palette.glow;
+    context.shadowColor = wave.palette.glow;
+    context.shadowBlur = 14;
+    context.lineWidth = 6;
+    context.beginPath();
+    context.ellipse(0, 0, size * 0.48, size, 0, -Math.PI / 2, Math.PI / 2);
+    context.stroke();
+    context.globalAlpha = alpha;
+    context.strokeStyle = '#fffdf5';
+    context.shadowBlur = 6;
+    context.lineWidth = 1.5;
+    context.stroke();
+    context.translate(-9, 0);
+    context.globalAlpha = alpha * 0.32;
+    context.strokeStyle = wave.palette.particle;
+    context.lineWidth = 2;
+    context.beginPath();
+    context.ellipse(0, 0, size * 0.36, size * 0.78, 0, -Math.PI / 2, Math.PI / 2);
+    context.stroke();
+    context.restore();
+}
+
 function drawCombatVfxParticles(context, deltaSeconds) {
     context.save();
     context.globalCompositeOperation = 'lighter';
@@ -562,6 +897,35 @@ function runCombatVfxFrame(timestamp) {
     });
 
     if (generation !== combatVfxGeneration) return;
+    combatVfxPressureWaves = combatVfxPressureWaves.filter(wave => {
+        if (timestamp < wave.startedAt) return true;
+        const progress = Math.min(1, (timestamp - wave.startedAt) / wave.durationMs);
+        drawImpactPressureWave(surface.context, wave, progress);
+        return progress < 1;
+    });
+
+    const impactCompletions = [];
+    combatVfxImpacts = combatVfxImpacts.filter(impact => {
+        if (timestamp < impact.startedAt) return true;
+        const elapsedMs = timestamp - impact.startedAt;
+        const progress = Math.min(1, elapsedMs / impact.durationMs);
+        drawImpactStrike(surface.context, impact, progress, elapsedMs);
+        if (!impact.impacted) {
+            impact.impacted = true;
+            spawnImpactStrikeParticles(impact);
+            impact.onImpact?.();
+        }
+        if (impact.critical && !impact.aftershocked && elapsedMs >= impact.aftershockDelayMs) {
+            impact.aftershocked = true;
+            spawnImpactStrikeParticles(impact, true);
+        }
+        if (progress < 1) return true;
+        if (impact.onFinish) impactCompletions.push(impact.onFinish);
+        return false;
+    });
+    impactCompletions.forEach(complete => complete());
+    if (generation !== combatVfxGeneration) return;
+
     const slashCompletions = [];
     combatVfxSlashes = combatVfxSlashes.filter(slash => {
         if (timestamp < slash.startedAt) return true;
@@ -580,7 +944,14 @@ function runCombatVfxFrame(timestamp) {
     if (generation !== combatVfxGeneration) return;
     drawCombatVfxParticles(surface.context, deltaSeconds);
     drawCombatVfxShockwaves(surface.context, deltaSeconds);
-    if (combatVfxProjectiles.length || combatVfxSlashes.length || combatVfxParticles.length || combatVfxShockwaves.length) {
+    if (
+        combatVfxProjectiles.length
+        || combatVfxSlashes.length
+        || combatVfxImpacts.length
+        || combatVfxPressureWaves.length
+        || combatVfxParticles.length
+        || combatVfxShockwaves.length
+    ) {
         combatVfxAnimationFrame = requestAnimationFrame(runCombatVfxFrame);
     } else {
         combatVfxAnimationFrame = null;
@@ -624,6 +995,8 @@ function cancelCombatVfx() {
     combatVfxLastFrame = 0;
     combatVfxProjectiles = [];
     combatVfxSlashes = [];
+    combatVfxImpacts = [];
+    combatVfxPressureWaves = [];
     combatVfxParticles = [];
     combatVfxShockwaves = [];
     combatVfxSurfaceCache = null;
@@ -631,8 +1004,10 @@ function cancelCombatVfx() {
     canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
     document.querySelectorAll('.enemy-assault-damage').forEach(element => element.remove());
     document.querySelectorAll('.blade-propagation-damage').forEach(element => element.remove());
+    document.querySelectorAll('.impact-propagation-damage').forEach(element => element.remove());
     document.getElementById('player-stats')?.classList.remove('enemy-assault-hit');
     document.querySelectorAll('.blade-impact-hit').forEach(element => element.classList.remove('blade-impact-hit'));
+    document.querySelectorAll('.impact-strike-hit').forEach(element => element.classList.remove('impact-strike-hit'));
 }
 
 window.queueEnemyAttackPresentation = queueEnemyAttackPresentation;

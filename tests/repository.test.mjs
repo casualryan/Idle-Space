@@ -2220,8 +2220,8 @@ test('Blade attacks use constrained damage-colored slash VFX through the weapon 
   const propagation = read('propagation.js');
   const ui = read('combatUI.js');
   const styles = read('style.css');
-  assert.match(vfx, /const WEAPON_ATTACK_PRESENTERS = Object\.freeze\(\{ blades: queueBladePrimaryAttackPresentation \}\)/);
-  assert.match(vfx, /const WEAPON_PROPAGATION_PRESENTERS = Object\.freeze\(\{ blades: queueBladePropagationPresentation \}\)/);
+  assert.match(vfx, /const WEAPON_ATTACK_PRESENTERS = Object\.freeze\(\{[\s\S]*blades: queueBladePrimaryAttackPresentation/);
+  assert.match(vfx, /const WEAPON_PROPAGATION_PRESENTERS = Object\.freeze\(\{[\s\S]*blades: queueBladePropagationPresentation/);
   assert.match(vfx, /function queuePlayerAttackPresentation\(attacker, target, damagePacket, context = \{\}\)/);
   assert.match(vfx, /angleMagnitude = 0\.48 \+ Math\.random\(\) \* 0\.18/);
   assert.match(vfx, /curvature = \(Math\.random\(\) - 0\.5\) \* length \* 0\.1/);
@@ -2232,6 +2232,23 @@ test('Blade attacks use constrained damage-colored slash VFX through the weapon 
   assert.match(propagation, /dominantDamageType: getDominantPropagationDamageType\(primaryPacket\)/);
   assert.match(styles, /\.enemy-combat-card\.blade-impact-hit\s*\{[^}]*animation:\s*blade-impact-card-hit/s);
   assert.match(styles, /\.blade-propagation-damage:not\(\.critical\)/);
+});
+
+test('Impact attacks fracture cards and propagate through directional aftershock VFX', () => {
+  const vfx = read('combatVFX.js');
+  const styles = read('style.css');
+  assert.match(vfx, /impact: queueImpactPrimaryAttackPresentation/);
+  assert.match(vfx, /impact: queueImpactPropagationPresentation/);
+  assert.match(vfx, /function buildImpactFractures\(center, radius, secondary, critical\)/);
+  assert.match(vfx, /7 \+ Math\.floor\(Math\.random\(\) \* 3\)/);
+  assert.match(vfx, /aftershockDelayMs: reducedMotion \? 34 : 62/);
+  assert.match(vfx, /function drawImpactPressureWave\(context, wave, progress\)/);
+  assert.match(vfx, /context\.ellipse\(0, 0, size \* 0\.48, size, 0, -Math\.PI \/ 2, Math\.PI \/ 2\)/);
+  assert.match(vfx, /const targetReadyAt = new Map\(\[\[sequence\.primaryTargetId, 0\]\]\)/);
+  assert.match(vfx, /originReadyAt \+ \(reducedMotion \? 30 : 55\)/);
+  assert.match(vfx, /spawnImpactStrikeParticles\(impact, true\)/);
+  assert.match(styles, /\.enemy-combat-card\.impact-strike-hit\s*\{[^}]*animation:\s*impact-strike-card-hit/s);
+  assert.match(styles, /\.impact-propagation-damage:not\(\.critical\)/);
 });
 
 test('delve deployment grid expands without an internal scrollbar', () => {
