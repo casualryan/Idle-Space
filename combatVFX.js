@@ -13,14 +13,20 @@ let combatVfxShockwaves = [];
 let combatVfxAnimationFrame = null;
 let combatVfxLastFrame = 0;
 let combatVfxGeneration = 0;
+let combatVfxSurfaceCache = null;
 
-function getCombatVfxSurface() {
+function getCombatVfxSurface(refresh = false) {
     const canvas = document.getElementById('combat-vfx-canvas');
     const stage = document.getElementById('delve-combat-stage');
     if (!canvas || !stage || stage.classList.contains('hidden')) return null;
+    if (!refresh && combatVfxSurfaceCache?.canvas === canvas && combatVfxSurfaceCache.stage === stage) {
+        return combatVfxSurfaceCache;
+    }
     const bounds = stage.getBoundingClientRect();
     if (bounds.width <= 0 || bounds.height <= 0) return null;
-    const ratio = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    const nativeRatio = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    const pixelBudgetRatio = Math.sqrt(3200000 / (bounds.width * bounds.height));
+    const ratio = Math.max(0.85, Math.min(nativeRatio, pixelBudgetRatio));
     const width = Math.max(1, Math.round(bounds.width * ratio));
     const height = Math.max(1, Math.round(bounds.height * ratio));
     if (canvas.width !== width || canvas.height !== height) {
@@ -30,7 +36,8 @@ function getCombatVfxSurface() {
     const context = canvas.getContext('2d');
     if (!context) return null;
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    return { canvas, stage, bounds, context, width: bounds.width, height: bounds.height };
+    combatVfxSurfaceCache = { canvas, stage, bounds, context, width: bounds.width, height: bounds.height };
+    return combatVfxSurfaceCache;
 }
 
 function getCombatVfxAnchor(entity, surface) {
@@ -194,8 +201,6 @@ function drawCombatVfxParticles(context, deltaSeconds) {
         context.rotate(particle.spin);
         context.globalAlpha = alpha;
         context.fillStyle = particle.color;
-        context.shadowColor = particle.color;
-        context.shadowBlur = particle.size * 2.5;
         context.fillRect(-particle.size * 1.5, -particle.size / 2, particle.size * 3, particle.size);
         context.restore();
         return true;
@@ -260,11 +265,12 @@ function runCombatVfxFrame(timestamp) {
         combatVfxAnimationFrame = null;
         combatVfxLastFrame = 0;
         surface.context.clearRect(0, 0, surface.width, surface.height);
+        combatVfxSurfaceCache = null;
     }
 }
 
 function queueEnemyAttackPresentation(attacker, target, damagePacket) {
-    const surface = getCombatVfxSurface();
+    const surface = getCombatVfxSurface(!combatVfxAnimationFrame);
     const start = surface ? getCombatVfxAnchor(attacker, surface) : null;
     const end = surface ? getCombatVfxAnchor(target, surface) : null;
     if (!surface || !start || !end) return false;
@@ -301,6 +307,7 @@ function cancelCombatVfx() {
     combatVfxProjectiles = [];
     combatVfxParticles = [];
     combatVfxShockwaves = [];
+    combatVfxSurfaceCache = null;
     const canvas = document.getElementById('combat-vfx-canvas');
     canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
     document.querySelectorAll('.enemy-assault-damage').forEach(element => element.remove());
