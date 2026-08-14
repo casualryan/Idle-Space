@@ -25,6 +25,7 @@ let combatVfxProjectiles = [];
 let combatVfxSlashes = [];
 let combatVfxImpacts = [];
 let combatVfxPressureWaves = [];
+let combatVfxSidearmShots = [];
 let combatVfxParticles = [];
 let combatVfxShockwaves = [];
 let combatVfxAnimationFrame = null;
@@ -137,6 +138,15 @@ function pulseImpactTarget(targetOrId) {
     void card.offsetWidth;
     card.classList.add('impact-strike-hit');
     setTimeout(() => card.classList.remove('impact-strike-hit'), 320);
+}
+
+function pulseSidearmTarget(targetOrId) {
+    const card = getCombatVfxTargetElement(targetOrId);
+    if (!card) return;
+    card.classList.remove('sidearm-shot-hit');
+    void card.offsetWidth;
+    card.classList.add('sidearm-shot-hit');
+    setTimeout(() => card.classList.remove('sidearm-shot-hit'), 240);
 }
 
 function buildBladeSlash(anchor, options = {}) {
@@ -415,13 +425,116 @@ function queueImpactPropagationPresentation(sequence, complete) {
     return true;
 }
 
+function buildSidearmShot(origin, target, options = {}) {
+    const secondary = Boolean(options.secondary);
+    const reducedMotion = Boolean(options.reducedMotion);
+    const start = {
+        x: origin.x + (Math.random() - 0.5) * origin.width * 0.055,
+        y: origin.y + origin.height * 0.18 + (Math.random() - 0.5) * origin.height * 0.045
+    };
+    const end = {
+        x: target.x + (Math.random() - 0.5) * target.width * (secondary ? 0.055 : 0.075),
+        y: target.y + (Math.random() - 0.5) * target.height * (secondary ? 0.055 : 0.075)
+    };
+    const distance = Math.max(1, Math.hypot(end.x - start.x, end.y - start.y));
+    const normalX = -(end.y - start.y) / distance;
+    const normalY = (end.x - start.x) / distance;
+    const bend = (Math.random() - 0.5) * Math.min(18, distance * 0.035);
+    return {
+        start,
+        end,
+        control: {
+            x: (start.x + end.x) / 2 + normalX * bend,
+            y: (start.y + end.y) / 2 + normalY * bend
+        },
+        palette: COMBAT_DAMAGE_VFX_PALETTE[options.damageType] || COMBAT_DAMAGE_VFX_PALETTE.kinetic,
+        critical: Boolean(options.critical),
+        secondary,
+        reducedMotion,
+        sparkRotation: Math.random() * Math.PI * 2,
+        startedAt: performance.now() + Math.max(0, Number(options.delayMs) || 0),
+        durationMs: reducedMotion ? 125 : secondary ? 235 : 255,
+        flightPortion: reducedMotion ? 0.62 : secondary ? 0.48 : 0.5,
+        fired: false,
+        impacted: false,
+        onImpact: options.onImpact || null,
+        onFinish: options.onFinish || null
+    };
+}
+
+function queueSidearmShot(origin, target, options = {}) {
+    combatVfxSidearmShots.push(buildSidearmShot(origin, target, options));
+    ensureCombatVfxFrame();
+}
+
+function showSidearmPropagationDamage(anchor, event, damageType) {
+    const layer = document.getElementById('propagation-effects-layer');
+    if (!layer) return;
+    const number = document.createElement('span');
+    number.className = `propagation-effect propagation-damage sidearm-propagation-damage${event.critical ? ' critical' : ''}`;
+    number.textContent = `-${Math.round(event.damage)}${event.critical ? '!' : ''}`;
+    number.style.left = `${anchor.x}px`;
+    number.style.top = `${anchor.y - 20}px`;
+    number.style.setProperty('--sidearm-damage-color', (COMBAT_DAMAGE_VFX_PALETTE[damageType] || COMBAT_DAMAGE_VFX_PALETTE.kinetic).glow);
+    layer.appendChild(number);
+    number.addEventListener('animationend', () => number.remove(), { once: true });
+}
+
+function queueSidearmPrimaryAttackPresentation(attacker, target, damagePacket, context = {}) {
+    const surface = getCombatVfxSurface(!combatVfxAnimationFrame);
+    const origin = surface ? getCombatVfxAnchor(attacker, surface) : null;
+    const anchor = surface ? getCombatVfxAnchor(target, surface) : null;
+    if (!surface || !origin || !anchor) return false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
+    queueSidearmShot(origin, anchor, {
+        damageType: getDominantCombatDamageType(damagePacket),
+        critical: damagePacket.isCritical,
+        reducedMotion,
+        delayMs: Math.max(0, Number(context.hitIndex) || 0) * (reducedMotion ? 28 : 62),
+        onImpact: () => pulseSidearmTarget(target)
+    });
+    return true;
+}
+
+function queueSidearmPropagationPresentation(sequence, complete) {
+    const surface = getCombatVfxSurface(!combatVfxAnimationFrame);
+    if (!surface || !sequence?.events?.length) return false;
+    const anchors = sequence.snapshot?.anchors;
+    if (!anchors || sequence.events.some(event => !anchors[event.originId] || !anchors[event.targetId])) return false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
+    const damageType = sequence.dominantDamageType || 'kinetic';
+    let remainingEvents = sequence.events.length;
+    for (const event of sequence.events) {
+        const origin = anchors[event.originId];
+        const target = anchors[event.targetId];
+        queueSidearmShot(origin, target, {
+            damageType,
+            critical: event.critical,
+            secondary: true,
+            reducedMotion,
+            delayMs: (reducedMotion ? 38 : 72) + event.index * (reducedMotion ? 34 : 68),
+            onImpact: () => {
+                pulseSidearmTarget(event.targetId);
+                showSidearmPropagationDamage(target, event, damageType);
+            },
+            onFinish: () => {
+                remainingEvents--;
+                if (remainingEvents === 0) complete();
+            }
+        });
+    }
+    return true;
+}
+
 const WEAPON_ATTACK_PRESENTERS = Object.freeze({
     blades: queueBladePrimaryAttackPresentation,
-    impact: queueImpactPrimaryAttackPresentation
+    impact: queueImpactPrimaryAttackPresentation,
+    sidearms: queueSidearmPrimaryAttackPresentation
 });
 const WEAPON_PROPAGATION_PRESENTERS = Object.freeze({
     blades: queueBladePropagationPresentation,
-    impact: queueImpactPropagationPresentation
+    impact: queueImpactPropagationPresentation,
+    sidearms: queueSidearmPropagationPresentation
 });
 
 function queuePlayerAttackPresentation(attacker, target, damagePacket, context = {}) {
@@ -824,6 +937,183 @@ function drawImpactPressureWave(context, wave, progress) {
     context.restore();
 }
 
+function traceSidearmShotPath(context, shot, startProgress, endProgress) {
+    const start = clampCombatVfx(startProgress);
+    const end = clampCombatVfx(endProgress);
+    if (end <= start) return;
+    context.beginPath();
+    for (let index = 0; index <= 10; index++) {
+        const progress = start + (end - start) * (index / 10);
+        const point = quadraticCombatVfxPoint(shot, progress);
+        if (index === 0) context.moveTo(point.x, point.y);
+        else context.lineTo(point.x, point.y);
+    }
+}
+
+function spawnSidearmMuzzleParticles(shot) {
+    const tangent = quadraticCombatVfxTangent(shot, 0);
+    const length = Math.max(1, Math.hypot(tangent.x, tangent.y));
+    const directionX = tangent.x / length;
+    const directionY = tangent.y / length;
+    const normalX = -directionY;
+    const normalY = directionX;
+    const count = shot.reducedMotion ? 3 : shot.secondary ? 5 : 8;
+    for (let index = 0; index < count; index++) {
+        const spread = (Math.random() - 0.5) * (shot.secondary ? 0.5 : 0.68);
+        const speed = 55 + Math.random() * (shot.secondary ? 95 : 140);
+        const life = 0.1 + Math.random() * 0.16;
+        combatVfxParticles.push({
+            x: shot.start.x + directionX * 5,
+            y: shot.start.y + directionY * 5,
+            vx: directionX * speed + normalX * spread * speed,
+            vy: directionY * speed + normalY * spread * speed,
+            life,
+            maximumLife: life,
+            size: 0.8 + Math.random() * (shot.secondary ? 1.6 : 2.4),
+            color: index % 3 === 0 ? '#fffdf5' : index % 2 ? shot.palette.particle : shot.palette.glow,
+            drag: 0.86,
+            spin: Math.atan2(directionY, directionX) + spread
+        });
+    }
+}
+
+function spawnSidearmImpactParticles(shot) {
+    const count = shot.reducedMotion ? 5 : shot.secondary ? 11 : shot.critical ? 24 : 17;
+    for (let index = 0; index < count; index++) {
+        const angle = shot.sparkRotation + (index / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.35;
+        const speed = 65 + Math.random() * (shot.secondary ? 115 : shot.critical ? 245 : 180);
+        const life = 0.16 + Math.random() * 0.28;
+        combatVfxParticles.push({
+            x: shot.end.x,
+            y: shot.end.y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life,
+            maximumLife: life,
+            size: 1 + Math.random() * (shot.secondary ? 2.2 : shot.critical ? 4 : 3),
+            color: index % 4 === 0 ? '#fffdf5' : index % 3 === 0 ? shot.palette.particle : shot.palette.glow,
+            drag: 0.9,
+            spin: angle
+        });
+    }
+}
+
+function drawSidearmMuzzleFlash(context, shot, progress) {
+    const flashProgress = clampCombatVfx(progress / 0.2);
+    if (flashProgress >= 1) return;
+    const tangent = quadraticCombatVfxTangent(shot, 0);
+    const angle = Math.atan2(tangent.y, tangent.x);
+    const scale = shot.secondary ? 0.72 : 1;
+    const alpha = 1 - flashProgress;
+    context.save();
+    context.translate(shot.start.x, shot.start.y);
+    context.rotate(angle);
+    context.globalCompositeOperation = 'lighter';
+    context.globalAlpha = alpha * 0.7;
+    context.fillStyle = shot.palette.glow;
+    context.shadowColor = shot.palette.glow;
+    context.shadowBlur = 13 * scale;
+    context.beginPath();
+    context.moveTo(-4 * scale, 0);
+    context.lineTo((30 + flashProgress * 10) * scale, -8 * scale);
+    context.lineTo(19 * scale, 0);
+    context.lineTo((30 + flashProgress * 10) * scale, 8 * scale);
+    context.closePath();
+    context.fill();
+    context.globalAlpha = alpha;
+    context.fillStyle = '#fffdf5';
+    context.shadowColor = shot.palette.particle;
+    context.shadowBlur = 7 * scale;
+    context.beginPath();
+    context.ellipse(7 * scale, 0, 11 * scale, 3 * scale, 0, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
+}
+
+function drawSidearmImpactBloom(context, shot, impactProgress) {
+    if (impactProgress <= 0) return;
+    const scale = shot.secondary ? 0.72 : 1;
+    const eased = 1 - Math.pow(1 - clampCombatVfx(impactProgress), 3);
+    const alpha = 1 - clampCombatVfx(impactProgress);
+    const radius = (shot.critical ? 31 : 23) * scale * (0.3 + eased * 0.9);
+    context.save();
+    context.translate(shot.end.x, shot.end.y);
+    context.rotate(shot.sparkRotation);
+    context.globalCompositeOperation = 'lighter';
+    context.globalAlpha = alpha * 0.82;
+    context.strokeStyle = shot.palette.glow;
+    context.shadowColor = shot.palette.glow;
+    context.shadowBlur = 13 * scale;
+    context.lineWidth = (shot.critical ? 4 : 3) * scale;
+    context.beginPath();
+    context.arc(0, 0, radius, 0, Math.PI * 2);
+    context.stroke();
+    context.globalAlpha = alpha;
+    context.strokeStyle = '#fffdf5';
+    context.shadowColor = shot.palette.particle;
+    context.shadowBlur = 6 * scale;
+    context.lineWidth = 1.4 * scale;
+    for (let index = 0; index < (shot.critical ? 8 : 6); index++) {
+        const angle = (index / (shot.critical ? 8 : 6)) * Math.PI * 2;
+        const inner = radius * 0.25;
+        const outer = radius * (0.78 + (index % 2) * 0.28);
+        context.beginPath();
+        context.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+        context.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
+        context.stroke();
+    }
+    context.restore();
+}
+
+function drawSidearmShot(context, shot, progress) {
+    const flightProgress = clampCombatVfx(progress / shot.flightPortion);
+    const impactProgress = clampCombatVfx((progress - shot.flightPortion) / (1 - shot.flightPortion));
+    const trailFade = impactProgress > 0 ? 1 - impactProgress : 1;
+    const trailStart = clampCombatVfx(flightProgress - (shot.secondary ? 0.28 : 0.34) + impactProgress * 0.48);
+    const tip = quadraticCombatVfxPoint(shot, flightProgress);
+    const tangent = quadraticCombatVfxTangent(shot, flightProgress);
+    const angle = Math.atan2(tangent.y, tangent.x);
+    const scale = shot.secondary ? 0.72 : 1;
+
+    drawSidearmMuzzleFlash(context, shot, progress);
+    context.save();
+    context.globalCompositeOperation = 'lighter';
+    context.lineCap = 'round';
+    traceSidearmShotPath(context, shot, trailStart, flightProgress);
+    context.globalAlpha = trailFade * 0.26;
+    context.strokeStyle = shot.palette.accent;
+    context.shadowColor = shot.palette.glow;
+    context.shadowBlur = 13 * scale;
+    context.lineWidth = 9 * scale;
+    context.stroke();
+    traceSidearmShotPath(context, shot, trailStart, flightProgress);
+    context.globalAlpha = trailFade * 0.72;
+    context.strokeStyle = shot.palette.glow;
+    context.shadowBlur = 8 * scale;
+    context.lineWidth = 4.2 * scale;
+    context.stroke();
+    traceSidearmShotPath(context, shot, Math.max(trailStart, flightProgress - 0.18), flightProgress);
+    context.globalAlpha = trailFade;
+    context.strokeStyle = '#fffdf5';
+    context.shadowColor = shot.palette.particle;
+    context.shadowBlur = 5 * scale;
+    context.lineWidth = 1.35 * scale;
+    context.stroke();
+    if (impactProgress === 0) {
+        context.translate(tip.x, tip.y);
+        context.rotate(angle);
+        context.globalAlpha = 1;
+        context.fillStyle = '#fffdf5';
+        context.shadowColor = shot.palette.glow;
+        context.shadowBlur = 12 * scale;
+        context.beginPath();
+        context.ellipse(0, 0, (shot.critical ? 14 : 10) * scale, 2.6 * scale, 0, 0, Math.PI * 2);
+        context.fill();
+    }
+    context.restore();
+    drawSidearmImpactBloom(context, shot, impactProgress);
+}
+
 function drawCombatVfxParticles(context, deltaSeconds) {
     context.save();
     context.globalCompositeOperation = 'lighter';
@@ -897,6 +1187,27 @@ function runCombatVfxFrame(timestamp) {
     });
 
     if (generation !== combatVfxGeneration) return;
+    const sidearmCompletions = [];
+    combatVfxSidearmShots = combatVfxSidearmShots.filter(shot => {
+        if (timestamp < shot.startedAt) return true;
+        const progress = Math.min(1, (timestamp - shot.startedAt) / shot.durationMs);
+        if (!shot.fired) {
+            shot.fired = true;
+            spawnSidearmMuzzleParticles(shot);
+        }
+        drawSidearmShot(surface.context, shot, progress);
+        if (!shot.impacted && progress >= shot.flightPortion) {
+            shot.impacted = true;
+            spawnSidearmImpactParticles(shot);
+            shot.onImpact?.();
+        }
+        if (progress < 1) return true;
+        if (shot.onFinish) sidearmCompletions.push(shot.onFinish);
+        return false;
+    });
+    sidearmCompletions.forEach(complete => complete());
+    if (generation !== combatVfxGeneration) return;
+
     combatVfxPressureWaves = combatVfxPressureWaves.filter(wave => {
         if (timestamp < wave.startedAt) return true;
         const progress = Math.min(1, (timestamp - wave.startedAt) / wave.durationMs);
@@ -949,6 +1260,7 @@ function runCombatVfxFrame(timestamp) {
         || combatVfxSlashes.length
         || combatVfxImpacts.length
         || combatVfxPressureWaves.length
+        || combatVfxSidearmShots.length
         || combatVfxParticles.length
         || combatVfxShockwaves.length
     ) {
@@ -997,6 +1309,7 @@ function cancelCombatVfx() {
     combatVfxSlashes = [];
     combatVfxImpacts = [];
     combatVfxPressureWaves = [];
+    combatVfxSidearmShots = [];
     combatVfxParticles = [];
     combatVfxShockwaves = [];
     combatVfxSurfaceCache = null;
@@ -1005,9 +1318,11 @@ function cancelCombatVfx() {
     document.querySelectorAll('.enemy-assault-damage').forEach(element => element.remove());
     document.querySelectorAll('.blade-propagation-damage').forEach(element => element.remove());
     document.querySelectorAll('.impact-propagation-damage').forEach(element => element.remove());
+    document.querySelectorAll('.sidearm-propagation-damage').forEach(element => element.remove());
     document.getElementById('player-stats')?.classList.remove('enemy-assault-hit');
     document.querySelectorAll('.blade-impact-hit').forEach(element => element.classList.remove('blade-impact-hit'));
     document.querySelectorAll('.impact-strike-hit').forEach(element => element.classList.remove('impact-strike-hit'));
+    document.querySelectorAll('.sidearm-shot-hit').forEach(element => element.classList.remove('sidearm-shot-hit'));
 }
 
 window.queueEnemyAttackPresentation = queueEnemyAttackPresentation;

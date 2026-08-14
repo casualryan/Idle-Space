@@ -2251,6 +2251,23 @@ test('Impact attacks fracture cards and propagate through directional aftershock
   assert.match(styles, /\.impact-propagation-damage:not\(\.critical\)/);
 });
 
+test('Sidearm attacks fire damage-colored projectile streams with smaller Barrage shots', () => {
+  const vfx = read('combatVFX.js');
+  const styles = read('style.css');
+  assert.match(vfx, /sidearms: queueSidearmPrimaryAttackPresentation/);
+  assert.match(vfx, /sidearms: queueSidearmPropagationPresentation/);
+  assert.match(vfx, /function buildSidearmShot\(origin, target, options = \{\}\)/);
+  assert.match(vfx, /durationMs: reducedMotion \? 125 : secondary \? 235 : 255/);
+  assert.match(vfx, /flightPortion: reducedMotion \? 0\.62 : secondary \? 0\.48 : 0\.5/);
+  assert.match(vfx, /function drawSidearmMuzzleFlash\(context, shot, progress\)/);
+  assert.match(vfx, /function drawSidearmImpactBloom\(context, shot, impactProgress\)/);
+  assert.match(vfx, /event\.index \* \(reducedMotion \? 34 : 68\)/);
+  assert.match(vfx, /spawnSidearmMuzzleParticles\(shot\)/);
+  assert.match(vfx, /spawnSidearmImpactParticles\(shot\)/);
+  assert.match(styles, /\.enemy-combat-card\.sidearm-shot-hit\s*\{[^}]*animation:\s*sidearm-shot-card-hit/s);
+  assert.match(styles, /\.sidearm-propagation-damage:not\(\.critical\)/);
+});
+
 test('delve deployment grid expands without an internal scrollbar', () => {
   const ui = read('delveUI.js');
   const styles = read('style.css');
