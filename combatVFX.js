@@ -26,6 +26,10 @@ let combatVfxSlashes = [];
 let combatVfxImpacts = [];
 let combatVfxPressureWaves = [];
 let combatVfxSidearmShots = [];
+let combatVfxRifleRounds = [];
+let combatVfxOrdnanceEffects = [];
+let combatVfxProjectorBeams = [];
+let combatVfxConduitEffects = [];
 let combatVfxParticles = [];
 let combatVfxShockwaves = [];
 let combatVfxAnimationFrame = null;
@@ -147,6 +151,15 @@ function pulseSidearmTarget(targetOrId) {
     void card.offsetWidth;
     card.classList.add('sidearm-shot-hit');
     setTimeout(() => card.classList.remove('sidearm-shot-hit'), 240);
+}
+
+function pulseWeaponTarget(targetOrId, className, durationMs) {
+    const card = getCombatVfxTargetElement(targetOrId);
+    if (!card) return;
+    card.classList.remove(className);
+    void card.offsetWidth;
+    card.classList.add(className);
+    setTimeout(() => card.classList.remove(className), durationMs);
 }
 
 function buildBladeSlash(anchor, options = {}) {
@@ -526,15 +539,360 @@ function queueSidearmPropagationPresentation(sequence, complete) {
     return true;
 }
 
+function showWeaponPropagationDamage(anchor, event, damageType, family) {
+    const layer = document.getElementById('propagation-effects-layer');
+    if (!layer) return;
+    const number = document.createElement('span');
+    number.className = `propagation-effect propagation-damage ${family}-propagation-damage${event.critical ? ' critical' : ''}`;
+    number.textContent = `-${Math.round(event.damage)}${event.critical ? '!' : ''}`;
+    number.style.left = `${anchor.x}px`;
+    number.style.top = `${anchor.y - 20}px`;
+    number.style.setProperty('--weapon-damage-color', (COMBAT_DAMAGE_VFX_PALETTE[damageType] || COMBAT_DAMAGE_VFX_PALETTE.kinetic).glow);
+    layer.appendChild(number);
+    number.addEventListener('animationend', () => number.remove(), { once: true });
+}
+
+function buildRifleRound(origin, target, options = {}) {
+    const secondary = Boolean(options.secondary);
+    const reducedMotion = Boolean(options.reducedMotion);
+    const start = {
+        x: origin.x + (Math.random() - 0.5) * origin.width * 0.035,
+        y: origin.y + (origin.height || 0) * (options.fromPlayer ? 0.16 : 0) + (Math.random() - 0.5) * origin.height * 0.035
+    };
+    const end = {
+        x: target.x + (Math.random() - 0.5) * target.width * 0.045,
+        y: target.y + (Math.random() - 0.5) * target.height * 0.045
+    };
+    const distance = Math.max(1, Math.hypot(end.x - start.x, end.y - start.y));
+    const normalX = -(end.y - start.y) / distance;
+    const normalY = (end.x - start.x) / distance;
+    const bend = (Math.random() - 0.5) * Math.min(12, distance * 0.022);
+    return {
+        start,
+        end,
+        control: {
+            x: (start.x + end.x) / 2 + normalX * bend,
+            y: (start.y + end.y) / 2 + normalY * bend
+        },
+        palette: COMBAT_DAMAGE_VFX_PALETTE[options.damageType] || COMBAT_DAMAGE_VFX_PALETTE.kinetic,
+        critical: Boolean(options.critical),
+        secondary,
+        reducedMotion,
+        shockRotation: Math.random() * Math.PI * 2,
+        startedAt: performance.now() + Math.max(0, Number(options.delayMs) || 0),
+        durationMs: reducedMotion ? 145 : secondary ? 205 : 310,
+        flightPortion: reducedMotion ? 0.62 : secondary ? 0.44 : 0.48,
+        fired: false,
+        impacted: false,
+        onImpact: options.onImpact || null,
+        onFinish: options.onFinish || null
+    };
+}
+
+function queueRifleRound(origin, target, options = {}) {
+    combatVfxRifleRounds.push(buildRifleRound(origin, target, options));
+    ensureCombatVfxFrame();
+}
+
+function queueRiflePrimaryAttackPresentation(attacker, target, damagePacket, context = {}) {
+    const surface = getCombatVfxSurface(!combatVfxAnimationFrame);
+    const origin = surface ? getCombatVfxAnchor(attacker, surface) : null;
+    const anchor = surface ? getCombatVfxAnchor(target, surface) : null;
+    if (!surface || !origin || !anchor) return false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
+    queueRifleRound(origin, anchor, {
+        damageType: getDominantCombatDamageType(damagePacket),
+        critical: damagePacket.isCritical,
+        fromPlayer: true,
+        reducedMotion,
+        delayMs: Math.max(0, Number(context.hitIndex) || 0) * (reducedMotion ? 32 : 72),
+        onImpact: () => pulseWeaponTarget(target, 'rifle-round-hit', 300)
+    });
+    return true;
+}
+
+function queueRiflePropagationPresentation(sequence, complete) {
+    const surface = getCombatVfxSurface(!combatVfxAnimationFrame);
+    if (!surface || !sequence?.events?.length) return false;
+    const anchors = sequence.snapshot?.anchors;
+    if (!anchors || sequence.events.some(event => !anchors[event.originId] || !anchors[event.targetId])) return false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
+    const damageType = sequence.dominantDamageType || 'kinetic';
+    let remainingEvents = sequence.events.length;
+    for (const event of sequence.events) {
+        const origin = anchors[event.originId];
+        const target = anchors[event.targetId];
+        queueRifleRound(origin, target, {
+            damageType,
+            critical: event.critical,
+            secondary: true,
+            reducedMotion,
+            delayMs: (reducedMotion ? 95 : 155) + event.index * (reducedMotion ? 60 : 88),
+            onImpact: () => {
+                pulseWeaponTarget(event.targetId, 'rifle-round-hit', 300);
+                showWeaponPropagationDamage(target, event, damageType, 'rifle');
+            },
+            onFinish: () => {
+                remainingEvents--;
+                if (remainingEvents === 0) complete();
+            }
+        });
+    }
+    return true;
+}
+
+function buildOrdnanceEffect(origin, target, options = {}) {
+    const shrapnel = Boolean(options.shrapnel);
+    const reducedMotion = Boolean(options.reducedMotion);
+    const start = { x: origin.x, y: origin.y + (shrapnel ? 0 : origin.height * 0.13) };
+    const end = {
+        x: target.x + (Math.random() - 0.5) * target.width * (shrapnel ? 0.06 : 0.04),
+        y: target.y + (Math.random() - 0.5) * target.height * (shrapnel ? 0.06 : 0.04)
+    };
+    const distance = Math.max(1, Math.hypot(end.x - start.x, end.y - start.y));
+    const direction = Math.random() < 0.5 ? -1 : 1;
+    return {
+        start,
+        end,
+        control: shrapnel
+            ? {
+                x: (start.x + end.x) / 2 + direction * Math.min(16, distance * 0.04),
+                y: (start.y + end.y) / 2 - 8
+            }
+            : {
+                x: (start.x + end.x) / 2 + direction * Math.min(52, distance * 0.08),
+                y: Math.min(start.y, end.y) - Math.min(165, 78 + distance * 0.12)
+            },
+        palette: COMBAT_DAMAGE_VFX_PALETTE[options.damageType] || COMBAT_DAMAGE_VFX_PALETTE.kinetic,
+        critical: Boolean(options.critical),
+        shrapnel,
+        reducedMotion,
+        spin: Math.random() * Math.PI * 2,
+        startedAt: performance.now() + Math.max(0, Number(options.delayMs) || 0),
+        durationMs: reducedMotion ? 175 : shrapnel ? 220 : 520,
+        flightPortion: reducedMotion ? 0.64 : shrapnel ? 0.48 : 0.63,
+        fired: false,
+        impacted: false,
+        aftershocked: false,
+        onImpact: options.onImpact || null,
+        onFinish: options.onFinish || null
+    };
+}
+
+function queueOrdnanceEffect(origin, target, options = {}) {
+    combatVfxOrdnanceEffects.push(buildOrdnanceEffect(origin, target, options));
+    ensureCombatVfxFrame();
+}
+
+function queueOrdnancePrimaryAttackPresentation(attacker, target, damagePacket, context = {}) {
+    const surface = getCombatVfxSurface(!combatVfxAnimationFrame);
+    const origin = surface ? getCombatVfxAnchor(attacker, surface) : null;
+    const anchor = surface ? getCombatVfxAnchor(target, surface) : null;
+    if (!surface || !origin || !anchor) return false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
+    queueOrdnanceEffect(origin, anchor, {
+        damageType: getDominantCombatDamageType(damagePacket),
+        critical: damagePacket.isCritical,
+        reducedMotion,
+        delayMs: Math.max(0, Number(context.hitIndex) || 0) * (reducedMotion ? 38 : 90),
+        onImpact: () => pulseWeaponTarget(target, 'ordnance-blast-hit', 390)
+    });
+    return true;
+}
+
+function queueOrdnancePropagationPresentation(sequence, complete) {
+    const surface = getCombatVfxSurface(!combatVfxAnimationFrame);
+    if (!surface || !sequence?.events?.length) return false;
+    const anchors = sequence.snapshot?.anchors;
+    if (!anchors || sequence.events.some(event => !anchors[event.originId] || !anchors[event.targetId])) return false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
+    const damageType = sequence.dominantDamageType || 'kinetic';
+    let remainingEvents = sequence.events.length;
+    for (const event of sequence.events) {
+        const origin = anchors[event.originId];
+        const target = anchors[event.targetId];
+        queueOrdnanceEffect(origin, target, {
+            damageType,
+            critical: event.critical,
+            shrapnel: true,
+            reducedMotion,
+            delayMs: (reducedMotion ? 120 : 355) + event.index * (reducedMotion ? 8 : 14),
+            onImpact: () => {
+                pulseWeaponTarget(event.targetId, 'ordnance-shrapnel-hit', 270);
+                showWeaponPropagationDamage(target, event, damageType, 'ordnance');
+            },
+            onFinish: () => {
+                remainingEvents--;
+                if (remainingEvents === 0) complete();
+            }
+        });
+    }
+    return true;
+}
+
+function buildProjectorBeam(origin, target, options = {}) {
+    const secondary = Boolean(options.secondary);
+    const reducedMotion = Boolean(options.reducedMotion);
+    return {
+        start: {
+            x: origin.x + (Math.random() - 0.5) * origin.width * 0.025,
+            y: origin.y + origin.height * 0.15
+        },
+        end: {
+            x: target.x + (Math.random() - 0.5) * target.width * 0.035,
+            y: target.y + (Math.random() - 0.5) * target.height * 0.035
+        },
+        palette: COMBAT_DAMAGE_VFX_PALETTE[options.damageType] || COMBAT_DAMAGE_VFX_PALETTE.kinetic,
+        critical: Boolean(options.critical),
+        secondary,
+        reducedMotion,
+        phase: Math.random() * Math.PI * 2,
+        startedAt: performance.now() + Math.max(0, Number(options.delayMs) || 0),
+        durationMs: reducedMotion ? 145 : secondary ? 215 : 305,
+        strikeProgress: reducedMotion ? 0.18 : 0.13,
+        fired: false,
+        struck: false,
+        onStrike: options.onStrike || null,
+        onFinish: options.onFinish || null
+    };
+}
+
+function queueProjectorBeam(origin, target, options = {}) {
+    combatVfxProjectorBeams.push(buildProjectorBeam(origin, target, options));
+    ensureCombatVfxFrame();
+}
+
+function queueProjectorPrimaryAttackPresentation(attacker, target, damagePacket, context = {}) {
+    const surface = getCombatVfxSurface(!combatVfxAnimationFrame);
+    const origin = surface ? getCombatVfxAnchor(attacker, surface) : null;
+    const anchor = surface ? getCombatVfxAnchor(target, surface) : null;
+    if (!surface || !origin || !anchor) return false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
+    queueProjectorBeam(origin, anchor, {
+        damageType: getDominantCombatDamageType(damagePacket),
+        critical: damagePacket.isCritical,
+        reducedMotion,
+        delayMs: Math.max(0, Number(context.hitIndex) || 0) * (reducedMotion ? 32 : 78),
+        onStrike: () => pulseWeaponTarget(target, 'projector-beam-hit', 330)
+    });
+    return true;
+}
+
+function queueProjectorPropagationPresentation(sequence, complete) {
+    const surface = getCombatVfxSurface(!combatVfxAnimationFrame);
+    if (!surface || !sequence?.events?.length) return false;
+    const anchors = sequence.snapshot?.anchors;
+    if (!anchors || sequence.events.some(event => !anchors[event.originId] || !anchors[event.targetId])) return false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
+    const damageType = sequence.dominantDamageType || 'kinetic';
+    let remainingEvents = sequence.events.length;
+    for (const event of sequence.events) {
+        const origin = anchors[event.originId];
+        const target = anchors[event.targetId];
+        queueProjectorBeam(origin, target, {
+            damageType,
+            critical: event.critical,
+            secondary: true,
+            reducedMotion,
+            delayMs: (reducedMotion ? 42 : 115) + event.index * (reducedMotion ? 40 : 82),
+            onStrike: () => {
+                pulseWeaponTarget(event.targetId, 'projector-beam-hit', 330);
+                showWeaponPropagationDamage(target, event, damageType, 'projector');
+            },
+            onFinish: () => {
+                remainingEvents--;
+                if (remainingEvents === 0) complete();
+            }
+        });
+    }
+    return true;
+}
+
+function buildConduitEffect(origin, targets, options = {}) {
+    const reducedMotion = Boolean(options.reducedMotion);
+    const nova = Boolean(options.nova);
+    return {
+        origin,
+        targets: targets.map((target, index) => ({ ...target, phase: Math.random() * Math.PI * 2 + index * 0.7 })),
+        palette: COMBAT_DAMAGE_VFX_PALETTE[options.damageType] || COMBAT_DAMAGE_VFX_PALETTE.kinetic,
+        critical: Boolean(options.critical),
+        nova,
+        reducedMotion,
+        phase: Math.random() * Math.PI * 2,
+        startedAt: performance.now() + Math.max(0, Number(options.delayMs) || 0),
+        durationMs: reducedMotion ? 210 : nova ? 390 : 455,
+        burstProgress: reducedMotion ? 0.34 : nova ? 0.36 : 0.42,
+        gathered: false,
+        burst: false,
+        onBurst: options.onBurst || null,
+        onFinish: options.onFinish || null
+    };
+}
+
+function queueConduitEffect(origin, targets, options = {}) {
+    combatVfxConduitEffects.push(buildConduitEffect(origin, targets, options));
+    ensureCombatVfxFrame();
+}
+
+function queueConduitPrimaryAttackPresentation(attacker, target, damagePacket, context = {}) {
+    const surface = getCombatVfxSurface(!combatVfxAnimationFrame);
+    const origin = surface ? getCombatVfxAnchor(attacker, surface) : null;
+    const anchor = surface ? getCombatVfxAnchor(target, surface) : null;
+    if (!surface || !origin || !anchor) return false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
+    queueConduitEffect(origin, [{ anchor, critical: damagePacket.isCritical }], {
+        damageType: getDominantCombatDamageType(damagePacket),
+        critical: damagePacket.isCritical,
+        reducedMotion,
+        delayMs: Math.max(0, Number(context.hitIndex) || 0) * (reducedMotion ? 34 : 82),
+        onBurst: () => pulseWeaponTarget(target, 'conduit-sigil-hit', 360)
+    });
+    return true;
+}
+
+function queueConduitPropagationPresentation(sequence, complete) {
+    const surface = getCombatVfxSurface(!combatVfxAnimationFrame);
+    if (!surface || !sequence?.events?.length) return false;
+    const anchors = sequence.snapshot?.anchors;
+    const origin = anchors?.[sequence.primaryTargetId];
+    if (!origin || sequence.events.some(event => !anchors[event.targetId])) return false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
+    const damageType = sequence.dominantDamageType || 'kinetic';
+    const targets = sequence.events.map(event => ({ anchor: anchors[event.targetId], event }));
+    queueConduitEffect(origin, targets, {
+        damageType,
+        critical: sequence.events.some(event => event.critical),
+        nova: true,
+        reducedMotion,
+        delayMs: reducedMotion ? 70 : 105,
+        onBurst: () => {
+            for (const { anchor, event } of targets) {
+                pulseWeaponTarget(event.targetId, 'conduit-sigil-hit', 360);
+                showWeaponPropagationDamage(anchor, event, damageType, 'conduit');
+            }
+        },
+        onFinish: complete
+    });
+    return true;
+}
+
 const WEAPON_ATTACK_PRESENTERS = Object.freeze({
     blades: queueBladePrimaryAttackPresentation,
     impact: queueImpactPrimaryAttackPresentation,
-    sidearms: queueSidearmPrimaryAttackPresentation
+    sidearms: queueSidearmPrimaryAttackPresentation,
+    rifles: queueRiflePrimaryAttackPresentation,
+    projectors: queueProjectorPrimaryAttackPresentation,
+    ordnance: queueOrdnancePrimaryAttackPresentation,
+    conduits: queueConduitPrimaryAttackPresentation
 });
 const WEAPON_PROPAGATION_PRESENTERS = Object.freeze({
     blades: queueBladePropagationPresentation,
     impact: queueImpactPropagationPresentation,
-    sidearms: queueSidearmPropagationPresentation
+    sidearms: queueSidearmPropagationPresentation,
+    rifles: queueRiflePropagationPresentation,
+    projectors: queueProjectorPropagationPresentation,
+    ordnance: queueOrdnancePropagationPresentation,
+    conduits: queueConduitPropagationPresentation
 });
 
 function queuePlayerAttackPresentation(attacker, target, damagePacket, context = {}) {
@@ -1114,6 +1472,562 @@ function drawSidearmShot(context, shot, progress) {
     drawSidearmImpactBloom(context, shot, impactProgress);
 }
 
+function spawnWeaponBurst(point, palette, options = {}) {
+    const count = Math.max(0, Math.floor(Number(options.count) || 0));
+    for (let index = 0; index < count; index++) {
+        const angle = Number.isFinite(options.direction)
+            ? options.direction + (Math.random() - 0.5) * Number(options.spread || 0.7)
+            : Math.random() * Math.PI * 2;
+        const speed = Number(options.speedMin || 50) + Math.random() * Number(options.speedRange || 140);
+        const life = Number(options.lifeMin || 0.16) + Math.random() * Number(options.lifeRange || 0.3);
+        combatVfxParticles.push({
+            x: point.x,
+            y: point.y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life,
+            maximumLife: life,
+            size: Number(options.sizeMin || 1) + Math.random() * Number(options.sizeRange || 3),
+            color: index % 5 === 0 ? '#fffdf5' : index % 3 === 0 ? palette.particle : palette.glow,
+            drag: Number(options.drag || 0.9),
+            spin: angle
+        });
+    }
+}
+
+function spawnRifleMuzzle(round) {
+    const tangent = quadraticCombatVfxTangent(round, 0);
+    const direction = Math.atan2(tangent.y, tangent.x);
+    spawnWeaponBurst(round.start, round.palette, {
+        count: round.reducedMotion ? 4 : round.secondary ? 7 : 13,
+        direction,
+        spread: round.secondary ? 0.42 : 0.58,
+        speedMin: 75,
+        speedRange: round.secondary ? 125 : 190,
+        lifeMin: 0.12,
+        lifeRange: 0.2,
+        sizeMin: 1,
+        sizeRange: round.secondary ? 2.2 : 3.5,
+        drag: 0.87
+    });
+}
+
+function spawnRifleImpact(round) {
+    spawnWeaponBurst(round.end, round.palette, {
+        count: round.reducedMotion ? 6 : round.secondary ? 16 : round.critical ? 34 : 25,
+        speedMin: 85,
+        speedRange: round.secondary ? 170 : round.critical ? 300 : 235,
+        lifeMin: 0.2,
+        lifeRange: 0.36,
+        sizeMin: 1.4,
+        sizeRange: round.secondary ? 3 : round.critical ? 5.5 : 4.2,
+        drag: 0.92
+    });
+}
+
+function drawRifleRound(context, round, progress) {
+    const flightProgress = clampCombatVfx(progress / round.flightPortion);
+    const impactProgress = clampCombatVfx((progress - round.flightPortion) / (1 - round.flightPortion));
+    const trailFade = impactProgress > 0 ? 1 - impactProgress : 1;
+    const trailStart = clampCombatVfx(flightProgress - (round.secondary ? 0.34 : 0.42) + impactProgress * 0.55);
+    const point = quadraticCombatVfxPoint(round, flightProgress);
+    const tangent = quadraticCombatVfxTangent(round, flightProgress);
+    const angle = Math.atan2(tangent.y, tangent.x);
+    const scale = round.secondary ? 0.82 : 1;
+
+    context.save();
+    context.globalCompositeOperation = 'lighter';
+    context.lineCap = 'round';
+    if (progress < 0.18) {
+        const muzzleAlpha = 1 - progress / 0.18;
+        context.save();
+        context.translate(round.start.x, round.start.y);
+        context.rotate(Math.atan2(round.end.y - round.start.y, round.end.x - round.start.x));
+        context.globalAlpha = muzzleAlpha * 0.82;
+        context.fillStyle = round.palette.glow;
+        context.shadowColor = round.palette.glow;
+        context.shadowBlur = 19 * scale;
+        context.beginPath();
+        context.moveTo(-7 * scale, 0);
+        context.lineTo(42 * scale, -11 * scale);
+        context.lineTo(28 * scale, 0);
+        context.lineTo(42 * scale, 11 * scale);
+        context.closePath();
+        context.fill();
+        context.globalAlpha = muzzleAlpha;
+        context.fillStyle = '#fffdf5';
+        context.beginPath();
+        context.ellipse(10 * scale, 0, 17 * scale, 4.5 * scale, 0, 0, Math.PI * 2);
+        context.fill();
+        context.restore();
+    }
+    traceSidearmShotPath(context, round, trailStart, flightProgress);
+    context.globalAlpha = trailFade * 0.34;
+    context.strokeStyle = round.palette.accent;
+    context.shadowColor = round.palette.glow;
+    context.shadowBlur = 20 * scale;
+    context.lineWidth = 17 * scale;
+    context.stroke();
+    traceSidearmShotPath(context, round, trailStart, flightProgress);
+    context.globalAlpha = trailFade * 0.8;
+    context.strokeStyle = round.palette.glow;
+    context.shadowBlur = 12 * scale;
+    context.lineWidth = 7.5 * scale;
+    context.stroke();
+    traceSidearmShotPath(context, round, Math.max(trailStart, flightProgress - 0.22), flightProgress);
+    context.globalAlpha = trailFade;
+    context.strokeStyle = '#fffdf5';
+    context.shadowColor = round.palette.particle;
+    context.shadowBlur = 7 * scale;
+    context.lineWidth = 2.4 * scale;
+    context.stroke();
+    if (impactProgress === 0) {
+        context.translate(point.x, point.y);
+        context.rotate(angle);
+        context.fillStyle = '#fffdf5';
+        context.shadowColor = round.palette.glow;
+        context.shadowBlur = 18 * scale;
+        context.globalAlpha = 1;
+        context.beginPath();
+        context.ellipse(0, 0, (round.critical ? 23 : 18) * scale, 5.5 * scale, 0, 0, Math.PI * 2);
+        context.fill();
+        for (let index = 0; index < 2; index++) {
+            context.globalAlpha = 0.56 - index * 0.18;
+            context.strokeStyle = round.palette.particle;
+            context.lineWidth = 1.7 * scale;
+            context.beginPath();
+            context.ellipse((-18 - index * 13) * scale, 0, (8 + index * 3) * scale, (13 + index * 4) * scale, 0, -Math.PI / 2, Math.PI / 2);
+            context.stroke();
+        }
+    }
+    context.restore();
+
+    if (impactProgress > 0) {
+        const eased = 1 - Math.pow(1 - impactProgress, 3);
+        const alpha = 1 - impactProgress;
+        const radius = (round.secondary ? 30 : round.critical ? 54 : 43) * (0.2 + eased);
+        context.save();
+        context.translate(round.end.x, round.end.y);
+        context.rotate(round.shockRotation);
+        context.globalCompositeOperation = 'lighter';
+        context.globalAlpha = alpha * 0.78;
+        context.strokeStyle = round.palette.glow;
+        context.shadowColor = round.palette.glow;
+        context.shadowBlur = round.secondary ? 12 : 21;
+        context.lineWidth = round.secondary ? 3.5 : 6;
+        context.beginPath();
+        context.arc(0, 0, radius, 0, Math.PI * 2);
+        context.stroke();
+        context.globalAlpha = alpha;
+        context.strokeStyle = '#fffdf5';
+        context.lineWidth = round.secondary ? 1.1 : 2;
+        context.beginPath();
+        context.arc(0, 0, radius * 0.72, 0, Math.PI * 2);
+        context.stroke();
+        if (round.critical) {
+            context.globalAlpha = alpha * 0.7;
+            context.beginPath();
+            context.arc(0, 0, radius * 1.24, 0, Math.PI * 2);
+            context.stroke();
+        }
+        context.restore();
+    }
+}
+
+function spawnOrdnanceMuzzle(effect) {
+    const tangent = quadraticCombatVfxTangent(effect, 0);
+    spawnWeaponBurst(effect.start, effect.palette, {
+        count: effect.reducedMotion ? 4 : 16,
+        direction: Math.atan2(tangent.y, tangent.x),
+        spread: 0.75,
+        speedMin: 55,
+        speedRange: 180,
+        lifeMin: 0.16,
+        lifeRange: 0.32,
+        sizeMin: 1.5,
+        sizeRange: 4.5,
+        drag: 0.88
+    });
+}
+
+function spawnOrdnanceImpact(effect, aftershock = false) {
+    const count = effect.reducedMotion ? 7 : effect.shrapnel ? 14 : aftershock ? 18 : effect.critical ? 46 : 36;
+    spawnWeaponBurst(effect.end, effect.palette, {
+        count,
+        speedMin: aftershock ? 60 : 80,
+        speedRange: effect.shrapnel ? 175 : aftershock ? 200 : effect.critical ? 330 : 275,
+        lifeMin: 0.24,
+        lifeRange: effect.shrapnel ? 0.3 : 0.5,
+        sizeMin: effect.shrapnel ? 1.2 : 2,
+        sizeRange: effect.shrapnel ? 3 : effect.critical ? 7 : 5.5,
+        drag: aftershock ? 0.89 : 0.93
+    });
+}
+
+function drawOrdnanceEffect(context, effect, progress) {
+    const flightProgress = clampCombatVfx(progress / effect.flightPortion);
+    const impactProgress = clampCombatVfx((progress - effect.flightPortion) / (1 - effect.flightPortion));
+    const point = quadraticCombatVfxPoint(effect, flightProgress);
+    const tangent = quadraticCombatVfxTangent(effect, flightProgress);
+    const angle = Math.atan2(tangent.y, tangent.x);
+    const scale = effect.shrapnel ? 0.58 : 1;
+    const trailStart = clampCombatVfx(flightProgress - (effect.shrapnel ? 0.32 : 0.18));
+
+    context.save();
+    context.globalCompositeOperation = 'lighter';
+    context.lineCap = 'round';
+    if (!effect.shrapnel && progress < 0.14) {
+        const alpha = 1 - progress / 0.14;
+        context.save();
+        context.translate(effect.start.x, effect.start.y);
+        context.rotate(Math.atan2(effect.end.y - effect.start.y, effect.end.x - effect.start.x));
+        context.globalAlpha = alpha * 0.72;
+        context.fillStyle = effect.palette.glow;
+        context.shadowColor = effect.palette.glow;
+        context.shadowBlur = 23;
+        context.beginPath();
+        context.ellipse(5, 0, 33, 13, 0, 0, Math.PI * 2);
+        context.fill();
+        context.globalAlpha = alpha;
+        context.fillStyle = '#fffdf5';
+        context.beginPath();
+        context.ellipse(9, 0, 15, 4, 0, 0, Math.PI * 2);
+        context.fill();
+        context.restore();
+    }
+    if (impactProgress === 0) {
+        traceSidearmShotPath(context, effect, trailStart, flightProgress);
+        context.globalAlpha = effect.shrapnel ? 0.72 : 0.46;
+        context.strokeStyle = effect.palette.glow;
+        context.shadowColor = effect.palette.glow;
+        context.shadowBlur = effect.shrapnel ? 8 : 14;
+        context.lineWidth = effect.shrapnel ? 4 : 7;
+        context.stroke();
+        traceSidearmShotPath(context, effect, Math.max(trailStart, flightProgress - 0.09), flightProgress);
+        context.globalAlpha = 0.95;
+        context.strokeStyle = '#fffdf5';
+        context.lineWidth = effect.shrapnel ? 1.2 : 1.8;
+        context.stroke();
+        context.translate(point.x, point.y);
+        context.rotate(angle + effect.spin + flightProgress * (effect.shrapnel ? 4 : 10));
+        context.fillStyle = effect.palette.accent;
+        context.shadowColor = effect.palette.glow;
+        context.shadowBlur = effect.shrapnel ? 8 : 17;
+        context.beginPath();
+        if (effect.shrapnel) {
+            context.moveTo(10 * scale, 0);
+            context.lineTo(-7 * scale, -3 * scale);
+            context.lineTo(-4 * scale, 4 * scale);
+            context.closePath();
+        } else {
+            context.roundRect(-15, -9, 30, 18, 6);
+        }
+        context.fill();
+        context.strokeStyle = '#fffdf5';
+        context.lineWidth = effect.shrapnel ? 1 : 2;
+        context.stroke();
+    }
+    context.restore();
+
+    if (impactProgress > 0) {
+        const eased = 1 - Math.pow(1 - impactProgress, 3);
+        const alpha = 1 - impactProgress;
+        const baseRadius = effect.shrapnel ? 28 : effect.critical ? 82 : 68;
+        const radius = baseRadius * (0.16 + eased);
+        context.save();
+        context.translate(effect.end.x, effect.end.y);
+        context.globalCompositeOperation = 'lighter';
+        const glow = context.createRadialGradient(0, 0, 0, 0, 0, radius);
+        glow.addColorStop(0, '#ffffff');
+        glow.addColorStop(0.2, effect.palette.particle);
+        glow.addColorStop(0.58, effect.palette.glow);
+        glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        context.globalAlpha = alpha * (effect.shrapnel ? 0.7 : 0.9);
+        context.fillStyle = glow;
+        context.beginPath();
+        context.arc(0, 0, radius, 0, Math.PI * 2);
+        context.fill();
+        context.globalAlpha = alpha;
+        context.strokeStyle = '#fffdf5';
+        context.shadowColor = effect.palette.glow;
+        context.shadowBlur = effect.shrapnel ? 9 : 21;
+        context.lineWidth = effect.shrapnel ? 1.5 : 3.5;
+        context.beginPath();
+        context.arc(0, 0, radius * 0.76, 0, Math.PI * 2);
+        context.stroke();
+        if (effect.critical && !effect.shrapnel && impactProgress > 0.3) {
+            const aftershock = clampCombatVfx((impactProgress - 0.3) / 0.7);
+            context.globalAlpha = (1 - aftershock) * 0.88;
+            context.lineWidth = 3;
+            context.beginPath();
+            context.arc(0, 0, 18 + aftershock * 92, 0, Math.PI * 2);
+            context.stroke();
+        }
+        context.restore();
+    }
+}
+
+function traceProjectorBeamPath(context, beam, reveal, offset, phase) {
+    const deltaX = beam.end.x - beam.start.x;
+    const deltaY = beam.end.y - beam.start.y;
+    const distance = Math.max(1, Math.hypot(deltaX, deltaY));
+    const normalX = -deltaY / distance;
+    const normalY = deltaX / distance;
+    context.beginPath();
+    for (let index = 0; index <= 18; index++) {
+        const progress = reveal * (index / 18);
+        const envelope = Math.sin(Math.PI * progress);
+        const ripple = Math.sin(progress * Math.PI * 7 + phase) * offset * envelope;
+        const x = beam.start.x + deltaX * progress + normalX * ripple;
+        const y = beam.start.y + deltaY * progress + normalY * ripple;
+        if (index === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+    }
+}
+
+function spawnProjectorDischarge(beam, impact = false) {
+    const point = impact ? beam.end : beam.start;
+    const direction = Math.atan2(beam.end.y - beam.start.y, beam.end.x - beam.start.x) + (impact ? Math.PI : 0);
+    spawnWeaponBurst(point, beam.palette, {
+        count: beam.reducedMotion ? 4 : beam.secondary ? 8 : beam.critical ? 21 : 15,
+        direction,
+        spread: impact ? 1.7 : 0.72,
+        speedMin: 45,
+        speedRange: impact ? 185 : 135,
+        lifeMin: 0.15,
+        lifeRange: 0.28,
+        sizeMin: 1,
+        sizeRange: beam.secondary ? 2.4 : 3.8,
+        drag: 0.89
+    });
+}
+
+function drawProjectorBeam(context, beam, progress) {
+    const revealProgress = clampCombatVfx(progress / (beam.reducedMotion ? 0.24 : 0.16));
+    const reveal = 1 - Math.pow(1 - revealProgress, 3);
+    const collapse = progress < 0.68 ? 0 : clampCombatVfx((progress - 0.68) / 0.32);
+    const alpha = progress < 0.12 ? progress / 0.12 : 1 - collapse;
+    const scale = beam.secondary ? 0.68 : 1;
+    const flicker = 0.92 + Math.sin(progress * 82 + beam.phase) * 0.08;
+    const endpoint = {
+        x: beam.start.x + (beam.end.x - beam.start.x) * reveal,
+        y: beam.start.y + (beam.end.y - beam.start.y) * reveal
+    };
+
+    context.save();
+    context.globalCompositeOperation = 'lighter';
+    context.lineCap = 'round';
+    context.translate(beam.start.x, beam.start.y);
+    context.rotate(Math.atan2(beam.end.y - beam.start.y, beam.end.x - beam.start.x));
+    context.globalAlpha = alpha * 0.75;
+    context.strokeStyle = beam.palette.glow;
+    context.shadowColor = beam.palette.glow;
+    context.shadowBlur = 17 * scale;
+    context.lineWidth = 4 * scale;
+    context.beginPath();
+    context.arc(0, 0, (15 + revealProgress * 7) * scale, 0, Math.PI * 2);
+    context.stroke();
+    context.globalAlpha = alpha;
+    context.fillStyle = '#fffdf5';
+    context.shadowColor = beam.palette.particle;
+    context.shadowBlur = 9 * scale;
+    context.beginPath();
+    context.ellipse(8 * scale, 0, 11 * scale, 3.4 * scale, 0, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
+
+    context.save();
+    context.globalCompositeOperation = 'lighter';
+    context.lineCap = 'round';
+    traceProjectorBeamPath(context, beam, reveal, 0, beam.phase);
+    context.globalAlpha = alpha * 0.28 * flicker;
+    context.strokeStyle = beam.palette.accent;
+    context.shadowColor = beam.palette.glow;
+    context.shadowBlur = 24 * scale;
+    context.lineWidth = (beam.critical ? 25 : 20) * scale;
+    context.stroke();
+    traceProjectorBeamPath(context, beam, reveal, 0, beam.phase);
+    context.globalAlpha = alpha * 0.78 * flicker;
+    context.strokeStyle = beam.palette.glow;
+    context.shadowBlur = 16 * scale;
+    context.lineWidth = (beam.critical ? 12 : 9) * scale;
+    context.stroke();
+    for (const [offset, phaseOffset] of [[5.5, 0], [-5.5, Math.PI]]) {
+        traceProjectorBeamPath(context, beam, reveal, offset * scale, beam.phase + phaseOffset + progress * 20);
+        context.globalAlpha = alpha * 0.52;
+        context.strokeStyle = beam.palette.particle;
+        context.shadowBlur = 7 * scale;
+        context.lineWidth = 1.3 * scale;
+        context.stroke();
+    }
+    traceProjectorBeamPath(context, beam, reveal, 0, beam.phase);
+    context.globalAlpha = alpha;
+    context.strokeStyle = '#fffdf5';
+    context.shadowColor = beam.palette.particle;
+    context.shadowBlur = 10 * scale;
+    context.lineWidth = (beam.critical ? 4.2 : 3) * scale;
+    context.stroke();
+    context.restore();
+
+    if (reveal > 0.72) {
+        const feed = clampCombatVfx((reveal - 0.72) / 0.28);
+        const radius = (beam.secondary ? 24 : beam.critical ? 48 : 38) * (0.55 + Math.sin(progress * 55) * 0.08);
+        context.save();
+        context.translate(endpoint.x, endpoint.y);
+        context.globalCompositeOperation = 'lighter';
+        const glow = context.createRadialGradient(0, 0, 0, 0, 0, radius);
+        glow.addColorStop(0, '#ffffff');
+        glow.addColorStop(0.25, beam.palette.particle);
+        glow.addColorStop(0.62, beam.palette.glow);
+        glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        context.globalAlpha = alpha * feed;
+        context.fillStyle = glow;
+        context.beginPath();
+        context.arc(0, 0, radius, 0, Math.PI * 2);
+        context.fill();
+        context.globalAlpha = alpha * 0.86;
+        context.strokeStyle = '#fffdf5';
+        context.shadowColor = beam.palette.glow;
+        context.shadowBlur = 12 * scale;
+        context.lineWidth = 1.7 * scale;
+        context.beginPath();
+        context.arc(0, 0, radius * 0.72, 0, Math.PI * 2);
+        context.stroke();
+        if (beam.critical && collapse > 0) {
+            context.globalAlpha = (1 - collapse) * 0.9;
+            context.lineWidth = 3 * scale;
+            context.beginPath();
+            context.arc(0, 0, radius * (0.45 + collapse * 1.7), 0, Math.PI * 2);
+            context.stroke();
+        }
+        context.restore();
+    }
+}
+
+function drawConduitSigil(context, target, effect, progress, alphaMultiplier = 1) {
+    const critical = Boolean(target.critical ?? target.event?.critical ?? effect.critical);
+    const preBurst = progress < effect.burstProgress;
+    const charge = clampCombatVfx(progress / effect.burstProgress);
+    const release = clampCombatVfx((progress - effect.burstProgress) / (1 - effect.burstProgress));
+    const scale = preBurst ? 0.55 + charge * 0.45 : 1 + release * (critical ? 1.45 : 1.05);
+    const alpha = preBurst ? Math.min(1, charge * 1.7) : 1 - release;
+    const radius = (effect.nova ? 34 : critical ? 48 : 41) * scale;
+    const rotation = effect.phase + target.phase + progress * (critical ? 5.5 : 4.2);
+    context.save();
+    context.translate(target.anchor.x, target.anchor.y);
+    context.rotate(rotation);
+    context.globalCompositeOperation = 'lighter';
+    context.globalAlpha = alpha * alphaMultiplier * 0.72;
+    context.strokeStyle = effect.palette.glow;
+    context.shadowColor = effect.palette.glow;
+    context.shadowBlur = effect.nova ? 12 : 18;
+    context.lineWidth = effect.nova ? 2.2 : 3.2;
+    context.beginPath();
+    context.arc(0, 0, radius, 0, Math.PI * 2);
+    context.stroke();
+    context.rotate(-rotation * 1.7);
+    context.globalAlpha = alpha * alphaMultiplier;
+    context.strokeStyle = '#fffdf5';
+    context.shadowColor = effect.palette.particle;
+    context.shadowBlur = 8;
+    context.lineWidth = critical ? 2.1 : 1.4;
+    context.beginPath();
+    context.arc(0, 0, radius * 0.68, 0, Math.PI * 2);
+    context.stroke();
+    const spokeCount = critical ? 10 : 8;
+    for (let index = 0; index < spokeCount; index++) {
+        const angle = (index / spokeCount) * Math.PI * 2;
+        context.beginPath();
+        context.moveTo(Math.cos(angle) * radius * 0.3, Math.sin(angle) * radius * 0.3);
+        context.lineTo(Math.cos(angle) * radius * (index % 2 ? 0.62 : 0.88), Math.sin(angle) * radius * (index % 2 ? 0.62 : 0.88));
+        context.stroke();
+    }
+    if (critical) {
+        context.rotate(rotation * 2.4);
+        context.globalAlpha = alpha * alphaMultiplier * 0.62;
+        context.strokeStyle = effect.palette.particle;
+        context.beginPath();
+        context.arc(0, 0, radius * 1.18, 0, Math.PI * 2);
+        context.stroke();
+    }
+    context.restore();
+}
+
+function spawnConduitBurst(effect) {
+    for (const target of effect.targets) {
+        spawnWeaponBurst(target.anchor, effect.palette, {
+            count: effect.reducedMotion ? 5 : effect.nova ? 12 : effect.critical ? 28 : 20,
+            speedMin: 45,
+            speedRange: effect.nova ? 155 : effect.critical ? 245 : 195,
+            lifeMin: 0.22,
+            lifeRange: 0.38,
+            sizeMin: 1,
+            sizeRange: effect.nova ? 3 : 4.5,
+            drag: 0.9
+        });
+    }
+}
+
+function drawConduitEffect(context, effect, progress) {
+    const charge = clampCombatVfx(progress / effect.burstProgress);
+    const release = clampCombatVfx((progress - effect.burstProgress) / (1 - effect.burstProgress));
+    context.save();
+    context.globalCompositeOperation = 'lighter';
+
+    if (!effect.nova) {
+        const originRadius = 46 - charge * 24;
+        context.globalAlpha = (1 - release) * Math.min(1, charge * 1.8) * 0.75;
+        context.strokeStyle = effect.palette.glow;
+        context.shadowColor = effect.palette.glow;
+        context.shadowBlur = 17;
+        context.lineWidth = 3;
+        context.beginPath();
+        context.arc(effect.origin.x, effect.origin.y, originRadius, effect.phase, effect.phase + Math.PI * 1.55);
+        context.stroke();
+        context.strokeStyle = '#fffdf5';
+        context.lineWidth = 1.3;
+        context.beginPath();
+        context.arc(effect.origin.x, effect.origin.y, originRadius * 0.68, -effect.phase - progress * 4, -effect.phase - progress * 4 + Math.PI * 1.4);
+        context.stroke();
+        const target = effect.targets[0].anchor;
+        if (charge > 0.24 && release < 0.72) {
+            const tetherAlpha = release > 0 ? 1 - release / 0.72 : Math.min(1, (charge - 0.24) / 0.3);
+            context.globalAlpha = tetherAlpha * 0.5;
+            context.strokeStyle = effect.palette.glow;
+            context.shadowBlur = 10;
+            context.lineWidth = 2;
+            context.setLineDash([7, 9]);
+            context.lineDashOffset = -progress * 80;
+            context.beginPath();
+            context.moveTo(effect.origin.x, effect.origin.y);
+            context.lineTo(target.x, target.y);
+            context.stroke();
+            context.setLineDash([]);
+        }
+    } else {
+        const radius = 28 + release * 430;
+        context.globalAlpha = release > 0 ? (1 - release) * 0.44 : charge * 0.18;
+        context.strokeStyle = effect.palette.glow;
+        context.shadowColor = effect.palette.glow;
+        context.shadowBlur = 20;
+        context.lineWidth = 7 * (1 - release) + 1;
+        context.beginPath();
+        context.arc(effect.origin.x, effect.origin.y, radius, 0, Math.PI * 2);
+        context.stroke();
+        context.globalAlpha *= 0.65;
+        context.strokeStyle = '#fffdf5';
+        context.lineWidth = 1.5;
+        context.beginPath();
+        context.arc(effect.origin.x, effect.origin.y, radius * 0.92, 0, Math.PI * 2);
+        context.stroke();
+    }
+    context.restore();
+
+    for (const target of effect.targets) {
+        drawConduitSigil(context, target, effect, progress, effect.nova ? 0.82 : 1);
+    }
+}
+
 function drawCombatVfxParticles(context, deltaSeconds) {
     context.save();
     context.globalCompositeOperation = 'lighter';
@@ -1208,6 +2122,104 @@ function runCombatVfxFrame(timestamp) {
     sidearmCompletions.forEach(complete => complete());
     if (generation !== combatVfxGeneration) return;
 
+    const rifleCompletions = [];
+    combatVfxRifleRounds = combatVfxRifleRounds.filter(round => {
+        if (timestamp < round.startedAt) return true;
+        const progress = Math.min(1, (timestamp - round.startedAt) / round.durationMs);
+        if (!round.fired) {
+            round.fired = true;
+            spawnRifleMuzzle(round);
+        }
+        drawRifleRound(surface.context, round, progress);
+        if (!round.impacted && progress >= round.flightPortion) {
+            round.impacted = true;
+            spawnRifleImpact(round);
+            round.onImpact?.();
+        }
+        if (progress < 1) return true;
+        if (round.onFinish) rifleCompletions.push(round.onFinish);
+        return false;
+    });
+    rifleCompletions.forEach(complete => complete());
+    if (generation !== combatVfxGeneration) return;
+
+    const ordnanceCompletions = [];
+    combatVfxOrdnanceEffects = combatVfxOrdnanceEffects.filter(effect => {
+        if (timestamp < effect.startedAt) return true;
+        const progress = Math.min(1, (timestamp - effect.startedAt) / effect.durationMs);
+        if (!effect.fired) {
+            effect.fired = true;
+            if (!effect.shrapnel) spawnOrdnanceMuzzle(effect);
+        }
+        drawOrdnanceEffect(surface.context, effect, progress);
+        if (!effect.impacted && progress >= effect.flightPortion) {
+            effect.impacted = true;
+            spawnOrdnanceImpact(effect);
+            effect.onImpact?.();
+        }
+        const impactProgress = clampCombatVfx((progress - effect.flightPortion) / (1 - effect.flightPortion));
+        if (effect.critical && !effect.shrapnel && !effect.aftershocked && impactProgress >= 0.3) {
+            effect.aftershocked = true;
+            spawnOrdnanceImpact(effect, true);
+        }
+        if (progress < 1) return true;
+        if (effect.onFinish) ordnanceCompletions.push(effect.onFinish);
+        return false;
+    });
+    ordnanceCompletions.forEach(complete => complete());
+    if (generation !== combatVfxGeneration) return;
+
+    const projectorCompletions = [];
+    combatVfxProjectorBeams = combatVfxProjectorBeams.filter(beam => {
+        if (timestamp < beam.startedAt) return true;
+        const progress = Math.min(1, (timestamp - beam.startedAt) / beam.durationMs);
+        if (!beam.fired) {
+            beam.fired = true;
+            spawnProjectorDischarge(beam);
+        }
+        drawProjectorBeam(surface.context, beam, progress);
+        if (!beam.struck && progress >= beam.strikeProgress) {
+            beam.struck = true;
+            spawnProjectorDischarge(beam, true);
+            beam.onStrike?.();
+        }
+        if (progress < 1) return true;
+        if (beam.onFinish) projectorCompletions.push(beam.onFinish);
+        return false;
+    });
+    projectorCompletions.forEach(complete => complete());
+    if (generation !== combatVfxGeneration) return;
+
+    const conduitCompletions = [];
+    combatVfxConduitEffects = combatVfxConduitEffects.filter(effect => {
+        if (timestamp < effect.startedAt) return true;
+        const progress = Math.min(1, (timestamp - effect.startedAt) / effect.durationMs);
+        if (!effect.gathered) {
+            effect.gathered = true;
+            spawnWeaponBurst(effect.origin, effect.palette, {
+                count: effect.reducedMotion ? 3 : effect.nova ? 8 : 12,
+                speedMin: 28,
+                speedRange: 90,
+                lifeMin: 0.18,
+                lifeRange: 0.3,
+                sizeMin: 1,
+                sizeRange: 3,
+                drag: 0.86
+            });
+        }
+        drawConduitEffect(surface.context, effect, progress);
+        if (!effect.burst && progress >= effect.burstProgress) {
+            effect.burst = true;
+            spawnConduitBurst(effect);
+            effect.onBurst?.();
+        }
+        if (progress < 1) return true;
+        if (effect.onFinish) conduitCompletions.push(effect.onFinish);
+        return false;
+    });
+    conduitCompletions.forEach(complete => complete());
+    if (generation !== combatVfxGeneration) return;
+
     combatVfxPressureWaves = combatVfxPressureWaves.filter(wave => {
         if (timestamp < wave.startedAt) return true;
         const progress = Math.min(1, (timestamp - wave.startedAt) / wave.durationMs);
@@ -1261,6 +2273,10 @@ function runCombatVfxFrame(timestamp) {
         || combatVfxImpacts.length
         || combatVfxPressureWaves.length
         || combatVfxSidearmShots.length
+        || combatVfxRifleRounds.length
+        || combatVfxOrdnanceEffects.length
+        || combatVfxProjectorBeams.length
+        || combatVfxConduitEffects.length
         || combatVfxParticles.length
         || combatVfxShockwaves.length
     ) {
@@ -1310,6 +2326,10 @@ function cancelCombatVfx() {
     combatVfxImpacts = [];
     combatVfxPressureWaves = [];
     combatVfxSidearmShots = [];
+    combatVfxRifleRounds = [];
+    combatVfxOrdnanceEffects = [];
+    combatVfxProjectorBeams = [];
+    combatVfxConduitEffects = [];
     combatVfxParticles = [];
     combatVfxShockwaves = [];
     combatVfxSurfaceCache = null;
@@ -1319,10 +2339,14 @@ function cancelCombatVfx() {
     document.querySelectorAll('.blade-propagation-damage').forEach(element => element.remove());
     document.querySelectorAll('.impact-propagation-damage').forEach(element => element.remove());
     document.querySelectorAll('.sidearm-propagation-damage').forEach(element => element.remove());
+    document.querySelectorAll('.rifle-propagation-damage, .ordnance-propagation-damage, .projector-propagation-damage, .conduit-propagation-damage').forEach(element => element.remove());
     document.getElementById('player-stats')?.classList.remove('enemy-assault-hit');
     document.querySelectorAll('.blade-impact-hit').forEach(element => element.classList.remove('blade-impact-hit'));
     document.querySelectorAll('.impact-strike-hit').forEach(element => element.classList.remove('impact-strike-hit'));
     document.querySelectorAll('.sidearm-shot-hit').forEach(element => element.classList.remove('sidearm-shot-hit'));
+    document.querySelectorAll('.rifle-round-hit, .ordnance-blast-hit, .ordnance-shrapnel-hit, .projector-beam-hit, .conduit-sigil-hit').forEach(element => {
+        element.classList.remove('rifle-round-hit', 'ordnance-blast-hit', 'ordnance-shrapnel-hit', 'projector-beam-hit', 'conduit-sigil-hit');
+    });
 }
 
 window.queueEnemyAttackPresentation = queueEnemyAttackPresentation;

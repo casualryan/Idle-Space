@@ -6358,6 +6358,26 @@ hr {
     animation: sidearm-shot-card-hit 230ms cubic-bezier(0.18, 0.82, 0.24, 1);
 }
 
+.enemy-combat-card.rifle-round-hit {
+    animation: rifle-round-card-hit 290ms cubic-bezier(0.16, 0.86, 0.22, 1);
+}
+
+.enemy-combat-card.ordnance-blast-hit {
+    animation: ordnance-blast-card-hit 380ms cubic-bezier(0.14, 0.82, 0.2, 1);
+}
+
+.enemy-combat-card.ordnance-shrapnel-hit {
+    animation: ordnance-shrapnel-card-hit 260ms cubic-bezier(0.18, 0.82, 0.24, 1);
+}
+
+.enemy-combat-card.projector-beam-hit {
+    animation: projector-beam-card-hit 320ms ease-out;
+}
+
+.enemy-combat-card.conduit-sigil-hit {
+    animation: conduit-sigil-card-hit 350ms cubic-bezier(0.16, 0.86, 0.22, 1);
+}
+
 .enemy-assault-damage {
     position: absolute;
     z-index: 9;
@@ -6416,6 +6436,47 @@ hr {
     100% { transform: translate(0, 0); filter: brightness(1); }
 }
 
+@keyframes rifle-round-card-hit {
+    0% { transform: translate(0, 0) scale(1); filter: brightness(1); }
+    18% { transform: translate(5px, -2px) scaleX(0.988); filter: brightness(1.82) saturate(1.42); }
+    42% { transform: translate(-3px, 1px) scaleX(1.006); }
+    68% { transform: translate(1px, 0); filter: brightness(1.16); }
+    100% { transform: translate(0, 0) scale(1); filter: brightness(1); }
+}
+
+@keyframes ordnance-blast-card-hit {
+    0% { transform: translate(0, 0) scale(1); filter: brightness(1); }
+    16% { transform: translate(-5px, 4px) rotate(-0.35deg) scale(0.975); filter: brightness(2) saturate(1.55); }
+    34% { transform: translate(5px, -3px) rotate(0.28deg) scale(1.012); }
+    54% { transform: translate(-3px, 2px) rotate(-0.16deg); }
+    76% { transform: translate(1px, -1px); filter: brightness(1.15); }
+    100% { transform: translate(0, 0) scale(1); filter: brightness(1); }
+}
+
+@keyframes ordnance-shrapnel-card-hit {
+    0% { transform: translate(0, 0); filter: brightness(1); }
+    22% { transform: translate(3px, -2px) rotate(0.18deg); filter: brightness(1.58) saturate(1.3); }
+    48% { transform: translate(-2px, 1px) rotate(-0.1deg); }
+    74% { transform: translate(0, 0); filter: brightness(1.08); }
+    100% { transform: translate(0, 0); filter: brightness(1); }
+}
+
+@keyframes projector-beam-card-hit {
+    0% { transform: scale(1); filter: brightness(1); }
+    16% { transform: scale(0.992); filter: brightness(1.9) saturate(1.5); }
+    52% { transform: scale(0.997); filter: brightness(1.5) saturate(1.3); }
+    78% { transform: scale(1.002); filter: brightness(1.16); }
+    100% { transform: scale(1); filter: brightness(1); }
+}
+
+@keyframes conduit-sigil-card-hit {
+    0% { transform: scale(1); filter: brightness(1); }
+    20% { transform: scale(0.972); filter: brightness(2) saturate(1.58); }
+    43% { transform: scale(1.016); }
+    70% { transform: scale(0.996); filter: brightness(1.18); }
+    100% { transform: scale(1); filter: brightness(1); }
+}
+
 .propagation-effect { position: absolute; display: block; pointer-events: none; }
 .propagation-line {
     height: 4px;
@@ -6467,6 +6528,13 @@ hr {
 .sidearm-propagation-damage:not(.critical) {
     color: var(--sidearm-damage-color, #bff8ff);
     text-shadow: 0 2px 4px #000, 0 0 8px var(--sidearm-damage-color, #42dbff);
+}
+.rifle-propagation-damage:not(.critical),
+.ordnance-propagation-damage:not(.critical),
+.projector-propagation-damage:not(.critical),
+.conduit-propagation-damage:not(.critical) {
+    color: var(--weapon-damage-color, #bff8ff);
+    text-shadow: 0 2px 4px #000, 0 0 9px var(--weapon-damage-color, #42dbff);
 }
 .propagation-pulse {
     width: 30px;

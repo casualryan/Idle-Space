@@ -2268,6 +2268,63 @@ test('Sidearm attacks fire damage-colored projectile streams with smaller Barrag
   assert.match(styles, /\.sidearm-propagation-damage:not\(\.critical\)/);
 });
 
+test('Rifle attacks fire heavy rounds and Chain through each resolved origin-target path', () => {
+  const vfx = read('combatVFX.js');
+  const styles = read('style.css');
+  assert.match(vfx, /rifles: queueRiflePrimaryAttackPresentation/);
+  assert.match(vfx, /rifles: queueRiflePropagationPresentation/);
+  assert.match(vfx, /function buildRifleRound\(origin, target, options = \{\}\)/);
+  assert.match(vfx, /durationMs: reducedMotion \? 145 : secondary \? 205 : 310/);
+  assert.match(vfx, /const origin = anchors\[event\.originId\];[\s\S]*const target = anchors\[event\.targetId\];[\s\S]*queueRifleRound\(origin, target/);
+  assert.match(vfx, /event\.index \* \(reducedMotion \? 60 : 88\)/);
+  assert.match(vfx, /function drawRifleRound\(context, round, progress\)/);
+  assert.match(vfx, /spawnRifleImpact\(round\)/);
+  assert.match(styles, /\.enemy-combat-card\.rifle-round-hit\s*\{[^}]*animation:\s*rifle-round-card-hit/s);
+});
+
+test('Ordnance attacks lob payloads before fanning Detonation shrapnel from the primary target', () => {
+  const vfx = read('combatVFX.js');
+  const styles = read('style.css');
+  assert.match(vfx, /ordnance: queueOrdnancePrimaryAttackPresentation/);
+  assert.match(vfx, /ordnance: queueOrdnancePropagationPresentation/);
+  assert.match(vfx, /function buildOrdnanceEffect\(origin, target, options = \{\}\)/);
+  assert.match(vfx, /y: Math\.min\(start\.y, end\.y\) - Math\.min\(165, 78 \+ distance \* 0\.12\)/);
+  assert.match(vfx, /shrapnel: true/);
+  assert.match(vfx, /delayMs: \(reducedMotion \? 120 : 355\) \+ event\.index \* \(reducedMotion \? 8 : 14\)/);
+  assert.match(vfx, /spawnOrdnanceImpact\(effect, true\)/);
+  assert.match(styles, /\.enemy-combat-card\.ordnance-blast-hit\s*\{[^}]*animation:\s*ordnance-blast-card-hit/s);
+  assert.match(styles, /\.enemy-combat-card\.ordnance-shrapnel-hit\s*\{[^}]*animation:\s*ordnance-shrapnel-card-hit/s);
+});
+
+test('Projector attacks snap on sustained beams and pulse Barrage beams sequentially', () => {
+  const vfx = read('combatVFX.js');
+  const styles = read('style.css');
+  assert.match(vfx, /projectors: queueProjectorPrimaryAttackPresentation/);
+  assert.match(vfx, /projectors: queueProjectorPropagationPresentation/);
+  assert.match(vfx, /function buildProjectorBeam\(origin, target, options = \{\}\)/);
+  assert.match(vfx, /durationMs: reducedMotion \? 145 : secondary \? 215 : 305/);
+  assert.match(vfx, /strikeProgress: reducedMotion \? 0\.18 : 0\.13/);
+  assert.match(vfx, /function traceProjectorBeamPath\(context, beam, reveal, offset, phase\)/);
+  assert.match(vfx, /event\.index \* \(reducedMotion \? 40 : 82\)/);
+  assert.match(vfx, /spawnProjectorDischarge\(beam, true\)/);
+  assert.match(styles, /\.enemy-combat-card\.projector-beam-hit\s*\{[^}]*animation:\s*projector-beam-card-hit/s);
+});
+
+test('Conduit attacks form synthetic sigils and burst Nova targets simultaneously', () => {
+  const vfx = read('combatVFX.js');
+  const styles = read('style.css');
+  assert.match(vfx, /conduits: queueConduitPrimaryAttackPresentation/);
+  assert.match(vfx, /conduits: queueConduitPropagationPresentation/);
+  assert.match(vfx, /function buildConduitEffect\(origin, targets, options = \{\}\)/);
+  assert.match(vfx, /const targets = sequence\.events\.map\(event => \(\{ anchor: anchors\[event\.targetId\], event \}\)\)/);
+  assert.match(vfx, /nova: true/);
+  assert.match(vfx, /for \(const \{ anchor, event \} of targets\)/);
+  assert.match(vfx, /function drawConduitSigil\(context, target, effect, progress, alphaMultiplier = 1\)/);
+  assert.match(vfx, /const radius = 28 \+ release \* 430/);
+  assert.match(vfx, /spawnConduitBurst\(effect\)/);
+  assert.match(styles, /\.enemy-combat-card\.conduit-sigil-hit\s*\{[^}]*animation:\s*conduit-sigil-card-hit/s);
+});
+
 test('delve deployment grid expands without an internal scrollbar', () => {
   const ui = read('delveUI.js');
   const styles = read('style.css');
