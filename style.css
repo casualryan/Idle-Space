@@ -6562,6 +6562,11 @@ hr {
     text-overflow: ellipsis;
 }
 
+.enemy-combat-card .enemy-card-name {
+    min-width: 0;
+    white-space: nowrap;
+}
+
 .combat-card-portrait {
     position: relative;
     display: block;

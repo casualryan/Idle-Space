@@ -2175,6 +2175,9 @@ test('delve combat stage uses compact cards, six target slots, and closed utilit
   assert.match(ui, /selectEnemyTarget\(combatId\)/);
   assert.match(ui, /function setDelveCombatUIActive\(active\)/);
   assert.match(ui, /if \(!active\) closeCombatDrawers\(\)/);
+  assert.match(ui, /function fitEnemyCardName\(nameElement\)/);
+  assert.match(ui, /maximumSize \* \(availableWidth \/ nameElement\.scrollWidth\)/);
+  assert.match(ui, /Math\.max\(10,/);
   assert.match(styles, /"top-left top-center top-right"\s*"bottom-left bottom-center bottom-right"/);
   assert.match(styles, /\.enemy-combat-card:nth-child\(1\)\s*\{\s*grid-area:\s*top-center/);
   assert.match(styles, /\.enemy-combat-card:nth-child\(6\)\s*\{\s*grid-area:\s*bottom-right/);
@@ -2182,6 +2185,7 @@ test('delve combat stage uses compact cards, six target slots, and closed utilit
   assert.match(styles, /\.player-combat-card\s*\{[^}]*grid-template-rows:\s*27px repeat\(3, minmax\(0, 1fr\)\)/s);
   assert.match(styles, /\.player-combat-card > h2\s*\{[^}]*overflow:\s*visible/s);
   assert.match(styles, /\.enemy-combat-card\s*\{[^}]*height:\s*188px/s);
+  assert.match(styles, /\.enemy-combat-card \.enemy-card-name\s*\{[^}]*white-space:\s*nowrap/s);
 });
 
 test('Staggered visibly reports the attack it interrupts', () => {

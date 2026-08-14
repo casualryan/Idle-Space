@@ -116,6 +116,18 @@ function updatePlayerStatsDisplay() {
     renderCombatEffects(document.getElementById('player-effects-bar'), player);
 }
 
+function fitEnemyCardName(nameElement) {
+    if (!nameElement) return;
+    nameElement.style.fontSize = '';
+    const availableWidth = nameElement.clientWidth;
+    if (availableWidth <= 0 || nameElement.scrollWidth <= availableWidth) return;
+    const maximumSize = Number.parseFloat(getComputedStyle(nameElement).fontSize) || 17;
+    const fittedSize = Math.max(10, Math.floor(
+        maximumSize * (availableWidth / nameElement.scrollWidth) * 4 * 0.98
+    ) / 4);
+    nameElement.style.fontSize = `${fittedSize}px`;
+}
+
 function updateEnemyStatsDisplay() {
     const grid = document.getElementById('enemy-combat-grid');
     if (!grid) return;
@@ -150,7 +162,9 @@ function updateEnemyStatsDisplay() {
             card.className = 'enemy-combat-card empty';
             card.disabled = true;
             card.dataset.combatId = '';
-            card.querySelector('.enemy-card-name').textContent = 'Empty Contact';
+            const emptyName = card.querySelector('.enemy-card-name');
+            emptyName.textContent = 'Empty Contact';
+            fitEnemyCardName(emptyName);
             card.querySelector('.combat-card-portrait img').removeAttribute('src');
             card.querySelector('.combat-card-portrait img').alt = '';
             card.querySelector('[data-resource-text="health"]').textContent = '0 / 0';
@@ -180,7 +194,9 @@ function updateEnemyStatsDisplay() {
         card.title = selected
             ? `${candidate.name} is your selected target.`
             : `Target ${candidate.name}`;
-        card.querySelector('.enemy-card-name').textContent = candidate.name;
+        const enemyName = card.querySelector('.enemy-card-name');
+        enemyName.textContent = candidate.name;
+        fitEnemyCardName(enemyName);
         const portrait = card.querySelector('.combat-card-portrait img');
         if (portrait.getAttribute('src') !== candidate.portrait) portrait.src = candidate.portrait || 'icons/default-icon.png';
         portrait.alt = `${candidate.name} portrait`;
