@@ -290,10 +290,6 @@ function combatLoop() {
     const now = Date.now();
     const deltaTime = Math.max(0, (now - lastCombatLoopTime) / 1000);
     lastCombatLoopTime = now;
-    // Propagation resolves atomically before it is drawn. Pause later combat
-    // events while that frozen record is presented so a subsequent DOT tick or
-    // attack cannot appear to land ahead of an in-flight propagation hit.
-    if (typeof isPropagationPresentationBusy === 'function' && isPropagationPresentationBusy()) return;
     processEnemyTaunts(deltaTime);
 
     if (player) {
@@ -303,7 +299,6 @@ function combatLoop() {
             playerAttackTimer = 0;
             refreshPlayerAttackInterval();
             if (getEffectivePlayerTarget()) playerAttack();
-            if (typeof isPropagationPresentationBusy === 'function' && isPropagationPresentationBusy()) return;
         }
         setAttackProgressBar('player', Math.min((playerAttackTimer / playerNextAttackTime) * 100, 100));
     }

@@ -6237,7 +6237,8 @@ hr {
 }
 
 .locations-scroll-container {
-    max-height: 345px !important;
+    max-height: none !important;
+    overflow: visible !important;
 }
 
 .location-progression-notice {
@@ -6435,6 +6436,7 @@ hr {
     z-index: 2;
     display: grid;
     grid-template-columns: 94px minmax(0, 1fr);
+    grid-template-rows: 27px repeat(3, minmax(0, 1fr));
     gap: 9px 13px;
     min-height: 188px;
     padding: 13px;
@@ -6449,6 +6451,14 @@ hr {
 
 .player-combat-card .combat-card-portrait {
     grid-row: 1 / 5;
+}
+
+.player-combat-card > h2 {
+    align-self: center;
+    min-height: 24px;
+    padding-top: 2px;
+    overflow: visible;
+    line-height: 1.35;
 }
 
 .combat-card h2,

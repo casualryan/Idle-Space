@@ -2161,10 +2161,12 @@ test('delve combat stage uses compact cards, six target slots, and closed utilit
   }
 
   const ui = read('combatUI.js');
+  const controller = read('combatController.js');
   const styles = read('style.css');
   assert.match(ui, /for \(let slot = 0; slot < 6; slot\+\+\)/);
   assert.match(ui, /enemy-attack-progress-bar/);
-  assert.match(read('combatController.js'), /setAttackProgressBar\(attacker, Math\.min\(\(timer \/ nextAttack\) \* 100, 100\)\)/);
+  assert.match(controller, /setAttackProgressBar\(attacker, Math\.min\(\(timer \/ nextAttack\) \* 100, 100\)\)/);
+  assert.doesNotMatch(controller, /isPropagationPresentationBusy/, 'propagation visuals must not pause combat timers');
   assert.match(ui, /selectEnemyTarget\(combatId\)/);
   assert.match(ui, /function setDelveCombatUIActive\(active\)/);
   assert.match(ui, /if \(!active\) closeCombatDrawers\(\)/);
@@ -2172,7 +2174,17 @@ test('delve combat stage uses compact cards, six target slots, and closed utilit
   assert.match(styles, /\.enemy-combat-card:nth-child\(1\)\s*\{\s*grid-area:\s*top-center/);
   assert.match(styles, /\.enemy-combat-card:nth-child\(6\)\s*\{\s*grid-area:\s*bottom-right/);
   assert.match(styles, /#player-stats\.player-combat-card\s*\{[^}]*width:\s*min\(364px, 100%\)[^}]*height:\s*188px/s);
+  assert.match(styles, /\.player-combat-card\s*\{[^}]*grid-template-rows:\s*27px repeat\(3, minmax\(0, 1fr\)\)/s);
+  assert.match(styles, /\.player-combat-card > h2\s*\{[^}]*overflow:\s*visible/s);
   assert.match(styles, /\.enemy-combat-card\s*\{[^}]*height:\s*188px/s);
+});
+
+test('delve deployment grid expands without an internal scrollbar', () => {
+  const ui = read('delveUI.js');
+  const styles = read('style.css');
+  assert.doesNotMatch(ui, /locationScrollContainer\.style\.(?:overflow|maxHeight)/);
+  assert.doesNotMatch(ui, /locations-scroll-container::-(?:webkit-)?scrollbar/);
+  assert.match(styles, /\.locations-scroll-container\s*\{[^}]*max-height:\s*none\s*!important[^}]*overflow:\s*visible\s*!important/s);
 });
 
 test('encounter sizing rises by area level while retaining smaller max-level groups', () => {

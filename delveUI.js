@@ -483,35 +483,12 @@ function displayAdventureLocations() {
         searchInput.addEventListener('input', updateLocationDisplay);
         filterSelect.addEventListener('change', updateLocationDisplay);
 
-        // Now create the scrollable location grid
+        // Let the location grid use its natural height. The old internal
+        // viewport was sized for a denser card layout that no longer exists.
         const locationScrollContainer = document.createElement('div');
         locationScrollContainer.className = 'locations-scroll-container';
-        locationScrollContainer.style.overflow = 'auto';
-        locationScrollContainer.style.maxHeight = '400px';
-        locationScrollContainer.style.paddingRight = '5px';
         locationScrollContainer.style.zIndex = '2';
         locationScrollContainer.style.position = 'relative';
-
-        // Custom scrollbar styling
-        const scrollbarStyle = document.createElement('style');
-        scrollbarStyle.textContent = `
-            .locations-scroll-container::-webkit-scrollbar {
-                width: 8px;
-            }
-            .locations-scroll-container::-webkit-scrollbar-track {
-                background: rgba(0, 20, 40, 0.5);
-                border-radius: 4px;
-            }
-            .locations-scroll-container::-webkit-scrollbar-thumb {
-                background: #0096c7;
-                border-radius: 4px;
-                box-shadow: 0 0 5px rgba(0, 150, 199, 0.5);
-            }
-            .locations-scroll-container::-webkit-scrollbar-thumb:hover {
-                background: #00b4d8;
-            }
-        `;
-        document.head.appendChild(scrollbarStyle);
 
         interfaceContainer.appendChild(locationScrollContainer);
 
