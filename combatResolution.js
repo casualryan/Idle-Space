@@ -154,6 +154,12 @@ function executeEquippedSkill(attacker, defender) {
 
             if (!defender) break;
 
+            if (attacker?.isPlayer && typeof queuePlayerAttackPresentation === 'function') {
+                queuePlayerAttackPresentation(attacker, defender, damageResult, {
+                    hitIndex: hit,
+                    hitCount: profile.hitCount
+                });
+            }
             applyDamage(damageResult);
 
             if (defender.currentHealth > 0 && attacker && defender) {

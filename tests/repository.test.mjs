@@ -2210,6 +2210,26 @@ test('enemy attacks use canvas assault presentation without delaying combat reso
   assert.match(read('combatController.js'), /cancelCombatVfx\(\)/);
 });
 
+test('Blade attacks use constrained damage-colored slash VFX through the weapon presentation dispatcher', () => {
+  const vfx = read('combatVFX.js');
+  const resolution = read('combatResolution.js');
+  const propagation = read('propagation.js');
+  const ui = read('combatUI.js');
+  const styles = read('style.css');
+  assert.match(vfx, /const WEAPON_ATTACK_PRESENTERS = Object\.freeze\(\{ blades: queueBladePrimaryAttackPresentation \}\)/);
+  assert.match(vfx, /const WEAPON_PROPAGATION_PRESENTERS = Object\.freeze\(\{ blades: queueBladePropagationPresentation \}\)/);
+  assert.match(vfx, /function queuePlayerAttackPresentation\(attacker, target, damagePacket, context = \{\}\)/);
+  assert.match(vfx, /angleMagnitude = 0\.48 \+ Math\.random\(\) \* 0\.18/);
+  assert.match(vfx, /curvature = \(Math\.random\(\) - 0\.5\) \* length \* 0\.1/);
+  assert.match(vfx, /crossCut: true/);
+  assert.match(vfx, /radiation: Object\.freeze\(\{ glow: '#24d483'/);
+  assert.match(resolution, /queuePlayerAttackPresentation\(attacker, defender, damageResult,[\s\S]*?applyDamage\(damageResult\)/);
+  assert.match(ui, /queueWeaponPropagationPresentation\(sequence, complete\)/);
+  assert.match(propagation, /dominantDamageType: getDominantPropagationDamageType\(primaryPacket\)/);
+  assert.match(styles, /\.enemy-combat-card\.blade-impact-hit\s*\{[^}]*animation:\s*blade-impact-card-hit/s);
+  assert.match(styles, /\.blade-propagation-damage:not\(\.critical\)/);
+});
+
 test('delve deployment grid expands without an internal scrollbar', () => {
   const ui = read('delveUI.js');
   const styles = read('style.css');
@@ -2318,7 +2338,7 @@ test('weapon propagation profiles enforce coefficients, geometry, uniqueness, an
         damageRoll: 0.73,
         tags: ['hit']
       };
-      const resolveFamily = (family, primarySlot) => {
+      const resolveFamily = (family, primarySlot, sourcePacket = packet) => {
         encounterEnemies = makeEnemies();
         const attacker = {
           isPlayer: true,
@@ -2329,18 +2349,23 @@ test('weapon propagation profiles enforce coefficients, geometry, uniqueness, an
         };
         let presentation = null;
         queuePropagationPresentation = sequence => { presentation = sequence; };
-        window.coreboundPropagation.resolve(attacker, encounterEnemies[primarySlot], packet, { hitCount: 1, procOnHit: 'all', procOnCritical: 'all' }, 0, () => 0);
-        return presentation.events.map(event => event.targetId);
+        window.coreboundPropagation.resolve(attacker, encounterEnemies[primarySlot], sourcePacket, { hitCount: 1, procOnHit: 'all', procOnCritical: 'all' }, 0, () => 0);
+        return presentation;
       };
       return {
         profiles: window.coreboundPropagation.profiles,
         cap: window.coreboundPropagation.targetCap,
         trigger: window.coreboundPropagation.triggerCoefficient,
-        cleave: resolveFamily('blades', 0),
-        splash: resolveFamily('impact', 1),
-        barrage: resolveFamily('sidearms', 0),
-        chain: resolveFamily('rifles', 1),
-        nova: resolveFamily('conduits', 0)
+        cleave: resolveFamily('blades', 0).events.map(event => event.targetId),
+        splash: resolveFamily('impact', 1).events.map(event => event.targetId),
+        barrage: resolveFamily('sidearms', 0).events.map(event => event.targetId),
+        chain: resolveFamily('rifles', 1).events.map(event => event.targetId),
+        nova: resolveFamily('conduits', 0).events.map(event => event.targetId),
+        dominant: resolveFamily('blades', 0, {
+          ...packet,
+          metadata: { unmitigatedDamage: { radiation: 80, kinetic: 20 } },
+          damage: { radiation: 1, kinetic: 99 }
+        }).dominantDamageType
       };
     })()`,
     {
@@ -2384,6 +2409,7 @@ test('weapon propagation profiles enforce coefficients, geometry, uniqueness, an
   assert.equal(new Set(result.barrage).size, 5);
   assert.equal(new Set(result.nova).size, 5);
   assert.deepEqual(result.chain, ['e0', 'e1', 'e0', 'e1', 'e0']);
+  assert.equal(result.dominant, 'radiation');
   assert.match(read('debuffs.js'), /debuffChance \* triggerCoefficient/);
 });
 

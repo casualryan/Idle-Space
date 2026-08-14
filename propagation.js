@@ -4,6 +4,9 @@
 
 const PROPAGATION_TARGET_CAP = 5;
 const PROPAGATION_TRIGGER_COEFFICIENT = 0.3;
+const PROPAGATION_DAMAGE_TYPE_PRIORITY = Object.freeze([
+    'kinetic', 'slashing', 'pyro', 'cryo', 'electric', 'corrosive', 'radiation'
+]);
 const PROPAGATION_SLOT_COORDINATES = Object.freeze([
     Object.freeze({ row: 0, column: 1 }), // top-center
     Object.freeze({ row: 0, column: 0 }), // top-left
@@ -49,6 +52,20 @@ function pickPropagationCandidate(candidates, random = Math.random) {
     if (!Array.isArray(candidates) || candidates.length === 0) return null;
     const roll = Math.min(0.999999, Math.max(0, Number(random()) || 0));
     return candidates[Math.floor(roll * candidates.length)] || candidates[0];
+}
+
+function getDominantPropagationDamageType(packet) {
+    const damage = packet?.metadata?.unmitigatedDamage || packet?.damage || {};
+    let dominantType = 'kinetic';
+    let dominantAmount = -1;
+    for (const type of PROPAGATION_DAMAGE_TYPE_PRIORITY) {
+        const amount = Math.max(0, Number(damage[type]) || 0);
+        if (amount > dominantAmount) {
+            dominantType = type;
+            dominantAmount = amount;
+        }
+    }
+    return dominantType;
 }
 
 function getPlayerWeaponPropagationProfile(attacker) {
@@ -236,6 +253,7 @@ function resolveWeaponPropagation(attacker, primaryTarget, primaryPacket, combat
             queuePropagationPresentation(Object.freeze({
                 profile,
                 primaryTargetId: getPropagationEntityKey(primaryTarget),
+                dominantDamageType: getDominantPropagationDamageType(primaryPacket),
                 snapshot: visualSnapshot,
                 events: Object.freeze(immutableEvents)
             }), () => {

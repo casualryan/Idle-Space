@@ -729,6 +729,12 @@ function playPropagationSequence(sequence, complete) {
         complete();
         return;
     }
+    if (
+        typeof queueWeaponPropagationPresentation === 'function'
+        && queueWeaponPropagationPresentation(sequence, complete)
+    ) {
+        return;
+    }
     const simultaneous = sequence.profile.id === 'nova' || sequence.profile.id === 'detonation';
     if (simultaneous) {
         const primary = sequence.snapshot.anchors[sequence.primaryTargetId];

@@ -7,13 +7,53 @@ const COMBAT_VFX_COLORS = Object.freeze({
     ember: '#a60029'
 });
 
+const COMBAT_DAMAGE_VFX_PALETTE = Object.freeze({
+    kinetic: Object.freeze({ glow: '#c7d0dc', accent: '#718095', particle: '#f4f7fb' }),
+    slashing: Object.freeze({ glow: '#ff4f70', accent: '#9f1837', particle: '#ffd0d9' }),
+    pyro: Object.freeze({ glow: '#ff6a24', accent: '#b7240d', particle: '#ffd27a' }),
+    cryo: Object.freeze({ glow: '#55d8ff', accent: '#147da6', particle: '#d8f8ff' }),
+    electric: Object.freeze({ glow: '#ffe24f', accent: '#b88700', particle: '#fff8b5' }),
+    corrosive: Object.freeze({ glow: '#8df33f', accent: '#397d13', particle: '#dcff9b' }),
+    radiation: Object.freeze({ glow: '#24d483', accent: '#076346', particle: '#baffdc' })
+});
+
+const COMBAT_DAMAGE_VFX_PRIORITY = Object.freeze([
+    'kinetic', 'slashing', 'pyro', 'cryo', 'electric', 'corrosive', 'radiation'
+]);
+
 let combatVfxProjectiles = [];
+let combatVfxSlashes = [];
 let combatVfxParticles = [];
 let combatVfxShockwaves = [];
 let combatVfxAnimationFrame = null;
 let combatVfxLastFrame = 0;
 let combatVfxGeneration = 0;
 let combatVfxSurfaceCache = null;
+
+function clampCombatVfx(value, minimum = 0, maximum = 1) {
+    return Math.min(maximum, Math.max(minimum, Number(value) || 0));
+}
+
+function getDominantCombatDamageType(damagePacket) {
+    const damage = damagePacket?.metadata?.unmitigatedDamage || damagePacket?.damage || {};
+    let dominantType = 'kinetic';
+    let dominantAmount = -1;
+    for (const type of COMBAT_DAMAGE_VFX_PRIORITY) {
+        const amount = Math.max(0, Number(damage[type]) || 0);
+        if (amount > dominantAmount) {
+            dominantType = type;
+            dominantAmount = amount;
+        }
+    }
+    return dominantType;
+}
+
+function getCombatVfxWeaponFamily(attacker) {
+    const weapon = attacker?.equipment?.mainHand;
+    if (!weapon) return null;
+    const taxonomy = window.coreboundWeaponTaxonomy?.resolveWeapon?.(weapon);
+    return taxonomy?.family || attacker?.totalStats?.activeWeaponFamily || weapon.weaponFamily || null;
+}
 
 function getCombatVfxSurface(refresh = false) {
     const canvas = document.getElementById('combat-vfx-canvas');
@@ -68,6 +108,166 @@ function quadraticCombatVfxTangent(projectile, progress) {
         x: 2 * (1 - progress) * (projectile.control.x - projectile.start.x) + 2 * progress * (projectile.end.x - projectile.control.x),
         y: 2 * (1 - progress) * (projectile.control.y - projectile.start.y) + 2 * progress * (projectile.end.y - projectile.control.y)
     };
+}
+
+function getCombatVfxTargetElement(targetOrId) {
+    if (targetOrId?.isPlayer || targetOrId === 'player') return document.getElementById('player-stats');
+    const targetId = typeof targetOrId === 'string'
+        ? targetOrId
+        : String(targetOrId?._combatId || targetOrId?.id || targetOrId?.name || '');
+    return [...document.querySelectorAll('.enemy-combat-card')]
+        .find(card => card.dataset.combatId === targetId) || null;
+}
+
+function pulseBladeTarget(targetOrId) {
+    const card = getCombatVfxTargetElement(targetOrId);
+    if (!card) return;
+    card.classList.remove('blade-impact-hit');
+    void card.offsetWidth;
+    card.classList.add('blade-impact-hit');
+    setTimeout(() => card.classList.remove('blade-impact-hit'), 280);
+}
+
+function buildBladeSlash(anchor, options = {}) {
+    const secondary = Boolean(options.secondary);
+    const sizeMultiplier = secondary ? 0.62 : 1;
+    const baseLength = Math.min(anchor.width * 0.67, anchor.height * 1.35) * sizeMultiplier;
+    const length = Math.max(72, baseLength * Number(options.lengthMultiplier || 1));
+    const angleMagnitude = 0.48 + Math.random() * 0.18;
+    const angle = Number.isFinite(options.angle)
+        ? options.angle
+        : (Math.random() < 0.5 ? -1 : 1) * angleMagnitude;
+    const direction = Math.random() < 0.5 ? -1 : 1;
+    const unitX = Math.cos(angle) * direction;
+    const unitY = Math.sin(angle) * direction;
+    const perpendicularX = -unitY;
+    const perpendicularY = unitX;
+    const center = {
+        x: anchor.x + (Math.random() - 0.5) * anchor.width * (secondary ? 0.07 : 0.1),
+        y: anchor.y + (Math.random() - 0.5) * anchor.height * (secondary ? 0.06 : 0.09)
+    };
+    const curvature = (Math.random() - 0.5) * length * 0.1;
+    const reducedMotion = Boolean(options.reducedMotion);
+    return {
+        start: { x: center.x - unitX * length / 2, y: center.y - unitY * length / 2 },
+        control: { x: center.x + perpendicularX * curvature, y: center.y + perpendicularY * curvature },
+        end: { x: center.x + unitX * length / 2, y: center.y + unitY * length / 2 },
+        angle,
+        palette: COMBAT_DAMAGE_VFX_PALETTE[options.damageType] || COMBAT_DAMAGE_VFX_PALETTE.kinetic,
+        critical: Boolean(options.critical),
+        crossCut: Boolean(options.crossCut),
+        secondary,
+        reducedMotion,
+        startedAt: performance.now() + Math.max(0, Number(options.delayMs) || 0),
+        durationMs: reducedMotion ? 135 : secondary ? 225 : 270,
+        impactProgress: 0.28,
+        impacted: false,
+        onImpact: options.onImpact || null,
+        onFinish: options.onFinish || null
+    };
+}
+
+function ensureCombatVfxFrame() {
+    if (combatVfxAnimationFrame) return;
+    combatVfxLastFrame = 0;
+    combatVfxAnimationFrame = requestAnimationFrame(runCombatVfxFrame);
+}
+
+function queueBladeSlashSet(anchor, options = {}) {
+    const slashCount = options.critical ? 2 : 1;
+    let remaining = slashCount;
+    const finishSlash = () => {
+        remaining--;
+        if (remaining === 0) options.onComplete?.();
+    };
+    const primarySlash = buildBladeSlash(anchor, {
+        ...options,
+        onFinish: finishSlash
+    });
+    combatVfxSlashes.push(primarySlash);
+    if (options.critical) {
+        combatVfxSlashes.push(buildBladeSlash(anchor, {
+            ...options,
+            angle: -Math.sign(primarySlash.angle || 1) * (0.5 + Math.random() * 0.14),
+            lengthMultiplier: 0.78,
+            delayMs: (Number(options.delayMs) || 0) + (options.reducedMotion ? 22 : 44),
+            crossCut: true,
+            onImpact: null,
+            onFinish: finishSlash
+        }));
+    }
+    ensureCombatVfxFrame();
+}
+
+function showBladePropagationDamage(anchor, event, damageType) {
+    const layer = document.getElementById('propagation-effects-layer');
+    if (!layer) return;
+    const number = document.createElement('span');
+    number.className = `propagation-effect propagation-damage blade-propagation-damage${event.critical ? ' critical' : ''}`;
+    number.textContent = `-${Math.round(event.damage)}${event.critical ? '!' : ''}`;
+    number.style.left = `${anchor.x}px`;
+    number.style.top = `${anchor.y - 20}px`;
+    number.style.setProperty('--blade-damage-color', (COMBAT_DAMAGE_VFX_PALETTE[damageType] || COMBAT_DAMAGE_VFX_PALETTE.kinetic).glow);
+    layer.appendChild(number);
+    number.addEventListener('animationend', () => number.remove(), { once: true });
+}
+
+function queueBladePrimaryAttackPresentation(attacker, target, damagePacket, context = {}) {
+    const surface = getCombatVfxSurface(!combatVfxAnimationFrame);
+    const anchor = surface ? getCombatVfxAnchor(target, surface) : null;
+    if (!surface || !anchor) return false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
+    queueBladeSlashSet(anchor, {
+        damageType: getDominantCombatDamageType(damagePacket),
+        critical: damagePacket.isCritical,
+        reducedMotion,
+        delayMs: Math.max(0, Number(context.hitIndex) || 0) * (reducedMotion ? 24 : 55),
+        onImpact: () => pulseBladeTarget(target)
+    });
+    return true;
+}
+
+function queueBladePropagationPresentation(sequence, complete) {
+    const surface = getCombatVfxSurface(!combatVfxAnimationFrame);
+    if (!surface || !sequence?.events?.length) return false;
+    const anchors = sequence.snapshot?.anchors;
+    if (!anchors || sequence.events.some(event => !anchors[event.targetId])) return false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
+    const damageType = sequence.dominantDamageType || 'kinetic';
+    let remainingEvents = sequence.events.length;
+    for (const event of sequence.events) {
+        const anchor = anchors[event.targetId];
+        queueBladeSlashSet(anchor, {
+            damageType,
+            critical: event.critical,
+            secondary: true,
+            reducedMotion,
+            delayMs: (reducedMotion ? 45 : 105) + event.index * (reducedMotion ? 28 : 58),
+            onImpact: () => {
+                pulseBladeTarget(event.targetId);
+                showBladePropagationDamage(anchor, event, damageType);
+            },
+            onComplete: () => {
+                remainingEvents--;
+                if (remainingEvents === 0) complete();
+            }
+        });
+    }
+    return true;
+}
+
+const WEAPON_ATTACK_PRESENTERS = Object.freeze({ blades: queueBladePrimaryAttackPresentation });
+const WEAPON_PROPAGATION_PRESENTERS = Object.freeze({ blades: queueBladePropagationPresentation });
+
+function queuePlayerAttackPresentation(attacker, target, damagePacket, context = {}) {
+    const family = getCombatVfxWeaponFamily(attacker);
+    const presenter = WEAPON_ATTACK_PRESENTERS[family];
+    return presenter ? presenter(attacker, target, damagePacket, context) : false;
+}
+
+function queueWeaponPropagationPresentation(sequence, complete) {
+    const presenter = WEAPON_PROPAGATION_PRESENTERS[sequence?.profile?.family];
+    return presenter ? presenter(sequence, complete) : false;
 }
 
 function spawnEnemyAssaultTrailParticle(projectile, point, tangent) {
@@ -184,6 +384,111 @@ function drawEnemyAssaultProjectile(context, projectile, progress) {
     return { point, tangent };
 }
 
+function traceBladeSlashPath(context, slash, startProgress, endProgress) {
+    const start = clampCombatVfx(startProgress);
+    const end = clampCombatVfx(endProgress);
+    if (end <= start) return;
+    context.beginPath();
+    const samples = 16;
+    for (let index = 0; index <= samples; index++) {
+        const progress = start + (end - start) * (index / samples);
+        const point = quadraticCombatVfxPoint(slash, progress);
+        if (index === 0) context.moveTo(point.x, point.y);
+        else context.lineTo(point.x, point.y);
+    }
+}
+
+function spawnBladeSlashParticles(slash) {
+    const point = quadraticCombatVfxPoint(slash, 0.55);
+    const tangent = quadraticCombatVfxTangent(slash, 0.55);
+    const length = Math.max(1, Math.hypot(tangent.x, tangent.y));
+    const tangentX = tangent.x / length;
+    const tangentY = tangent.y / length;
+    const normalX = -tangentY;
+    const normalY = tangentX;
+    const baseCount = slash.reducedMotion ? 4 : slash.secondary ? 8 : 15;
+    const particleCount = slash.crossCut ? Math.ceil(baseCount * 0.55) : slash.critical ? baseCount + 5 : baseCount;
+    for (let index = 0; index < particleCount; index++) {
+        const side = index % 2 === 0 ? -1 : 1;
+        const speed = 65 + Math.random() * (slash.secondary ? 100 : 165);
+        const life = 0.18 + Math.random() * 0.28;
+        combatVfxParticles.push({
+            x: point.x + tangentX * (Math.random() - 0.5) * (slash.secondary ? 36 : 58),
+            y: point.y + tangentY * (Math.random() - 0.5) * (slash.secondary ? 36 : 58),
+            vx: normalX * side * speed + tangentX * (Math.random() - 0.5) * 85,
+            vy: normalY * side * speed + tangentY * (Math.random() - 0.5) * 85,
+            life,
+            maximumLife: life,
+            size: 1.2 + Math.random() * (slash.secondary ? 2.2 : 3.5),
+            color: index % 4 === 0 ? '#fffdf5' : index % 3 === 0 ? slash.palette.particle : slash.palette.glow,
+            drag: 0.9,
+            spin: Math.atan2(tangentY, tangentX) + (Math.random() - 0.5) * 0.4
+        });
+    }
+}
+
+function drawBladeSlash(context, slash, progress) {
+    const revealProgress = clampCombatVfx(progress / 0.42);
+    const reveal = 1 - Math.pow(1 - revealProgress, 3);
+    const fade = progress < 0.48 ? 1 : 1 - clampCombatVfx((progress - 0.48) / 0.52);
+    const crossOpacity = slash.crossCut ? 0.68 : 1;
+    const primaryWidth = slash.secondary ? 7 : slash.critical ? 15 : 12;
+    const coreStart = Math.max(0, reveal - (slash.secondary ? 0.38 : 0.3));
+
+    context.save();
+    context.globalCompositeOperation = 'lighter';
+    context.lineCap = 'round';
+
+    traceBladeSlashPath(context, slash, 0, reveal);
+    context.globalAlpha = fade * crossOpacity * 0.34;
+    context.strokeStyle = slash.palette.accent;
+    context.shadowColor = slash.palette.glow;
+    context.shadowBlur = slash.secondary ? 9 : 16;
+    context.lineWidth = primaryWidth * 1.7;
+    context.stroke();
+
+    traceBladeSlashPath(context, slash, 0, reveal);
+    context.globalAlpha = fade * crossOpacity * 0.72;
+    context.strokeStyle = slash.palette.glow;
+    context.shadowColor = slash.palette.glow;
+    context.shadowBlur = slash.secondary ? 7 : 13;
+    context.lineWidth = primaryWidth * 0.72;
+    context.stroke();
+
+    const afterimageProgress = clampCombatVfx((progress - 0.055) / 0.42);
+    const afterimageReveal = 1 - Math.pow(1 - afterimageProgress, 3);
+    traceBladeSlashPath(context, slash, 0, afterimageReveal);
+    context.globalAlpha = fade * crossOpacity * 0.48;
+    context.strokeStyle = slash.palette.particle;
+    context.shadowColor = slash.palette.glow;
+    context.shadowBlur = slash.secondary ? 3 : 6;
+    context.lineWidth = slash.secondary ? 1.1 : 1.7;
+    context.stroke();
+
+    traceBladeSlashPath(context, slash, coreStart, reveal);
+    context.globalAlpha = fade * crossOpacity;
+    context.strokeStyle = '#fffdf5';
+    context.shadowColor = slash.palette.particle;
+    context.shadowBlur = slash.secondary ? 5 : 9;
+    context.lineWidth = slash.secondary ? 1.8 : slash.critical ? 3.6 : 2.8;
+    context.stroke();
+
+    if (reveal < 1) {
+        const tip = quadraticCombatVfxPoint(slash, reveal);
+        const radius = slash.secondary ? 9 : slash.critical ? 18 : 14;
+        const glow = context.createRadialGradient(tip.x, tip.y, 0, tip.x, tip.y, radius);
+        glow.addColorStop(0, '#ffffff');
+        glow.addColorStop(0.25, slash.palette.particle);
+        glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        context.globalAlpha = fade * crossOpacity;
+        context.fillStyle = glow;
+        context.beginPath();
+        context.arc(tip.x, tip.y, radius, 0, Math.PI * 2);
+        context.fill();
+    }
+    context.restore();
+}
+
 function drawCombatVfxParticles(context, deltaSeconds) {
     context.save();
     context.globalCompositeOperation = 'lighter';
@@ -257,9 +562,25 @@ function runCombatVfxFrame(timestamp) {
     });
 
     if (generation !== combatVfxGeneration) return;
+    const slashCompletions = [];
+    combatVfxSlashes = combatVfxSlashes.filter(slash => {
+        if (timestamp < slash.startedAt) return true;
+        const progress = Math.min(1, (timestamp - slash.startedAt) / slash.durationMs);
+        drawBladeSlash(surface.context, slash, progress);
+        if (!slash.impacted && progress >= slash.impactProgress) {
+            slash.impacted = true;
+            spawnBladeSlashParticles(slash);
+            slash.onImpact?.();
+        }
+        if (progress < 1) return true;
+        if (slash.onFinish) slashCompletions.push(slash.onFinish);
+        return false;
+    });
+    slashCompletions.forEach(complete => complete());
+    if (generation !== combatVfxGeneration) return;
     drawCombatVfxParticles(surface.context, deltaSeconds);
     drawCombatVfxShockwaves(surface.context, deltaSeconds);
-    if (combatVfxProjectiles.length || combatVfxParticles.length || combatVfxShockwaves.length) {
+    if (combatVfxProjectiles.length || combatVfxSlashes.length || combatVfxParticles.length || combatVfxShockwaves.length) {
         combatVfxAnimationFrame = requestAnimationFrame(runCombatVfxFrame);
     } else {
         combatVfxAnimationFrame = null;
@@ -292,10 +613,7 @@ function queueEnemyAttackPresentation(attacker, target, damagePacket) {
         reducedMotion,
         emission: 0
     });
-    if (!combatVfxAnimationFrame) {
-        combatVfxLastFrame = 0;
-        combatVfxAnimationFrame = requestAnimationFrame(runCombatVfxFrame);
-    }
+    ensureCombatVfxFrame();
     return true;
 }
 
@@ -305,14 +623,24 @@ function cancelCombatVfx() {
     combatVfxAnimationFrame = null;
     combatVfxLastFrame = 0;
     combatVfxProjectiles = [];
+    combatVfxSlashes = [];
     combatVfxParticles = [];
     combatVfxShockwaves = [];
     combatVfxSurfaceCache = null;
     const canvas = document.getElementById('combat-vfx-canvas');
     canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
     document.querySelectorAll('.enemy-assault-damage').forEach(element => element.remove());
+    document.querySelectorAll('.blade-propagation-damage').forEach(element => element.remove());
     document.getElementById('player-stats')?.classList.remove('enemy-assault-hit');
+    document.querySelectorAll('.blade-impact-hit').forEach(element => element.classList.remove('blade-impact-hit'));
 }
 
 window.queueEnemyAttackPresentation = queueEnemyAttackPresentation;
+window.queuePlayerAttackPresentation = queuePlayerAttackPresentation;
+window.queueWeaponPropagationPresentation = queueWeaponPropagationPresentation;
 window.cancelCombatVfx = cancelCombatVfx;
+window.coreboundWeaponAttackVfx = Object.freeze({
+    attackFamilies: Object.freeze(Object.keys(WEAPON_ATTACK_PRESENTERS)),
+    propagationFamilies: Object.freeze(Object.keys(WEAPON_PROPAGATION_PRESENTERS)),
+    damagePalette: COMBAT_DAMAGE_VFX_PALETTE
+});

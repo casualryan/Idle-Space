@@ -61,8 +61,8 @@ Primary runtime modules:
 - delveManager.js + delveRewards.js
   Own delve sequencing/progression and the temporary reward/claim-cache model.
 - combatUI.js + combatVFX.js + delveUI.js
-  Own combat/delve DOM rendering, canvas combat presentation, and
-  controller-facing UI adapters.
+  Own combat/delve DOM rendering, canvas combat presentation, weapon-family
+  attack VFX dispatch, and controller-facing UI adapters.
 - combat.js
   Bootstrap only; it contains no combat rules or rendering implementation.
 - stats.js
