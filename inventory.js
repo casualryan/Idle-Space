@@ -496,13 +496,7 @@ function updateEquipmentDisplay() {
                 const wrapper = document.createElement('div');
                 wrapper.setAttribute('data-has-tooltip', 'true');
                 wrapper.setAttribute('data-tooltip-source', 'equipment-slot');
-                let tooltipHtml = getItemTooltipContent(equippedItem);
-                if (Array.isArray(equippedItem.rolledWires) && equippedItem.rolledWires.length > 0) {
-                    const colorBadge = c => ({ red: '#ff6b6b', green: '#51cf66', blue: '#74c0fc', black: '#ced4da' }[c] || '#adb5bd');
-                    const chips = equippedItem.rolledWires.map(w => `<span style=\"display:inline-block; border:1px solid ${colorBadge(w.color)}; color:${colorBadge(w.color)}; padding:1px 4px; margin:1px; border-radius:3px; font-size:11px;\">${w.color}${w.chip ? ' • ' + w.chip.name : ''}</span>`).join(' ');
-                    tooltipHtml += `<div style=\"background: rgba(0,20,45,0.6); padding:4px; margin-top:4px; border-radius:4px; border-left:2px solid #00ffcc;\"><div style=\"color:#66ffcc; font-weight:bold; margin-bottom:2px;\">Wires</div>${chips}</div>`;
-                }
-                wrapper.setAttribute('data-tooltip-content', tooltipHtml);
+                wrapper.setAttribute('data-tooltip-content', getItemTooltipContent(equippedItem));
                 wrapper.style.width = '100%';
                 wrapper.style.height = '100%';
                 wrapper.style.display = 'flex';

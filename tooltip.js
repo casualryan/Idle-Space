@@ -78,1011 +78,408 @@ function buildWeaponLocalPreview(item, showRanges = false) {
     };
 }
 
-// Keep the getItemTooltipContent function as it is since it just generates the content
-function getItemTooltipContent(item, showRanges = false) {
-    // Style the tooltip with sci-fi colors and modern formatting
-    const REARRANGE_TOOLTIP = true;
-    let content = `<div style="color: #e0f2ff; font-family: 'Orbitron', sans-serif; text-shadow: 0 0 5px rgba(0, 255, 204, 0.5); max-width: 300px;">`;
-    let renderedCritical = false;
-    
-    // Item name with gradient background - fixed to prevent awkward wrapping
-    content += `<div style="background: linear-gradient(to right, #00306e, #003f8f); padding: 5px; margin-bottom: 6px; border-left: 3px solid #00ffcc; border-radius: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                <strong style="font-size: 110%; color: #ffffff;">${item.name}</strong>
-                </div>`;
-    
+const TOOLTIP_SLOT_LABELS = {
+    mainHand: 'Main Hand',
+    offHand: 'Off Hand',
+    head: 'Head',
+    chest: 'Chest',
+    legs: 'Legs',
+    feet: 'Boots',
+    gloves: 'Gloves',
+    bionic: 'Bionic',
+    chip: 'Chip'
+};
+
+const TOOLTIP_DAMAGE_LABELS = {
+    kinetic: 'Kinetic',
+    slashing: 'Slashing',
+    pyro: 'Fire',
+    cryo: 'Cold',
+    electric: 'Electric',
+    corrosive: 'Corrosive',
+    radiation: 'Radiation'
+};
+
+const TOOLTIP_DAMAGE_COLORS = {
+    kinetic: '#ffd166',
+    slashing: '#ff8787',
+    pyro: '#ff6b6b',
+    cryo: '#74c0fc',
+    electric: '#ffd43b',
+    corrosive: '#69db7c',
+    radiation: '#da77f2'
+};
+
+const TOOLTIP_DEFENSE_LABELS = {
+    physicalResistance: 'Physical Resistance',
+    elementalResistance: 'Elemental Resistance',
+    chemicalResistance: 'Chemical Resistance'
+};
+
+function tooltipTitle(value) {
+    return String(value || '')
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/[_-]+/g, ' ')
+        .replace(/\b\w/g, character => character.toUpperCase());
+}
+
+function cloneTooltipValue(value) {
+    return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+function formatTooltipNumber(value, options = {}) {
+    const { showRanges = false, storedAsFraction = false, suffix = '', decimals = 2 } = options;
+    const normalize = raw => {
+        let number = Number(raw);
+        if (!Number.isFinite(number)) return null;
+        if (storedAsFraction) number *= 100;
+        const rounded = Number(number.toFixed(decimals));
+        return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+    };
+
+    if (typeof value === 'string') {
+        const match = value.trim().match(/^(-?\d+(?:\.\d+)?)\s*-\s*(-?\d+(?:\.\d+)?)$/);
+        if (match) {
+            const min = normalize(match[1]);
+            const max = normalize(match[2]);
+            if (min !== null && max !== null) return `${min === max ? min : `${min}-${max}`}${suffix}`;
+        }
+    }
+
+    if (value && typeof value === 'object') {
+        const min = normalize(value.min);
+        const max = normalize(value.max !== undefined ? value.max : value.min);
+        if (min === null && max === null) return '';
+        if (!showRanges || min === max || max === null) return `${min ?? max}${suffix}`;
+        return `${min ?? max}-${max}${suffix}`;
+    }
+
+    const formatted = normalize(value);
+    return formatted === null ? '' : `${formatted}${suffix}`;
+}
+
+function getTooltipValueAtPath(source, path) {
+    return String(path || '').split('.').reduce((node, key) => (
+        node && typeof node === 'object' ? node[key] : undefined
+    ), source);
+}
+
+function subtractTooltipValueAtPath(source, path, amount) {
+    const parts = String(path || '').split('.').filter(Boolean);
+    if (!parts.length || !Number.isFinite(Number(amount))) return;
+    let node = source;
+    for (let index = 0; index < parts.length - 1; index++) {
+        node = node?.[parts[index]];
+        if (!node || typeof node !== 'object') return;
+    }
+    const key = parts[parts.length - 1];
+    const current = Number(node[key]);
+    if (!Number.isFinite(current)) return;
+    const remaining = Number((current - Number(amount)).toFixed(6));
+    if (Math.abs(remaining) < 0.000001) delete node[key];
+    else node[key] = remaining;
+}
+
+function getTooltipModifierStoragePath(item, modifier) {
+    const path = modifier?.statPath || '';
+    if (!isWeaponTooltipItem(item)) return path;
+    if (path.startsWith('damageTypes.')) return path.replace('damageTypes.', 'weaponLocalFlatDamage.');
+    if (path.startsWith('statModifiers.damageTypes.')) return path.replace('statModifiers.damageTypes.', 'weaponLocalTypeIncrease.');
+    if (path.startsWith('statModifiers.damageGroups.')) return path.replace('statModifiers.damageGroups.', 'weaponLocalGroupIncrease.');
+    if (path === 'attackSpeedModifier') return 'weaponLocalAttackSpeedPercent';
+    return path;
+}
+
+function getTooltipBaseRollSource(item) {
+    if (!item || typeof item !== 'object') return {};
+    if (item.baseRolls && typeof item.baseRolls === 'object') return cloneTooltipValue(item.baseRolls);
+
+    const base = cloneTooltipValue(item);
+    if (!Array.isArray(item.rolledModifiers)) return base;
+
+    item.rolledModifiers.forEach(modifier => {
+        if (!modifier || typeof modifier !== 'object') return;
+        const amount = Number(modifier.value);
+        if (!Number.isFinite(amount)) return;
+        if (modifier.id === 'allResistances' || modifier.statPath === 'defenseTypes') {
+            ['physicalResistance', 'elementalResistance', 'chemicalResistance'].forEach(key => {
+                subtractTooltipValueAtPath(base, `defenseTypes.${key}`, amount);
+            });
+            return;
+        }
+        subtractTooltipValueAtPath(base, getTooltipModifierStoragePath(item, modifier), amount);
+    });
+    return base;
+}
+
+function renderTooltipLine(value, label, color = '#cfe6ff', options = {}) {
+    if (value === undefined || value === null || value === '') return '';
+    const prefix = options.prefix === undefined ? '+' : options.prefix;
+    return `<div style="color:${color};"><span style="color:${color}; font-weight:600;">${prefix}${value}</span> <span style="color:#d9eaff;">${label}</span>${options.detail || ''}</div>`;
+}
+
+function renderTooltipSection(title, lines, color = '#66ffcc') {
+    const visibleLines = lines.filter(Boolean);
+    if (!visibleLines.length) return '';
+    return `<div style="background:rgba(0, 20, 45, 0.6); padding:5px 6px; margin-bottom:6px; border-radius:3px; border-left:2px solid ${color};">` +
+        `<div style="color:${color}; font-weight:bold; margin-bottom:3px;">${title}</div>${visibleLines.join('')}</div>`;
+}
+
+function collectTooltipBaseRollLines(item, source, showRanges) {
+    const lines = [];
+    const push = (value, label, color, options = {}) => {
+        const formatted = formatTooltipNumber(value, { showRanges, ...options });
+        if (formatted) lines.push(renderTooltipLine(formatted, label, color, options));
+    };
+
     const isWeapon = isWeaponTooltipItem(item);
-    const weaponPreview = isWeapon ? buildWeaponLocalPreview(item, showRanges) : null;
-
-    // Item type info with subtle background
-    content += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-    content += `<span style="color: #7fdbff;">Type:</span> ${item.type}<br>`;
-    if (item.weaponType) {
-        content += `<span style=\"color: #7fdbff;\">Weapon Type:</span> ${item.weaponType}<br>`;
-    }
-    const weaponTaxonomy = getTooltipWeaponTaxonomy(item);
-    if (weaponTaxonomy) {
-        content += `<span style=\"color: #7fdbff;\">Weapon Family:</span> <span style=\"color:#e8c77a;\">${weaponTaxonomy.familyLabel}</span><br>`;
-        if (weaponTaxonomy.tagLabels.length > 0) {
-            content += `<span style=\"color: #7fdbff;\">Weapon Tags:</span> <span style=\"color:#b8cee0;\">${weaponTaxonomy.tagLabels.join(' • ')}</span><br>`;
-        }
-    }
-    if (item.levelRequirement !== undefined) {
-        const levelText = formatLevelRequirement(item.levelRequirement, showRanges);
-        if (levelText) {
-            content += `<span style="color: #ffd166;">Level Requirement:</span> ${levelText}<br>`;
-        }
-    }
-    content += `</div>`;
-
-    if (isWeapon && weaponPreview) {
-        const finalDamage = weaponPreview.finalDamage || {};
-        const baseDamage = weaponPreview.baseDamage || {};
-        content += `<div style="background: rgba(0, 20, 45, 0.6); padding: 6px; margin-bottom: 6px; border-radius: 4px; border-left: 2px solid #00ffcc;">`;
-        content += `<div style="color:#66ffcc; font-weight:bold; margin-bottom:4px;">Weapon Damage</div>`;
-        const finalTypes = Object.keys(finalDamage);
-        if (finalTypes.length === 0) {
-            content += `<div style="color:#ffb3b3;">No valid weapon base damage.</div>`;
-        } else {
-            finalTypes.forEach((type) => {
-                const rangeText = formatWeaponRangeValue(finalDamage[type], showRanges);
-                content += `<div><span style="color:#cfe6ff;">${rangeText} ${capitalize(type)}</span></div>`;
-            });
-            content += `<div style="color:#7fa7c6; font-size:11px; margin-top:2px;">Weapon Damage includes local weapon modifiers.</div>`;
-        }
-        const baseTypes = Object.keys(baseDamage);
-        if (baseTypes.length > 0) {
-            content += `<div style="color:#66ccff; margin-top:6px;">Base Weapon Damage:</div>`;
-            baseTypes.forEach((type) => {
-                const rangeText = formatWeaponRangeValue(baseDamage[type], showRanges);
-                content += `<div><span style="color:#a7d9ff;">${rangeText} ${capitalize(type)}</span></div>`;
-            });
-        }
-
-        const baseSpeed = Number(item.bAttackSpeed || 1);
-        const localMultiplier = Number(weaponPreview.localAttackSpeedMultiplier || 1);
-        const finalSpeed = baseSpeed * localMultiplier;
-        content += `<div style="color:#66ccff; margin-top:6px;">Attack Speed:</div>`;
-        content += `<div><span style="color:#cfe6ff;">${finalSpeed.toFixed(2)} attacks/sec</span></div>`;
-        if (Math.abs(localMultiplier - 1) > 0.0001) {
-            content += `<div><span style="color:#a7d9ff;">Base: ${baseSpeed.toFixed(2)} attacks/sec</span></div>`;
-        }
-
-        const weaponMods = [];
-        if (item.weaponLocalFlatDamage) {
-            Object.keys(item.weaponLocalFlatDamage).forEach((type) => {
-                const v = Number(item.weaponLocalFlatDamage[type]);
-                if (Number.isFinite(v) && v !== 0) weaponMods.push(`+${Math.round(v)} to Weapon ${capitalize(type)} Damage`);
-            });
-        }
-        if (item.weaponLocalTypeIncrease) {
-            Object.keys(item.weaponLocalTypeIncrease).forEach((type) => {
-                const v = Number(item.weaponLocalTypeIncrease[type]);
-                if (Number.isFinite(v) && v !== 0) weaponMods.push(`+${Math.round(v)}% Increased Weapon ${capitalize(type)} Damage`);
-            });
-        }
-        if (item.weaponLocalGroupIncrease) {
-            Object.keys(item.weaponLocalGroupIncrease).forEach((group) => {
-                const v = Number(item.weaponLocalGroupIncrease[group]);
-                if (Number.isFinite(v) && v !== 0) weaponMods.push(`+${Math.round(v)}% Increased Weapon ${capitalize(group)} Damage`);
-            });
-        }
-        if (item.weaponDamageConversion && item.weaponDamageConversion.source && item.weaponDamageConversion.target) {
-            weaponMods.push(`${capitalize(item.weaponDamageConversion.source)} Weapon Damage Converted to ${capitalize(item.weaponDamageConversion.target)}`);
-        }
-        if (item.weaponLocalAttackSpeedPercent) {
-            weaponMods.push(`+${Math.round(Number(item.weaponLocalAttackSpeedPercent))}% Increased Weapon Attack Speed`);
-        }
-        if (weaponMods.length > 0) {
-            content += `<div style="color:#66ccff; margin-top:6px;">Weapon Modifiers:</div>`;
-            weaponMods.forEach((line) => {
-                content += `<div style="color:#cfe6ff;">${line}</div>`;
-            });
-        }
-        content += `</div>`;
-    }
-    
-    // // Flat damage section (placed immediately after header) - single compact line
-    // if (item && item.damageTypes && !showRanges) {
-    //     const dt = item.damageTypes;
-    //     const entries = Object.keys(dt).map(k => {
-    //         const v = dt[k];
-    //         if (typeof v === 'number') return `${capitalize(k)} ${v}`;
-    //         if (v && typeof v === 'object') {
-    //             const min = (typeof v.min === 'number') ? v.min : 0;
-    //             const max = (typeof v.max === 'number') ? v.max : min;
-    //             return min === max ? `${capitalize(k)} ${min}` : `${capitalize(k)} ${min}-${max}`;
-    //         }
-    //         return '';
-    //     }).filter(Boolean);
-    //     if (entries.length > 0) {
-    //         content += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-    //         content += `<span style=\"color: #ffcc00;\">Physical Damage:</span> <span style=\"color:#cfe6ff;\">${entries.join(' • ')}</span>`;
-    //         content += `</div>`;
-    //     }
-    // }
-    
-    // Roll Groups (Possible Mods) - structured preview for shop/fabricator
-    if (showRanges && Array.isArray(item.rollGroups) && item.rollGroups.length > 0) {
-        const safeNum = (n) => (typeof n === 'number' && isFinite(n)) ? n : 0;
-        const pct = (value, min, max) => {
-            if (min === max) return 1;
-            return Math.max(0, Math.min(1, (value - min) / (max - min)));
-        };
-        const rollColor = (value, min, max) => {
-            // Colors per spec: min, below35, avg(35-65), above65, max
-            if (value === min) return '#888888';
-            if (value === max) return '#51cf66';
-            const p = pct(value, min, max) * 100;
-            if (p < 35) return '#ffa94d';
-            if (p <= 65) return '#cfe6ff';
-            return '#74c0fc';
-        };
-        const formatRange = (val, suffix = '') => {
-            if (val === undefined || val === null) return '';
-            if (typeof val === 'string') {
-                return `${val}${suffix}`;
-            }
-            if (typeof val === 'number') {
-                return `${safeNum(val)}${suffix}`;
-            }
-            if (typeof val === 'object' && val.min !== undefined && val.max !== undefined) {
-                return `${safeNum(val.min)}${suffix}-${safeNum(val.max)}${suffix}`;
-            }
-            return '';
-        };
-        const toTitle = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
-        const resistanceDisplay = key => ({
-            physicalResistance: 'Physical Resistance',
-            elementalResistance: 'Elemental Resistance',
-            chemicalResistance: 'Chemical Resistance'
-        })[key] || toTitle(key);
-        const groupLabel = key => ({
-            physical: 'Physical', elemental: 'Elemental', chemical: 'Chemical'
-        })[key] || toTitle(key);
-        const isTopLevelPercent = k => (
-            k === 'attackSpeedModifier' || k === 'criticalChanceModifier' ||
-            k === 'criticalMultiplierModifier' || k === 'healthBonusPercent' ||
-            k === 'energyShieldBonusPercent'
-        );
-        const dmgTypeDisplay = t => ({ pyro: 'Fire', cryo: 'Cold', electric: 'Elec', kinetic: 'Kinetic', slashing: 'Slashing', corrosive: 'Corrosive', radiation: 'Radiation' }[t] || toTitle(t));
-        const dmgTypeGroup = t => {
-            if (t === 'kinetic' || t === 'slashing') return 'Physical';
-            if (t === 'pyro' || t === 'cryo' || t === 'electric') return 'Elemental';
-            if (t === 'corrosive' || t === 'radiation') return 'Chemical';
-            return 'Mods';
-        };
-        const nicerTopName = key => ({
-            attackSpeedModifier: 'Attack Speed',
-            criticalChanceModifier: 'Critical Chance',
-            criticalMultiplierModifier: 'Critical Multiplier',
-            healthBonusPercent: 'Health %',
-            energyShieldBonusPercent: 'Energy Shield %',
-        })[key] || toTitle(key);
-        const fmtChoice = (choice) => {
-            if (!choice || !choice.path) return '';
-            const parts = choice.path.split('.');
-            const key = parts[0];
-            const sub = parts[1];
-            const restName = parts.slice(1).join('.');
-            const val = choice.value;
-            switch (key) {
-                case 'damageTypes':
-                    return `${dmgTypeDisplay(sub)} ${formatRange(val)}`;
-                case 'defenseTypes':
-                    return `${resistanceDisplay(sub)} +${formatRange(val)}`;
-                case 'statModifiers':
-                    if (sub === 'damageTypes') {
-                        const dtype = parts[2];
-                        return `+${formatRange(val, '%')} ${dmgTypeDisplay(dtype)} dmg`;
-                    }
-                    if (sub === 'damageGroups') {
-                        const g = parts[2];
-                        return `+${formatRange(val, '%')} ${groupLabel(g)}`;
-                    }
-                    return `${toTitle(parts.slice(1).join(' '))}: +${formatRange(val)}`;
-                case 'passiveBonuses': {
-                    const pName = restName; // supports spaces
-                    return `+${formatRange(val)} to ${pName}`;
-                }
-                default: {
-                    // top-level fields
-                    if (isTopLevelPercent(key)) {
-                        return `+${formatRange(val, '%')} ${nicerTopName(key)}`;
-                    }
-                    return `${toTitle(key)} +${formatRange(val)}`;
-                }
-            }
-        };
-        const fmtPick = (pick) => {
-            if (typeof pick === 'number') return `${pick}`;
-            if (typeof pick === 'string') return pick;
-            if (pick && pick.min !== undefined && pick.max !== undefined) return `${pick.min}-${pick.max}`;
-            return '?';
-        };
-
-        // Build grouped sections as requested (Category (N slots) + bullets)
-        let poolsHtml = '';
-        item.rollGroups.forEach((grp) => {
-            if (!grp || !Array.isArray(grp.from) || grp.from.length === 0) return;
-            const pickTxt = fmtPick(grp.pick);
-
-            // Derive a sensible group title
-            let title = 'Enhancements';
-            const kinds = new Set();
-            grp.from.forEach(ch => {
-                if (!ch || !ch.path) return;
-                const p = ch.path.split('.');
-                if (p[0] === 'damageTypes') kinds.add(dmgTypeGroup(p[1]));
-                else if (p[0] === 'statModifiers' && p[1] === 'damageTypes') kinds.add(dmgTypeGroup(p[2]));
-                else if (p[0] === 'statModifiers' && p[1] === 'damageGroups') kinds.add(groupLabel(p[2]));
-            });
-            if (kinds.size === 1) title = Array.from(kinds)[0];
-
-            const bullets = grp.from.map(choice => {
-                if (!choice || !choice.path) return '';
-                // If choice.value is a range, colorize ends; if number, colorize value relative to itself (treat as max)
-                let colored = fmtChoice(choice);
-                const v = choice.value;
-                if (typeof v === 'object' && v.min !== undefined && v.max !== undefined && v.min !== v.max) {
-                    const colorMin = rollColor(v.min, v.min, v.max);
-                    const colorMax = rollColor(v.max, v.min, v.max);
-                    colored = colored.replace(`${v.min}`, `<span style=\"color:${colorMin}\">${v.min}</span>`)
-                                     .replace(`${v.max}`, `<span style=\"color:${colorMax}\">${v.max}</span>`);
-                }
-                return `* ${colored}`;
-            }).filter(Boolean).join('<br>');
-            if (bullets) {
-                const slotsLabel = `(${pickTxt} ${pickTxt === '1' ? 'slot' : 'slots'})`;
-                poolsHtml += `<div style="margin-top:6px;">
-                    <div style="color:#66ffcc; font-weight:bold; margin-bottom:2px;">${title} ${slotsLabel}</div>
-                    <div style="color:#cfe6ff;">${bullets}</div>
-                </div>`;
-            }
+    const damageSource = isWeapon
+        ? (source.weaponBaseDamage || source.baseDamageTypes || source.damageTypes)
+        : source.damageTypes;
+    if (damageSource && typeof damageSource === 'object') {
+        Object.entries(damageSource).forEach(([rawType, value]) => {
+            const type = normalizeTooltipDamageType(rawType);
+            push(value, `${TOOLTIP_DAMAGE_LABELS[type] || tooltipTitle(type)} Damage`, TOOLTIP_DAMAGE_COLORS[type] || '#ffd166', { prefix: '' });
         });
-
-        if (poolsHtml) {
-            content += `<div style="background: rgba(0, 20, 45, 0.6); padding: 6px; margin-bottom: 6px; border-radius: 4px; border-left: 2px solid #00ffcc;">
-                ${poolsHtml}
-            </div>`;
-        }
     }
 
-    // Capture Passive Bonuses for later placement (just above Wires)
-    let capturedPassiveContent = '';
-    if (item.passiveBonuses && Object.keys(item.passiveBonuses).length > 0) {
-        let hasPassives = false;
-        let passiveContent = `<div style="background: rgba(0, 255, 204, 0.1); padding: 4px; margin-bottom: 6px; border-radius: 2px; border-left: 2px solid #00ffcc;">`;
-        passiveContent += `<span style="color: #00ffcc; font-weight: bold;">Passive Bonuses:</span><br>`;
-        for (const passiveName in item.passiveBonuses) {
-            const bonusValue = item.passiveBonuses[passiveName];
-            const formattedValue = typeof bonusValue === 'object' ? (bonusValue.value || bonusValue.min || 0) : bonusValue;
-            if (formattedValue > 0) {
-                passiveContent += `<span style=\"color: #a6fff2;\">+${formattedValue} to ${passiveName}</span><br>`;
-                hasPassives = true;
-            }
-        }
-        passiveContent += `</div>`;
-        if (hasPassives) {
-            capturedPassiveContent = passiveContent;
-        }
+    if (isWeapon && source.bAttackSpeed !== undefined) {
+        push(source.bAttackSpeed, 'Attacks per Second', '#ffd3a5', { prefix: '', decimals: 2 });
     }
 
-    // Remove extra section additions per request (no new sections beyond existing ones)
-    
-    // Stats section with organized formatting - only create if there are stats
-    let statsContent = '';
-    let hasStats = false;
-    
-    // Add this function to group damage types by their category
-    function getDamageTypeCategory(damageType) {
-        // Physical Group
-        if (damageType === 'kinetic' || damageType === 'slashing') {
-            return 'Physical';
-        }
-        // Elemental Group
-        else if (damageType === 'pyro' || damageType === 'cryo' || damageType === 'electric') {
-            return 'Elemental';
-        }
-        // Chemical Group
-        else if (damageType === 'corrosive' || damageType === 'radiation') {
-            return 'Chemical';
-        }
-        // Legacy support
-        else if (damageType === 'mental') {
-            return 'Physical (Legacy)';
-        }
-        else if (damageType === 'magnetic') {
-            return 'Elemental (Legacy)';
-        }
-        else if (damageType === 'chemical') {
-            return 'Chemical (Legacy)';
-        }
-        
-        return 'Unknown';
-    }
-
-    // Damage Types
-    if (item.damageTypes && Object.keys(item.damageTypes).length > 0) {
-        if (!hasStats) {
-            statsContent += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-            hasStats = true;
-        }
-        
-        // Group damage types by category
-        const damageByCategory = {};
-        
-        for (let damageType in item.damageTypes) {
-            const category = getDamageTypeCategory(damageType);
-            if (!damageByCategory[category]) {
-                damageByCategory[category] = [];
-            }
-            
-            damageByCategory[category].push({
-                type: damageType,
-                value: item.damageTypes[damageType]
-            });
-        }
-        
-        // Display damage types by category
-        for (let category in damageByCategory) {
-            statsContent += `<div style="margin-top: 4px;"><span style="color: #ffcc00;">${category} Damage:</span></div>`;
-            
-            for (let damage of damageByCategory[category]) {
-                const damageValue = damage.value;
-                const damageType = capitalize(damage.type);
-                
-                if (
-                    showRanges &&
-                    typeof damageValue === 'object' &&
-                    damageValue.min !== undefined &&
-                    damageValue.max !== undefined
-                ) {
-                    statsContent += `<div><span style="color: #ffcc00;">• ${damageType}:</span> <span style="color: #ffffff;">${damageValue.min}-${damageValue.max}</span></div>`;
-                } else if (typeof damageValue === 'object') {
-                    // Fix for [object Object] display - show min value if available
-                    const minVal = damageValue.min !== undefined ? damageValue.min : 0;
-                    const maxVal = damageValue.max !== undefined ? damageValue.max : minVal;
-                    
-                    if (minVal === maxVal) {
-                        statsContent += `<div><span style="color: #ffcc00;">• ${damageType}:</span> <span style="color: #ffffff;">${minVal}</span></div>`;
-                    } else {
-                        statsContent += `<div><span style="color: #ffcc00;">• ${damageType}:</span> <span style="color: #ffffff;">${minVal}-${maxVal}</span></div>`;
-                    }
-                } else {
-                    statsContent += `<div><span style="color: #ffcc00;">• ${damageType}:</span> <span style="color: #ffffff;">${damageValue}</span></div>`;
-                }
-            }
-        }
-        // Close Flat Damage box to keep it separate from following sections
-        if (hasStats) {
-            statsContent += `</div>`;
-            content += statsContent;
-            statsContent = '';
-            hasStats = false;
-        }
-    }
-
-    // Damage % Bonus (groups + types in one box)
-    let openedDamagePercentBox = false;
-    if ((item.statModifiers && item.statModifiers.damageGroups && Object.keys(item.statModifiers.damageGroups).length > 0) ||
-        (item.statModifiers && item.statModifiers.damageTypes && Object.keys(item.statModifiers.damageTypes).length > 0)) {
-        if (!hasStats) {
-            statsContent += `<div style=\"background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;\">`;
-            hasStats = true;
-        }
-        openedDamagePercentBox = true;
-        statsContent += `<div style=\"margin-top: 4px;\"><span style=\"color: #ffcc00;\">Damage % Bonus:</span></div>`;
-    }
-    if (item.statModifiers && item.statModifiers.damageGroups && Object.keys(item.statModifiers.damageGroups).length > 0) {
-        
-        // Define group display names
-        const groupDisplayNames = {
-            'physical': 'Physical Damage',
-            'elemental': 'Elemental Damage',
-            'chemical': 'Chemical Damage'
-        };
-        
-        for (let group in item.statModifiers.damageGroups) {
-            const modValue = item.statModifiers.damageGroups[group];
-            const displayName = groupDisplayNames[group] || capitalize(group);
-            
-            if (
-                showRanges &&
-                typeof modValue === 'object' &&
-                modValue.min !== undefined &&
-                modValue.max !== undefined
-            ) {
-                statsContent += `<div><span style="color: #ffcc00;">• ${displayName}:</span> <span style="color: #ffffff;">+${modValue.min}% to +${modValue.max}%</span></div>`;
-            } else if (typeof modValue === 'object') {
-                // Fix for [object Object] display - show min value if available
-                const minVal = modValue.min !== undefined ? modValue.min : 0;
-                const maxVal = modValue.max !== undefined ? modValue.max : minVal;
-                
-                if (minVal === maxVal) {
-                    statsContent += `<div><span style="color: #ffcc00;">• ${displayName}:</span> <span style="color: #ffffff;">+${minVal}%</span></div>`;
-                } else {
-                    statsContent += `<div><span style="color: #ffcc00;">• ${displayName}:</span> <span style="color: #ffffff;">+${minVal}% to +${maxVal}%</span></div>`;
-                }
-            } else {
-                statsContent += `<div><span style="color: #ffcc00;">• ${displayName}:</span> <span style="color: #ffffff;">+${modValue}%</span></div>`;
-            }
-        }
-    }
-
-    // Percentage Damage Modifiers (types) - append under same box
-    if (item.statModifiers && item.statModifiers.damageTypes && Object.keys(item.statModifiers.damageTypes).length > 0) {
-        for (let damageType in item.statModifiers.damageTypes) {
-            const modifierValue = item.statModifiers.damageTypes[damageType];
-            if (showRanges && typeof modifierValue === 'object' && modifierValue.min !== undefined && modifierValue.max !== undefined) {
-                statsContent += `<span style=\"color: #ffd166;\">+${modifierValue.min}% - +${modifierValue.max}% ${capitalize(damageType)} Damage</span><br>`;
-            } else if (typeof modifierValue === 'object') {
-                statsContent += `<span style=\"color: #ffd166;\">+${modifierValue.value || 0}% ${capitalize(damageType)} Damage</span><br>`;
-            } else {
-                statsContent += `<span style=\"color: #ffd166;\">+${modifierValue}% ${capitalize(damageType)} Damage</span><br>`;
-            }
-        }
-    }
-    if (openedDamagePercentBox && hasStats) {
-        statsContent += `</div>`;
-        content += statsContent;
-        statsContent = '';
-        hasStats = false;
-    }
-
-    // Critical modifiers (place right after Damage % Bonus)
-    if (item.criticalChanceModifier !== undefined || item.criticalMultiplierModifier !== undefined ||
-        (showRanges && (item.criticalChanceModifierRange || item.criticalMultiplierModifierRange))) {
-        content += `<div style=\"background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;\">`;
-        content += `<span style=\"color: #ffd166; font-weight: bold;\">Critical Modifiers:</span><br>`;
-        if (item.criticalChanceModifier !== undefined) {
-            content += `<span style=\"color: #ffd166;\">Critical Chance:</span> +${(item.criticalChanceModifier * 100).toFixed(2)}%<br>`;
-        }
-        if (showRanges && item.criticalChanceModifierRange) {
-            content += `<span style=\"color: #ffd166;\">Critical Chance:</span> +${item.criticalChanceModifierRange.min}% - +${item.criticalChanceModifierRange.max}%<br>`;
-        }
-        if (item.criticalMultiplierModifier !== undefined) {
-            content += `<span style=\"color: #ffd166;\">Critical Multiplier:</span> +${(item.criticalMultiplierModifier * 100).toFixed(2)}%<br>`;
-        }
-        if (showRanges && item.criticalMultiplierModifierRange) {
-            content += `<span style=\"color: #ffd166;\">Critical Multiplier:</span> +${item.criticalMultiplierModifierRange.min}% - +${item.criticalMultiplierModifierRange.max}%<br>`;
-        }
-        content += `</div>`;
-        renderedCritical = true;
-    }
-
-    // Other Stat Modifiers (we will later separate crit/combo/misc order by rendering order below)
-    if (item.statModifiers) {
-        const percentageStats = ['attackSpeed', 'criticalChance', 'criticalMultiplier'];
-        let hasOtherStats = false;
-        
-        for (let stat in item.statModifiers) {
-            if (
-                stat !== 'damageTypes' &&
-                stat !== 'precision' &&
-                stat !== 'deflection' &&
-                stat !== 'severedLimbChance' &&
-                stat !== 'maxSeveredLimbs'
-            ) {
-                hasOtherStats = true;
-                break;
-            }
-        }
-        
-        if (hasOtherStats) {
-            if (!hasStats) {
-                statsContent += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-                hasStats = true;
-            }
-            
-            for (let stat in item.statModifiers) {
-                if (
-                    stat !== 'damageTypes' &&
-                    stat !== 'precision' &&
-                    stat !== 'deflection' &&
-                    stat !== 'severedLimbChance' &&
-                    stat !== 'maxSeveredLimbs'
-                ) {
-                    const statValue = item.statModifiers[stat];
-                    const statName = capitalize(stat);
-                    if (
-                        showRanges &&
-                        typeof statValue === 'object' &&
-                        statValue.min !== undefined &&
-                        statValue.max !== undefined
-                    ) {
-                        if (percentageStats.includes(stat)) {
-                            statsContent += `<span style="color: #56cfe1;">${statName}:</span> +${statValue.min}% - +${statValue.max}%<br>`;
-                        } else {
-                            statsContent += `<span style="color: #56cfe1;">${statName}:</span> +${statValue.min} - +${statValue.max}<br>`;
-                        }
-                    } else if (typeof statValue === 'object') {
-                        // Handle cases where statValue is an object without min/max
-                        if (percentageStats.includes(stat)) {
-                            statsContent += `<span style="color: #56cfe1;">${statName}:</span> +${statValue.value || 0}%<br>`;
-                        } else {
-                            statsContent += `<span style="color: #56cfe1;">${statName}:</span> +${statValue.value || 0}<br>`;
-                        }
-                    } else if (typeof statValue === 'number' || typeof statValue === 'string') {
-                        if (percentageStats.includes(stat)) {
-                            statsContent += `<span style="color: #56cfe1;">${statName}:</span> +${statValue}%<br>`;
-                        } else {
-                            statsContent += `<span style="color: #56cfe1;">${statName}:</span> +${statValue}<br>`;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Defense Types
-    if (item.defenseTypes && Object.keys(item.defenseTypes).length > 0) {
-        if (!hasStats) {
-            statsContent += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-            hasStats = true;
-        }
-        
-        // Define defense type descriptions
-        const defenseDescriptions = {
-            'physicalResistance': 'Physical Resistance',
-            'elementalResistance': 'Elemental Resistance',
-            'chemicalResistance': 'Chemical Resistance',
-            'toughness': 'Physical Resistance (Legacy)',
-            'fortitude': 'Mental Resistance (Legacy)',
-            'heatResistance': 'Heat Resistance (Legacy)',
-            'immunity': 'Chemical Resistance (Legacy)',
-            'antimagnet': 'Magnetic Resistance (Legacy)'
-        };
-        
-        for (let defenseType in item.defenseTypes) {
-            const defenseValue = item.defenseTypes[defenseType];
-            const description = defenseDescriptions[defenseType] || capitalize(defenseType);
-            
-            if (
-                showRanges &&
-                typeof defenseValue === 'object' &&
-                defenseValue.min !== undefined &&
-                defenseValue.max !== undefined
-            ) {
-                statsContent += `<div><span style="color: #64dfdf;">${description}:</span> <span style="color: #ffffff;">${defenseValue.min}-${defenseValue.max}</span></div>`;
-            } else {
-                statsContent += `<div><span style="color: #64dfdf;">${description}:</span> <span style="color: #ffffff;">${defenseValue}</span></div>`;
-            }
-        }
-    }
-    
-    if (hasStats) {
-        statsContent += `</div>`;
-        content += statsContent;
-    }
-
-    // Health and shield section - only create if there are stats
-    let healthShieldContent = '';
-    let hasHealthShield = false;
-    
-    // Health Bonuses
-    if (item.healthBonus !== undefined) {
-        if (!hasHealthShield) {
-            healthShieldContent += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-            hasHealthShield = true;
-        }
-        
-        if (
-            showRanges &&
-            typeof item.healthBonus === 'object' &&
-            item.healthBonus.min !== undefined &&
-            item.healthBonus.max !== undefined
-        ) {
-            healthShieldContent += `<span style="color: #48bf91;">+${item.healthBonus.min} - +${item.healthBonus.max} Health</span><br>`;
-        } else if (typeof item.healthBonus === 'object') {
-            // Fix for [object Object] display
-            const minVal = item.healthBonus.min !== undefined ? item.healthBonus.min : 0;
-            const maxVal = item.healthBonus.max !== undefined ? item.healthBonus.max : minVal;
-            
-            if (minVal === maxVal) {
-                healthShieldContent += `<span style="color: #48bf91;">+${minVal} Health</span><br>`;
-            } else {
-                healthShieldContent += `<span style="color: #48bf91;">+${minVal} - +${maxVal} Health</span><br>`;
-            }
-        } else {
-            healthShieldContent += `<span style="color: #48bf91;">+${item.healthBonus} Health</span><br>`;
-        }
-    }
-    // Health percent – show range for previews, rolled value for actual items
-    if (showRanges ? (item.healthBonusPercentRange !== undefined) : (item.healthBonusPercentDisplay !== undefined || item.healthBonusPercent !== undefined)) {
-        if (!hasHealthShield) {
-            healthShieldContent += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-            hasHealthShield = true;
-        }
-        if (showRanges && typeof item.healthBonusPercentRange === 'object' && item.healthBonusPercentRange.min !== undefined && item.healthBonusPercentRange.max !== undefined) {
-            healthShieldContent += `<span style="color: #48bf91;">+${item.healthBonusPercentRange.min}% - +${item.healthBonusPercentRange.max}% Health</span><br>`;
-        } else {
-            const pct = (item.healthBonusPercentDisplay !== undefined)
-                ? item.healthBonusPercentDisplay
-                : Math.round((item.healthBonusPercent || 0) * 100);
-            healthShieldContent += `<span style="color: #48bf91;">+${pct}% Health</span><br>`;
-        }
-    }
-
-    // Health Regen
-    if (item.healthRegen !== undefined) {
-        if (!hasHealthShield) {
-            healthShieldContent += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-            hasHealthShield = true;
-        }
-        
-        if (
-            showRanges &&
-            typeof item.healthRegen === 'object' &&
-            item.healthRegen.min !== undefined &&
-            item.healthRegen.max !== undefined
-        ) {
-            healthShieldContent += `<span style="color: #48bf91;">Health Regeneration:</span> +${item.healthRegen.min.toFixed(2)} - +${item.healthRegen.max.toFixed(2)} per second<br>`;
-        } else {
-            healthShieldContent += `<span style="color: #48bf91;">Health Regeneration:</span> +${item.healthRegen.toFixed(2)} per second<br>`;
-        }
-    }
-    
-    // If we have health/shield content, close the div and add it to the main content
-    if (hasHealthShield) {
-        healthShieldContent += `</div>`;
-        content += healthShieldContent;
-    }
-
-    // Energy Shield Bonuses
-    if (item.energyShieldBonus !== undefined) {
-        if (!hasHealthShield) {
-            healthShieldContent += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-            hasHealthShield = true;
-        }
-        
-        if (
-            showRanges &&
-            typeof item.energyShieldBonus === 'object' &&
-            item.energyShieldBonus.min !== undefined &&
-            item.energyShieldBonus.max !== undefined
-        ) {
-            healthShieldContent += `<span style="color: #06d6a0;">+${item.energyShieldBonus.min} - +${item.energyShieldBonus.max} Energy Shield</span><br>`;
-        } else if (typeof item.energyShieldBonus === 'object') {
-            // Fix for [object Object] display
-            const minVal = item.energyShieldBonus.min !== undefined ? item.energyShieldBonus.min : 0;
-            const maxVal = item.energyShieldBonus.max !== undefined ? item.energyShieldBonus.max : minVal;
-            
-            if (minVal === maxVal) {
-                healthShieldContent += `<span style="color: #06d6a0;">+${minVal} Energy Shield</span><br>`;
-            } else {
-                healthShieldContent += `<span style="color: #06d6a0;">+${minVal} - +${maxVal} Energy Shield</span><br>`;
-            }
-        } else {
-            healthShieldContent += `<span style="color: #06d6a0;">+${item.energyShieldBonus} Energy Shield</span><br>`;
-        }
-    }
-    
-    // Energy Shield Percentage Bonuses
-    // Energy Shield percent – range for previews, rolled value for actual items
-    if (showRanges ? (item.energyShieldBonusPercentRange !== undefined) : (item.energyShieldBonusPercentDisplay !== undefined || item.energyShieldBonusPercent !== undefined)) {
-        if (!hasHealthShield) {
-            healthShieldContent += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-            hasHealthShield = true;
-        }
-        if (showRanges && typeof item.energyShieldBonusPercentRange === 'object' && item.energyShieldBonusPercentRange.min !== undefined && item.energyShieldBonusPercentRange.max !== undefined) {
-            healthShieldContent += `<span style="color: #06d6a0;">+${item.energyShieldBonusPercentRange.min}% - +${item.energyShieldBonusPercentRange.max}% Energy Shield</span><br>`;
-        } else {
-            const pct = (item.energyShieldBonusPercentDisplay !== undefined)
-                ? item.energyShieldBonusPercentDisplay
-                : Math.round((item.energyShieldBonusPercent || 0) * 100);
-            healthShieldContent += `<span style="color: #06d6a0;">+${pct}% Energy Shield</span><br>`;
-        }
-    }
-
-    // Remove old duplicate critical block (handled earlier)
-
-    // Combo attack modifiers
-    const hasComboStats = item.comboAttack !== undefined || item.comboEffectiveness !== undefined || item.additionalComboAttacks !== undefined;
-    if (hasComboStats) {
-        content += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-        content += `<span style="color: #ff9999; font-weight: bold;">Combo System:</span><br>`;
-        if (item.comboAttack !== undefined) {
-            let comboAttack;
-            if (showRanges && typeof item.comboAttack === 'object' && item.comboAttack.min !== undefined) {
-                comboAttack = `${item.comboAttack.min}% - ${item.comboAttack.max}%`;
-            } else {
-                comboAttack = `${item.comboAttack}%`;
-            }
-            content += `<span style="color: #ff9999;">Combo Attack:</span> +${comboAttack}<br>`;
-        }
-        if (item.comboEffectiveness !== undefined) {
-            let comboEff;
-            if (showRanges && typeof item.comboEffectiveness === 'object' && item.comboEffectiveness.min !== undefined) {
-                comboEff = `${item.comboEffectiveness.min}% - ${item.comboEffectiveness.max}%`;
-            } else {
-                comboEff = `${item.comboEffectiveness}%`;
-            }
-            content += `<span style="color: #ffb366;">Combo Effectiveness:</span> +${comboEff}<br>`;
-        }
-        if (item.additionalComboAttacks !== undefined) {
-            let additionalCombo;
-            if (showRanges && typeof item.additionalComboAttacks === 'object' && item.additionalComboAttacks.min !== undefined) {
-                additionalCombo = `${Math.floor(item.additionalComboAttacks.min)} - ${Math.floor(item.additionalComboAttacks.max)}`;
-            } else {
-                additionalCombo = `${Math.floor(item.additionalComboAttacks)}`;
-            }
-            content += `<span style="color: #ff6b6b;">Additional Combo Attacks:</span> +${additionalCombo}<br>`;
-        }
-        content += `</div>`;
-    }
-
-    // Other misc modifiers (precision, deflection)
-    // Precision - only add section if it has content
-    if (item.precision !== undefined) {
-        content += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-        if (
-            typeof item.precision === 'object' &&
-            item.precision.min !== undefined &&
-            item.precision.max !== undefined
-        ) {
-            content += `<span style="color: #ffd166;">Precision:</span> +${item.precision.min} - +${item.precision.max}<br>`;
-        } else {
-            content += `<span style="color: #ffd166;">Precision:</span> +${item.precision}<br>`;
-        }
-        content += `</div>`;
-    }
-
-    // Deflection - only add section if it has content
-    if (item.deflection !== undefined) {
-        content += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-        if (
-            typeof item.deflection === 'object' &&
-            item.deflection.min !== undefined &&
-            item.deflection.max !== undefined
-        ) {
-            content += `<span style="color: #ffd166;">Deflection:</span> +${item.deflection.min} - +${item.deflection.max}<br>`;
-        } else {
-            content += `<span style="color: #ffd166;">Deflection:</span> +${item.deflection}<br>`;
-        }
-        content += `</div>`;
-    }
-
-    // Efficiency Stats - Handle both ranges (for shop) and actual values (for inventory)
-    const hasEfficiencyStats = (showRanges && (item.armorEfficiency !== undefined || item.weaponEfficiency !== undefined || item.bionicEfficiency !== undefined)) ||
-                              (!showRanges && (item.armorEfficiency !== undefined || item.weaponEfficiency !== undefined || item.bionicEfficiency !== undefined));
-                              
-    if (hasEfficiencyStats) {
-        content += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-        content += `<span style="color: #a8e6cf; font-weight: bold;">Efficiency:</span><br>`;
-        
-        if (item.armorEfficiency !== undefined) {
-            let armorEff;
-            if (showRanges && typeof item.armorEfficiency === 'object' && item.armorEfficiency.min !== undefined) {
-                armorEff = `${item.armorEfficiency.min}% - ${item.armorEfficiency.max}%`;
-            } else {
-                armorEff = `${item.armorEfficiency}%`;
-            }
-            content += `<span style="color: #a8e6cf;">Armor Efficiency:</span> +${armorEff}<br>`;
-        }
-        
-        if (item.weaponEfficiency !== undefined) {
-            let weaponEff;
-            if (showRanges && typeof item.weaponEfficiency === 'object' && item.weaponEfficiency.min !== undefined) {
-                weaponEff = `${item.weaponEfficiency.min}% - ${item.weaponEfficiency.max}%`;
-            } else {
-                weaponEff = `${item.weaponEfficiency}%`;
-            }
-            content += `<span style="color: #ffd3a5;">Weapon Efficiency:</span> +${weaponEff}<br>`;
-        }
-        
-        if (item.bionicEfficiency !== undefined) {
-            let bionicEff;
-            if (showRanges && typeof item.bionicEfficiency === 'object' && item.bionicEfficiency.min !== undefined) {
-                bionicEff = `${item.bionicEfficiency.min}% - ${item.bionicEfficiency.max}%`;
-            } else {
-                bionicEff = `${item.bionicEfficiency}%`;
-            }
-            content += `<span style="color: #c5a3ff;">Bionic Efficiency:</span> +${bionicEff} <span style="color:#9fb4c8;">(increases bionic proc chances)</span><br>`;
-        }
-        
-        content += `</div>`;
-    }
-
-    // Debuffs (first chance, then modifiers) and severed limb mechanics
-    const effectsArray = Array.isArray(item.effects) ? item.effects : [];
-    const severedFromTop = item.severedLimbChance !== undefined ? item.severedLimbChance : undefined;
-    const severedFromMods = (item.statModifiers && item.statModifiers.severedLimbChance !== undefined) ? item.statModifiers.severedLimbChance : undefined;
-    const maxLimbsFromTop = item.maxSeveredLimbs !== undefined ? item.maxSeveredLimbs : undefined;
-    const maxLimbsFromMods = (item.statModifiers && item.statModifiers.maxSeveredLimbs !== undefined) ? item.statModifiers.maxSeveredLimbs : undefined;
-    const severedVal = severedFromTop !== undefined ? severedFromTop : severedFromMods;
-    const maxLimbsVal = maxLimbsFromTop !== undefined ? maxLimbsFromTop : maxLimbsFromMods;
-    const hasSeveredChance = severedVal !== undefined;
-    const hasMaxLimbs = maxLimbsVal !== undefined;
-    const debuffEffects = effectsArray.filter(e => e && (e.action === 'applyDebuff' || e.action === 'applyStackingDebuff'));
-    if (debuffEffects.length > 0 || hasSeveredChance || hasMaxLimbs) {
-        content += `<div style=\"background: rgba(30, 0, 60, 0.35); padding: 4px; margin-bottom: 6px; border-radius: 2px; border-left: 2px solid #8ab6ff;\">`;
-        content += `<span style=\"color: #8ab6ff; font-weight: bold;\">Debuffs:</span><br>`;
-        debuffEffects.forEach((eff) => {
-            const name = (eff.parameters && eff.parameters.debuffName) ? eff.parameters.debuffName : (eff.debuffName || 'Unknown');
-            const chance = (typeof eff.chance === 'number') ? `${Math.round(eff.chance)}%` : (eff.chancePercent ? `${eff.chancePercent}%` : '—');
-            content += `<span style=\"color:#cfe6ff;\">${capitalize(name)}:</span> <span style=\"color:#ffd166;\">${chance} chance</span>`;
-            if (eff.parameters && eff.parameters.duration) {
-                content += ` <span style=\"color:#a0bfff;\">(${eff.parameters.duration}s)</span>`;
-            }
-            content += `<br>`;
+    if (source.defenseTypes && typeof source.defenseTypes === 'object') {
+        Object.entries(source.defenseTypes).forEach(([key, value]) => {
+            push(value, TOOLTIP_DEFENSE_LABELS[key] || tooltipTitle(key), '#8ab6ff', { suffix: '%' });
         });
-        if (hasSeveredChance) {
-            const val = severedVal;
-            const txt = (showRanges && typeof val === 'object' && val.min !== undefined) ? `${val.min}% - ${val.max}%` : `${val}%`;
-            content += `<span style=\"color:#cfe6ff;\">Severed Limb Chance:</span> <span style=\"color:#ffd166;\">+${txt}</span><br>`;
-        }
-        if (hasMaxLimbs) {
-            const v2 = maxLimbsVal;
-            const txt2 = (showRanges && typeof v2 === 'object' && v2.min !== undefined) ? `${v2.min} - ${v2.max}` : `${v2}`;
-            content += `<span style=\"color:#cfe6ff;\">Max Severed Limbs:</span> <span style=\"color:#ffd166;\">${txt2}</span><br>`;
-        }
-        const seepingStacks = item.maxSeepingWoundStacks ?? item.statModifiers?.maxSeepingWoundStacks;
-        if (seepingStacks !== undefined) {
-            const stackBonus = (showRanges && typeof seepingStacks === 'object' && seepingStacks.min !== undefined)
-                ? `${seepingStacks.min} - ${seepingStacks.max}`
-                : `${seepingStacks}`;
-            content += `<span style=\"color:#cfe6ff;\">Maximum Seeping Wound Stacks:</span> <span style=\"color:#ffd166;\">+${stackBonus}</span><br>`;
-        }
-        content += `</div>`;
     }
 
-    // Bionic Sync
-    if (item.bionicSync !== undefined) {
-        content += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-        content += `<span style="color: #b19cd9; font-weight: bold;">Bionic Enhancement:</span><br>`;
-        let bionicSync;
-        if (showRanges && typeof item.bionicSync === 'object' && item.bionicSync.min !== undefined) {
-            bionicSync = `${item.bionicSync.min}% - ${item.bionicSync.max}%`;
-        } else {
-            bionicSync = `${item.bionicSync}%`;
-        }
-        content += `<span style="color: #b19cd9;">Bionic Sync:</span> +${bionicSync} <span style="color:#9fb4c8;">(amplifies static stats from equipped bionics)</span><br>`;
-        content += `</div>`;
-    }
-
-    const combatAffixStats = [
-        ['armorPenetration', 'Armor Penetration', false],
-        ['debuffChanceBonus', 'Status Application Chance', true],
-        ['statusResistance', 'Status Resistance', true],
-        ['statusDurationReduction', 'Reduced Status Duration', true]
+    const percentRangeValue = (key, legacyRangeKey) => {
+        if (source[key] !== undefined) return source[key];
+        return source[legacyRangeKey];
+    };
+    const actualFraction = key => !showRanges && source[key] !== undefined;
+    const standardStats = [
+        ['healthBonus', 'Health', '#51cf88', {}],
+        ['energyShieldBonus', 'Energy Shield', '#74c0fc', {}],
+        ['healthBonusPercent', 'Maximum Health', '#51cf88', { suffix: '%', storedAsFraction: actualFraction('healthBonusPercent'), legacy: 'healthBonusPercentRange' }],
+        ['energyShieldBonusPercent', 'Maximum Energy Shield', '#74c0fc', { suffix: '%', storedAsFraction: actualFraction('energyShieldBonusPercent'), legacy: 'energyShieldBonusPercentRange' }],
+        ['healthRegen', 'Health Regeneration', '#51cf88', { suffix: '/s' }],
+        ['attackSpeedModifier', 'Attack Speed', '#ffd3a5', { suffix: '%', storedAsFraction: actualFraction('attackSpeedModifier'), legacy: 'attackSpeedModifierRange' }],
+        ['criticalChanceModifier', 'Critical Chance', '#da77f2', { suffix: '%', storedAsFraction: actualFraction('criticalChanceModifier'), legacy: 'criticalChanceModifierRange' }],
+        ['criticalMultiplierModifier', 'Critical Multiplier', '#da77f2', { suffix: '%', storedAsFraction: actualFraction('criticalMultiplierModifier'), legacy: 'criticalMultiplierModifierRange' }],
+        ['precision', 'Precision', '#ffd166', {}],
+        ['deflection', 'Deflection', '#8ab6ff', {}],
+        ['armorEfficiency', 'Armor Efficiency', '#a8e6cf', { suffix: '%' }],
+        ['weaponEfficiency', 'Weapon Efficiency', '#ffd3a5', { suffix: '%' }],
+        ['bionicEfficiency', 'Bionic Efficiency', '#c5a3ff', { suffix: '%' }],
+        ['bionicSync', 'Bionic Sync', '#b19cd9', { suffix: '%' }],
+        ['comboAttack', 'Combo Attack Chance', '#ffcc80', { suffix: '%' }],
+        ['comboEffectiveness', 'Combo Effectiveness', '#ffcc80', { suffix: '%' }],
+        ['additionalComboAttacks', 'Additional Combo Attacks', '#ffcc80', {}],
+        ['armorPenetration', 'Armor Penetration', '#ffd166', { suffix: '%' }],
+        ['debuffChanceBonus', 'Status Application Chance', '#b197fc', { suffix: '%', maybeFraction: true }],
+        ['debuffDurationBonus', 'Status Duration', '#b197fc', { suffix: '%', maybeFraction: true }],
+        ['statusResistance', 'Status Resistance', '#8ab6ff', { suffix: '%', maybeFraction: true }],
+        ['statusDurationReduction', 'Reduced Status Duration', '#8ab6ff', { suffix: '%', maybeFraction: true }],
+        ['damageRollFloorBonus', 'Damage Roll Floor', '#ffd166', { suffix: '%', maybeFraction: true }],
+        ['directDamageMultiplier', 'Direct Damage Multiplier', '#ffd166', { suffix: 'x', prefix: '' }],
+        ['dotDamageMultiplier', 'Damage over Time Multiplier', '#b197fc', { suffix: 'x', prefix: '' }],
+        ['damageVsDebuffed', 'Damage Against Debuffed Targets', '#ffd166', { suffix: '%', maybeFraction: true }],
+        ['damageTakenReduction', 'Damage Taken Reduction', '#8ab6ff', { suffix: '%', maybeFraction: true }],
+        ['kineticMastery', 'Kinetic Mastery', TOOLTIP_DAMAGE_COLORS.kinetic, {}],
+        ['slashingMastery', 'Slashing Mastery', TOOLTIP_DAMAGE_COLORS.slashing, {}],
+        ['severedLimbChance', 'Severed Limb Chance', TOOLTIP_DAMAGE_COLORS.slashing, { suffix: '%' }],
+        ['maxSeveredLimbs', 'Maximum Severed Limbs', TOOLTIP_DAMAGE_COLORS.slashing, {}],
+        ['maxSeepingWoundStacks', 'Maximum Seeping Wound Stacks', TOOLTIP_DAMAGE_COLORS.slashing, {}]
     ];
-    const visibleCombatAffixes = combatAffixStats.filter(([key]) => item[key] !== undefined);
-    if (visibleCombatAffixes.length > 0) {
-        content += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-        content += `<span style="color:#ffd166; font-weight:bold;">Combat Modifiers:</span><br>`;
-        visibleCombatAffixes.forEach(([key, label, storedAsFraction]) => {
-            const value = item[key];
-            let displayValue;
-            if (showRanges && typeof value === 'object' && value.min !== undefined) {
-                displayValue = `${value.min}% - ${value.max}%`;
-            } else {
-                const numeric = Number(value || 0);
-                const amount = storedAsFraction ? numeric * 100 : numeric;
-                displayValue = `${Number(amount.toFixed(2))}%`;
-            }
-            content += `<span style="color:#cfe6ff;">${label}:</span> +${displayValue}<br>`;
+
+    standardStats.forEach(([key, label, color, options]) => {
+        let value = options.legacy ? percentRangeValue(key, options.legacy) : source[key];
+        if (value === undefined && source.statModifiers?.[key] !== undefined) {
+            value = source.statModifiers[key];
+        }
+        const normalizedOptions = { ...options };
+        delete normalizedOptions.legacy;
+        if (normalizedOptions.maybeFraction) {
+            delete normalizedOptions.maybeFraction;
+            const probe = value && typeof value === 'object' ? Math.max(Math.abs(Number(value.min) || 0), Math.abs(Number(value.max) || 0)) : Math.abs(Number(value) || 0);
+            normalizedOptions.storedAsFraction = !showRanges && probe > 0 && probe <= 1.5;
+        }
+        push(value, label, color, normalizedOptions);
+    });
+
+    const localMaps = [
+        ['weaponLocalFlatDamage', 'Weapon {type} Damage', false],
+        ['weaponLocalTypeIncrease', 'Increased Weapon {type} Damage', true],
+        ['weaponLocalGroupIncrease', 'Increased Weapon {type} Damage', true]
+    ];
+    if (isWeapon) {
+        localMaps.forEach(([key, labelTemplate, percent]) => {
+            const map = source[key];
+            if (!map || typeof map !== 'object') return;
+            Object.entries(map).forEach(([type, value]) => {
+                const label = TOOLTIP_DAMAGE_LABELS[type] || tooltipTitle(type);
+                push(value, labelTemplate.replace('{type}', label), TOOLTIP_DAMAGE_COLORS[type] || '#ffd3a5', percent ? { suffix: '%' } : {});
+            });
         });
-        content += `</div>`;
-    }
-
-
-    // Mastery System
-    const hasMasteryStats = item.kineticMastery !== undefined || item.slashingMastery !== undefined;
-    if (hasMasteryStats) {
-        content += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-        content += `<span style="color: #ffa500; font-weight: bold;">Mastery:</span><br>`;
-        
-        if (item.kineticMastery !== undefined) {
-            let kineticMast;
-            if (showRanges && typeof item.kineticMastery === 'object' && item.kineticMastery.min !== undefined) {
-                kineticMast = `${item.kineticMastery.min} - ${item.kineticMastery.max}`;
-            } else {
-                kineticMast = `${item.kineticMastery}`;
-            }
-            content += `<span style="color: #ffa500;">Kinetic Mastery:</span> +${kineticMast}<br>`;
+        if (source.weaponLocalAttackSpeedPercent !== undefined) {
+            push(source.weaponLocalAttackSpeedPercent, 'Increased Weapon Attack Speed', '#ffd3a5', { suffix: '%' });
         }
-        
-        if (item.slashingMastery !== undefined) {
-            let slashingMast;
-            if (showRanges && typeof item.slashingMastery === 'object' && item.slashingMastery.min !== undefined) {
-                slashingMast = `${item.slashingMastery.min} - ${item.slashingMastery.max}`;
-            } else {
-                slashingMast = `${item.slashingMastery}`;
-            }
-            content += `<span style="color: #dc143c;">Slashing Mastery:</span> +${slashingMast}<br>`;
-        }
-        
-        content += `</div>`;
-    }
-
-    // Moved Combat Mechanics (Severed Limb) into Debuffs section below
-
-    // Insert Passive Bonuses just above Wires
-    if (capturedPassiveContent) {
-        content += capturedPassiveContent;
-    }
-
-    // Rolled Modifiers (generated instance only)
-    if (!showRanges && Array.isArray(item.rolledModifiers) && item.rolledModifiers.length > 0) {
-        const lines = item.rolledModifiers.map(mod => {
-            if (!mod || typeof mod !== 'object') return '';
-            const gradeText = mod.gradeLabel || (typeof window.getModifierGradeLabel === 'function'
-                ? window.getModifierGradeLabel(mod.grade)
-                : `Grade ${mod.grade || '?'}`);
-
-            const displayName = mod.displayName || mod.id || 'Modifier';
-            let displayValue = mod.displayValue;
-            if (displayValue === undefined || displayValue === null) {
-                displayValue = mod.value;
-                if (mod.isPercent && typeof displayValue === 'number' && Math.abs(displayValue) <= 1.5) {
-                    displayValue = displayValue * 100;
-                }
-            }
-
-            if (typeof displayValue === 'number') {
-                displayValue = Number.isInteger(displayValue) ? `${displayValue}` : displayValue.toFixed(2);
-            }
-
-            const valueText = mod.isPercent ? `+${displayValue}%` : `+${displayValue}`;
-            return `<div style="color:#cfe6ff;">${valueText} ${displayName} <span style="color:#9cc5ff;">[${gradeText}]</span></div>`;
-        }).filter(Boolean).join('');
-
-        if (lines) {
-            content += `<div style="background: rgba(0, 20, 45, 0.6); padding: 6px; margin-bottom: 6px; border-radius: 4px; border-left: 2px solid #00ffcc;">` +
-                `<div style="color:#66ffcc; font-weight:bold; margin-bottom:3px;">Rolled Modifiers</div>${lines}</div>`;
+        if (source.weaponDamageConversion?.source && source.weaponDamageConversion?.target) {
+            const from = TOOLTIP_DAMAGE_LABELS[source.weaponDamageConversion.source] || tooltipTitle(source.weaponDamageConversion.source);
+            const to = TOOLTIP_DAMAGE_LABELS[source.weaponDamageConversion.target] || tooltipTitle(source.weaponDamageConversion.target);
+            const percent = formatTooltipNumber(source.weaponDamageConversion.percent ?? 100, { showRanges, suffix: '%' });
+            lines.push(renderTooltipLine(percent, `${from} Weapon Damage Converted to ${to}`, TOOLTIP_DAMAGE_COLORS[source.weaponDamageConversion.target] || '#cfe6ff', { prefix: '' }));
         }
     }
 
-    // Wires (sockets) - show for instantiated items only
+    const statModifiers = source.statModifiers;
+    if (statModifiers && typeof statModifiers === 'object') {
+        if (statModifiers.damageGroups) {
+            Object.entries(statModifiers.damageGroups).forEach(([group, value]) => {
+                push(value, `${tooltipTitle(group)} Damage`, '#ffd166', { suffix: '%' });
+            });
+        }
+        if (statModifiers.damageTypes) {
+            Object.entries(statModifiers.damageTypes).forEach(([type, value]) => {
+                push(value, `${TOOLTIP_DAMAGE_LABELS[type] || tooltipTitle(type)} Damage`, TOOLTIP_DAMAGE_COLORS[type] || '#ffd166', { suffix: '%' });
+            });
+        }
+        const mirrored = new Set(standardStats.map(([key]) => key));
+        Object.entries(statModifiers).forEach(([key, value]) => {
+            if (key === 'damageGroups' || key === 'damageTypes' || mirrored.has(key)) return;
+            push(value, tooltipTitle(key), '#cfe6ff');
+        });
+    }
+
+    if (source.passiveBonuses && typeof source.passiveBonuses === 'object') {
+        Object.entries(source.passiveBonuses).forEach(([name, value]) => {
+            push(value, name, '#a6fff2');
+        });
+    }
+
+    const effects = Array.isArray(source.effects) ? source.effects : [];
+    effects.forEach(effect => {
+        if (!effect || typeof effect !== 'object') return;
+        const chance = formatTooltipNumber(effect.chance ?? effect.chancePercent, { showRanges, suffix: '%' });
+        const parameters = effect.parameters || {};
+        if (effect.action === 'applyDebuff' || effect.action === 'applyStackingDebuff') {
+            const name = parameters.debuffName || effect.debuffName || 'Status';
+            const duration = parameters.duration ? ` <span style="color:#9fb4c8;">(${parameters.duration}s)</span>` : '';
+            lines.push(renderTooltipLine(chance || '100%', `${tooltipTitle(name)} Chance`, '#b197fc', { prefix: '', detail: duration }));
+        }
+    });
+
+    return lines;
+}
+
+function formatTooltipModifierChoice(choice, showRanges) {
+    if (!choice || !choice.path) return '';
+    const parts = choice.path.split('.');
+    const key = parts[0];
+    const leaf = parts[parts.length - 1];
+    const percent = key === 'statModifiers' || ['attackSpeedModifier', 'criticalChanceModifier', 'criticalMultiplierModifier', 'healthBonusPercent', 'energyShieldBonusPercent'].includes(key);
+    const value = formatTooltipNumber(choice.value, { showRanges, suffix: percent ? '%' : '' });
+    let label = tooltipTitle(leaf);
+    if (parts[0] === 'damageTypes') label = `${TOOLTIP_DAMAGE_LABELS[leaf] || tooltipTitle(leaf)} Damage`;
+    if (parts[0] === 'defenseTypes') label = TOOLTIP_DEFENSE_LABELS[leaf] || tooltipTitle(leaf);
+    if (parts[0] === 'passiveBonuses') label = parts.slice(1).join('.');
+    return `<span style="color:#cfe6ff;">+${value} ${label}</span>`;
+}
+
+function collectTooltipModifierLines(item, showRanges) {
+    const lines = [];
+    if (!showRanges && Array.isArray(item.rolledModifiers)) {
+        item.rolledModifiers.forEach(modifier => {
+            if (!modifier || typeof modifier !== 'object') return;
+            let value = modifier.displayValue;
+            if (value === undefined || value === null) {
+                value = modifier.value;
+                if (modifier.isPercent && typeof value === 'number' && Math.abs(value) <= 1.5) value *= 100;
+            }
+            const formatted = formatTooltipNumber(value, { suffix: modifier.isPercent ? '%' : '' });
+            if (!formatted) return;
+            const grade = modifier.gradeLabel || (typeof window.getModifierGradeLabel === 'function'
+                ? window.getModifierGradeLabel(modifier.grade)
+                : `Grade ${modifier.grade || '?'}`);
+            const colorPath = String(modifier.statPath || '').split('.').pop();
+            const color = TOOLTIP_DAMAGE_COLORS[colorPath] || (/health/i.test(modifier.displayName || '') ? '#51cf88' : /shield/i.test(modifier.displayName || '') ? '#74c0fc' : '#cfe6ff');
+            const detail = ` <span style="color:#9cc5ff;">[${grade}]</span>`;
+            lines.push(renderTooltipLine(formatted, modifier.displayName || modifier.id || 'Modifier', color, { detail }));
+        });
+        return lines;
+    }
+
+    if (showRanges && typeof window.getRandomModifierPreviewInfo === 'function') {
+        const preview = window.getRandomModifierPreviewInfo(item);
+        if (preview) {
+            const countLabel = String(preview.countRange) === '1' ? 'Random Modifier' : 'Random Modifiers';
+            lines.push(`<div><span style="color:#cfe6ff; font-weight:600;">${preview.countRange} ${countLabel}</span> <span style="color:#9cc5ff;">(up to ${preview.maxGradeLabel})</span></div>`);
+        }
+    }
+
+    if (showRanges && Array.isArray(item.rollGroups)) {
+        item.rollGroups.forEach(group => {
+            if (!group || !Array.isArray(group.from) || !group.from.length) return;
+            const pick = typeof group.pick === 'object'
+                ? formatTooltipNumber(group.pick, { showRanges: true })
+                : String(group.pick ?? 1);
+            const choices = group.from.map(choice => formatTooltipModifierChoice(choice, true)).filter(Boolean);
+            if (choices.length) {
+                lines.push(`<div style="margin-top:2px;"><span style="color:#9cc5ff;">Choose ${pick}:</span> ${choices.join('<span style="color:#5f7890;"> • </span>')}</div>`);
+            }
+        });
+    }
+    return lines;
+}
+
+function collectTooltipWireLines(item, showRanges) {
+    const colorBadge = color => ({ red: '#ff6b6b', green: '#51cf66', blue: '#74c0fc', black: '#ced4da' }[color] || '#adb5bd');
     if (Array.isArray(item.rolledWires) && item.rolledWires.length > 0) {
-        const colorBadge = c => ({ red: '#ff6b6b', green: '#51cf66', blue: '#74c0fc', black: '#ced4da' }[c] || '#adb5bd');
-        const chips = item.rolledWires.map(w => {
-            const line1 = `<span style=\"display:inline-block; border:1px solid ${colorBadge(w.color)}; color:${colorBadge(w.color)}; padding:1px 4px; margin:1px; border-radius:3px; font-size:11px;\">${w.color}${w.chip ? ' • ' + w.chip.name : ''}</span>`;
-            let statsHtml = '';
-            if (w.chip) {
-                const chip = w.chip;
-                const parts = [];
-                // Flat damage types
-                if (chip.damageTypes) {
-                    for (const dt in chip.damageTypes) {
-                        parts.push(`+${chip.damageTypes[dt]} ${dt}`);
-                    }
-                }
-                // statModifiers (show key/basic cases)
-                if (chip.statModifiers) {
-                    if (chip.statModifiers.damageTypes) {
-                        for (const dt in chip.statModifiers.damageTypes) {
-                            parts.push(`+${chip.statModifiers.damageTypes[dt]}% ${dt} dmg`);
-                        }
-                    }
-                    for (const k in chip.statModifiers) {
-                        if (k === 'damageTypes' || k === 'damageGroups') continue;
-                        parts.push(`+${chip.statModifiers[k]} ${k}`);
-                    }
-                }
-                if (chip.precision) parts.push(`+${chip.precision} Precision`);
-                if (chip.deflection) parts.push(`+${chip.deflection} Deflection`);
-                if (parts.length > 0) {
-                    statsHtml = `<div style=\"color:#cfe6ff; font-size:11px; margin-left:4px;\">${parts.join(' • ')}</div>`;
-                }
-            }
-            return `${line1}${statsHtml}`;
-        }).join('<br>');
-        content += `<div style=\"background: rgba(0, 20, 45, 0.6); padding: 4px; margin-bottom: 6px; border-radius: 4px; border-left: 2px solid #00ffcc;\">\n` +
-                   `<div style=\"color:#66ffcc; font-weight:bold; margin-bottom:2px;\">Wires</div>` +
-                   `${chips}</div>`;
+        return item.rolledWires.map(wire => {
+            const color = colorBadge(wire.color);
+            const badge = `<span style="display:inline-block; border:1px solid ${color}; color:${color}; padding:1px 4px; margin:1px 0; border-radius:3px; font-size:11px;">${tooltipTitle(wire.color)}${wire.chip ? ` • ${wire.chip.name}` : ''}</span>`;
+            if (!wire.chip) return `<div>${badge}</div>`;
+            const chipLines = collectTooltipBaseRollLines(wire.chip, getTooltipBaseRollSource(wire.chip), false);
+            return `<div>${badge}${chipLines.length ? `<div style="margin-left:4px; font-size:11px;">${chipLines.join('')}</div>` : ''}</div>`;
+        });
     }
+    if (showRanges && item.wires?.totalSlots !== undefined) {
+        const total = formatTooltipNumber(item.wires.totalSlots, { showRanges: true });
+        return total ? [renderTooltipLine(total, 'Wire Slots', '#66ffcc', { prefix: '' })] : [];
+    }
+    return [];
+}
 
-    // Description - only add section if it has content
-    if (item.description) {
-        content += `<div style="background: rgba(0, 15, 40, 0.5); padding: 4px; margin-bottom: 6px; border-radius: 2px;">`;
-        content += `<em style="color: #7fdbff;">${item.description}</em><br>`;
-        content += `</div>`;
+function getItemTooltipContent(item, showRanges = false) {
+    if (!item) return '';
+    let content = `<div style="color:#e0f2ff; font-family:'Orbitron', sans-serif; text-shadow:0 0 5px rgba(0, 255, 204, 0.5); max-width:300px;">`;
+    content += `<div style="background:linear-gradient(to right, #00306e, #003f8f); padding:5px; margin-bottom:6px; border-left:3px solid #00ffcc; border-radius:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">` +
+        `<strong style="font-size:110%; color:#ffffff;">${item.name || 'Unknown Item'}</strong></div>`;
+
+    const metadata = [];
+    if (item.slot) metadata.push(`<div><span style="color:#7fdbff;">Slot:</span> <span style="color:#ffffff;">${TOOLTIP_SLOT_LABELS[item.slot] || tooltipTitle(item.slot)}</span></div>`);
+    if (item.type) metadata.push(`<div><span style="color:#7fdbff;">Type:</span> <span style="color:#ffffff;">${item.type}</span></div>`);
+    if (item.levelRequirement !== undefined) {
+        const level = formatLevelRequirement(item.levelRequirement, showRanges);
+        if (level) metadata.push(`<div><span style="color:#ffd166;">Requires Level:</span> <span style="color:#ffffff;">${level}</span></div>`);
     }
-    
+    if (item.weaponType) metadata.push(`<div><span style="color:#7fdbff;">Weapon Type:</span> <span style="color:#ffffff;">${item.weaponType}</span></div>`);
+    const taxonomy = getTooltipWeaponTaxonomy(item);
+    if (taxonomy) {
+        metadata.push(`<div><span style="color:#7fdbff;">Weapon Family:</span> <span style="color:#e8c77a;">${taxonomy.familyLabel}</span></div>`);
+        if (taxonomy.tagLabels.length) metadata.push(`<div><span style="color:#7fdbff;">Weapon Tags:</span> <span style="color:#b8cee0;">${taxonomy.tagLabels.join(' • ')}</span></div>`);
+    }
+    if (metadata.length) content += `<div style="background:rgba(0, 15, 40, 0.5); padding:4px 6px; margin-bottom:6px; border-radius:2px;">${metadata.join('')}</div>`;
+
+    const baseSource = showRanges ? item : getTooltipBaseRollSource(item);
+    content += renderTooltipSection('BASE ROLLS', collectTooltipBaseRollLines(item, baseSource, showRanges), '#66ffcc');
+    content += renderTooltipSection('MODIFIERS', collectTooltipModifierLines(item, showRanges), '#9cc5ff');
+    content += renderTooltipSection('WIRES', collectTooltipWireLines(item, showRanges), '#66ffcc');
     content += `</div>`;
     return content;
 }
+
 
 // TOOLTIP DEBUGGING UTILITIES
 const DEBUG_TOOLTIPS = false;

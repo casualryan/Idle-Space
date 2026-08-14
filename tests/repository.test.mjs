@@ -1391,6 +1391,79 @@ test('random affix pools preserve slot identities and restrained late-game count
   assert.equal(pools.generated.every(sample => sample.unique), true);
 });
 
+test('equipment tooltips separate base rolls from affixes without duplicated totals', () => {
+  const html = evaluateClassic(
+    'tooltip.js',
+    `window.getItemTooltipContent({
+      name: 'Aegis Reactor Shell', type: 'Armor', slot: 'chest', levelRequirement: 48,
+      healthBonus: 1552,
+      energyShieldBonus: 903,
+      energyShieldBonusPercent: 0.14,
+      defenseTypes: { elementalResistance: 34 },
+      deflection: 138,
+      armorEfficiency: 28,
+      bionicSync: 15.5,
+      description: 'This description should not render.',
+      rolledModifiers: [
+        { id: 'resistance_elementalResistance', displayName: 'Elemental Resistance', grade: 5, gradeLabel: 'Grade V', value: 24, displayValue: 24, statPath: 'defenseTypes.elementalResistance', isPercent: true },
+        { id: 'bionicSync', displayName: 'Bionic Sync', grade: 4, gradeLabel: 'Grade IV', value: 15.5, displayValue: 15.5, statPath: 'bionicSync', isPercent: true },
+        { id: 'deflection', displayName: 'Deflection', grade: 5, gradeLabel: 'Grade V', value: 138, displayValue: 138, statPath: 'deflection', isPercent: false },
+        { id: 'armorEfficiency', displayName: 'Armor Efficiency', grade: 5, gradeLabel: 'Grade V', value: 28, displayValue: 28, statPath: 'armorEfficiency', isPercent: true }
+      ],
+      rolledWires: [{ color: 'green' }]
+    })`,
+    {
+      window: {
+        registerCoreboundInitializer: () => {},
+        coreboundWeaponTaxonomy: { resolveWeapon: () => null }
+      }
+    }
+  );
+  const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+  for (const expected of [
+    'Slot: Chest', 'Type: Armor', 'Requires Level: 48',
+    'BASE ROLLS', '+1552 Health', '+903 Energy Shield', '+14% Maximum Energy Shield',
+    '+10% Elemental Resistance', 'MODIFIERS', '+24% Elemental Resistance', '[Grade V]',
+    'WIRES', 'Green'
+  ]) {
+    assert.match(text, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  assert.doesNotMatch(text, /\+34% Elemental Resistance/);
+  assert.doesNotMatch(text, /Bionic Enhancement/);
+  assert.doesNotMatch(text, /This description should not render/);
+  assert.equal((text.match(/WIRES/g) || []).length, 1);
+  assert.doesNotMatch(read('inventory.js'), /tooltipHtml\s*\+=/);
+});
+
+test('fabrication tooltip previews show every intrinsic range in the compact layout', () => {
+  const html = evaluateClassic(
+    'tooltip.js',
+    `window.getItemTooltipContent({
+      name: 'Aegis Reactor Shell', type: 'Armor', slot: 'chest',
+      levelRequirement: { min: 48, max: 48 },
+      healthBonus: { min: 1400, max: 1700 },
+      energyShieldBonus: { min: 850, max: 950 },
+      energyShieldBonusPercentRange: { min: 12, max: 16 },
+      defenseTypes: { elementalResistance: { min: 6, max: 10 } }
+    }, true)`,
+    {
+      window: {
+        registerCoreboundInitializer: () => {},
+        coreboundWeaponTaxonomy: { resolveWeapon: () => null },
+        getRandomModifierPreviewInfo: () => ({ countRange: '3-4', maxGradeLabel: 'Grade V' })
+      }
+    }
+  );
+  const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+  assert.match(text, /\+1400-1700 Health/);
+  assert.match(text, /\+850-950 Energy Shield/);
+  assert.match(text, /\+12-16% Maximum Energy Shield/);
+  assert.match(text, /\+6-10% Elemental Resistance/);
+  assert.match(text, /3-4 Random Modifiers \(up to Grade V\)/);
+});
+
 test('bionics use grouped boosters, four progression bands, and a smaller affix budget', () => {
   const names = new Set(bionics.map(item => item.name));
   for (const name of ['Physical Booster', 'Elemental Booster', 'Chemical Booster']) {
