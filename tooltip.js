@@ -127,6 +127,21 @@ function cloneTooltipValue(value) {
     return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
 
+function isZeroTooltipValue(value) {
+    if (typeof value === 'number') return Number.isFinite(value) && Math.abs(value) < 0.000001;
+    if (typeof value === 'string' && value.trim() !== '') {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) && Math.abs(numeric) < 0.000001;
+    }
+    if (value && typeof value === 'object') {
+        const min = Number(value.min);
+        const max = Number(value.max !== undefined ? value.max : value.min);
+        return Number.isFinite(min) && Number.isFinite(max)
+            && Math.abs(min) < 0.000001 && Math.abs(max) < 0.000001;
+    }
+    return false;
+}
+
 function formatTooltipNumber(value, options = {}) {
     const { showRanges = false, storedAsFraction = false, suffix = '', decimals = 2 } = options;
     const normalize = raw => {
@@ -228,6 +243,7 @@ function renderTooltipSection(title, lines, color = '#66ffcc') {
 function collectTooltipBaseRollLines(item, source, showRanges) {
     const lines = [];
     const push = (value, label, color, options = {}) => {
+        if (isZeroTooltipValue(value)) return;
         const formatted = formatTooltipNumber(value, { showRanges, ...options });
         if (formatted) lines.push(renderTooltipLine(formatted, label, color, options));
     };
@@ -397,6 +413,7 @@ function collectTooltipModifierLines(item, showRanges) {
                 value = modifier.value;
                 if (modifier.isPercent && typeof value === 'number' && Math.abs(value) <= 1.5) value *= 100;
             }
+            if (isZeroTooltipValue(value)) return;
             const formatted = formatTooltipNumber(value, { suffix: modifier.isPercent ? '%' : '' });
             if (!formatted) return;
             const grade = modifier.gradeLabel || (typeof window.getModifierGradeLabel === 'function'

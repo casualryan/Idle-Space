@@ -1399,7 +1399,7 @@ test('equipment tooltips separate base rolls from affixes without duplicated tot
       healthBonus: 1552,
       energyShieldBonus: 903,
       energyShieldBonusPercent: 0.14,
-      defenseTypes: { elementalResistance: 34 },
+      defenseTypes: { physicalResistance: 0, elementalResistance: 34, chemicalResistance: 0 },
       deflection: 138,
       armorEfficiency: 28,
       bionicSync: 15.5,
@@ -1430,6 +1430,7 @@ test('equipment tooltips separate base rolls from affixes without duplicated tot
     assert.match(text, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
   assert.doesNotMatch(text, /\+34% Elemental Resistance/);
+  assert.doesNotMatch(text, /\+0% (Physical|Elemental|Chemical) Resistance/);
   assert.doesNotMatch(text, /Bionic Enhancement/);
   assert.doesNotMatch(text, /This description should not render/);
   assert.equal((text.match(/WIRES/g) || []).length, 1);
