@@ -282,6 +282,12 @@ function startCombat() {
     if (typeof setDelveCombatUIActive === 'function') setDelveCombatUIActive(true);
     updatePlayerStatsDisplay();
     updateEnemyStatsDisplay();
+    if (typeof startAttackProgressBarCycle === 'function') {
+        startAttackProgressBarCycle('player', playerNextAttackTime);
+        for (const candidate of getLivingEnemies()) {
+            startAttackProgressBarCycle(candidate, enemyNextAttackTimes[candidate._combatId]);
+        }
+    }
     displayAdventureLocations();
 }
 
@@ -299,8 +305,10 @@ function combatLoop() {
             playerAttackTimer = 0;
             refreshPlayerAttackInterval();
             if (getEffectivePlayerTarget()) playerAttack();
+            if (typeof startAttackProgressBarCycle === 'function') {
+                startAttackProgressBarCycle('player', playerNextAttackTime);
+            }
         }
-        setAttackProgressBar('player', Math.min((playerAttackTimer / playerNextAttackTime) * 100, 100));
     }
 
     for (const attacker of getLivingEnemies()) {
@@ -313,10 +321,12 @@ function combatLoop() {
             nextAttack = 1 / (attacker.totalStats.attackSpeed || 1);
             enemyAttack(attacker);
             if (!isCombatActive || player.currentHealth <= 0) return;
+            if (typeof startAttackProgressBarCycle === 'function') {
+                startAttackProgressBarCycle(attacker, nextAttack);
+            }
         }
         enemyAttackTimers[id] = timer;
         enemyNextAttackTimes[id] = nextAttack;
-        setAttackProgressBar(attacker, Math.min((timer / nextAttack) * 100, 100));
     }
 
     try {

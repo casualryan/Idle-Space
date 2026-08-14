@@ -2165,7 +2165,11 @@ test('delve combat stage uses compact cards, six target slots, and closed utilit
   const styles = read('style.css');
   assert.match(ui, /for \(let slot = 0; slot < 6; slot\+\+\)/);
   assert.match(ui, /enemy-attack-progress-bar/);
-  assert.match(controller, /setAttackProgressBar\(attacker, Math\.min\(\(timer \/ nextAttack\) \* 100, 100\)\)/);
+  assert.match(ui, /function startAttackProgressBarCycle\(combatant, durationSeconds, elapsedSeconds = 0\)/);
+  assert.match(ui, /bar\.style\.transition = `width \$\{remaining\}s linear`/);
+  assert.match(controller, /startAttackProgressBarCycle\('player', playerNextAttackTime\)/);
+  assert.match(controller, /startAttackProgressBarCycle\(attacker, nextAttack\)/);
+  assert.doesNotMatch(controller, /setAttackProgressBar\([^,]+, Math\.min/, 'combat-loop sampling must not truncate attack-bar animations');
   assert.doesNotMatch(controller, /isPropagationPresentationBusy/, 'propagation visuals must not pause combat timers');
   assert.match(ui, /selectEnemyTarget\(combatId\)/);
   assert.match(ui, /function setDelveCombatUIActive\(active\)/);
@@ -2177,6 +2181,14 @@ test('delve combat stage uses compact cards, six target slots, and closed utilit
   assert.match(styles, /\.player-combat-card\s*\{[^}]*grid-template-rows:\s*27px repeat\(3, minmax\(0, 1fr\)\)/s);
   assert.match(styles, /\.player-combat-card > h2\s*\{[^}]*overflow:\s*visible/s);
   assert.match(styles, /\.enemy-combat-card\s*\{[^}]*height:\s*188px/s);
+});
+
+test('Staggered visibly reports the attack it interrupts', () => {
+  const source = read('debuffs.js');
+  assert.match(source, /attack was interrupted by <strong>Staggered<\/strong>/);
+  assert.match(source, /showAttackInterrupted\(attacker, 'STAGGERED'\)/);
+  assert.match(read('combatUI.js'), /function showAttackInterrupted\(combatant, label = 'INTERRUPTED'\)/);
+  assert.match(read('style.css'), /\.combat-interruption\s*\{[^}]*animation:\s*combat-interruption/s);
 });
 
 test('delve deployment grid expands without an internal scrollbar', () => {

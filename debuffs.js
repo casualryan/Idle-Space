@@ -24,6 +24,10 @@ const debuffs = {
         },
         onBeforeAttack: function(attacker) {
             console.log(`${attacker.name} missed their attack due to being staggered!`);
+            if (typeof addToCombatLog === 'function') {
+                addToCombatLog(`${attacker.name || 'Combatant'}'s attack was interrupted by <strong>Staggered</strong>.`, '#ffbd45', true);
+            }
+            if (typeof showAttackInterrupted === 'function') showAttackInterrupted(attacker, 'STAGGERED');
             // Remove the debuff after missing the attack
             removeDebuff(attacker, "staggered");
             return false; // Prevent the attack

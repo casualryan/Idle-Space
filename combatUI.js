@@ -11,7 +11,7 @@ function setFleeControlState({ visible, enabled = true } = {}) {
     button.disabled = !enabled;
 }
 
-function setAttackProgressBar(combatant, percent) {
+function getAttackProgressBar(combatant) {
     let bar = null;
     if (combatant === 'player' || combatant?.isPlayer) {
         bar = document.getElementById('player-attack-progress-bar');
@@ -20,12 +20,56 @@ function setAttackProgressBar(combatant, percent) {
             .find(candidate => candidate.dataset.combatId === combatant._combatId);
         bar = card?.querySelector('.enemy-attack-progress-bar') || null;
     }
-    if (bar) bar.style.width = `${Math.max(0, Math.min(100, Number(percent) || 0))}%`;
+    return bar;
+}
+
+function setAttackProgressBar(combatant, percent) {
+    const bar = getAttackProgressBar(combatant);
+    if (!bar) return;
+    bar.style.transition = 'none';
+    bar.style.width = `${Math.max(0, Math.min(100, Number(percent) || 0))}%`;
+}
+
+function startAttackProgressBarCycle(combatant, durationSeconds, elapsedSeconds = 0) {
+    const bar = getAttackProgressBar(combatant);
+    const duration = Math.max(0.001, Number(durationSeconds) || 0);
+    if (!bar || duration <= 0) return;
+    const elapsed = Math.max(0, Math.min(duration, Number(elapsedSeconds) || 0));
+    const progress = (elapsed / duration) * 100;
+    const remaining = Math.max(0, duration - elapsed);
+
+    // Commit the reset before starting the transition. Combat is sampled at
+    // 100ms, but the browser can now draw the entire cycle continuously and
+    // reach 100% at the real attack threshold.
+    bar.style.transition = 'none';
+    bar.style.width = `${progress}%`;
+    void bar.offsetWidth;
+    if (remaining > 0) {
+        bar.style.transition = `width ${remaining}s linear`;
+        bar.style.width = '100%';
+    }
 }
 
 function resetAttackProgressBars() {
     setAttackProgressBar('player', 0);
-    document.querySelectorAll('.enemy-attack-progress-bar').forEach(bar => { bar.style.width = '0%'; });
+    document.querySelectorAll('.enemy-attack-progress-bar').forEach(bar => {
+        bar.style.transition = 'none';
+        bar.style.width = '0%';
+    });
+}
+
+function showAttackInterrupted(combatant, label = 'INTERRUPTED') {
+    const card = combatant?.isPlayer
+        ? document.getElementById('player-stats')
+        : [...document.querySelectorAll('.enemy-combat-card')]
+            .find(candidate => candidate.dataset.combatId === combatant?._combatId);
+    if (!card) return;
+    const notice = document.createElement('span');
+    notice.className = 'combat-interruption';
+    notice.textContent = label;
+    notice.setAttribute('role', 'status');
+    card.appendChild(notice);
+    notice.addEventListener('animationend', () => notice.remove(), { once: true });
 }
 
 function hideNextEnemyTimer() {
@@ -113,7 +157,9 @@ function updateEnemyStatsDisplay() {
             card.querySelector('[data-resource-text="shield"]').textContent = '0 / 0';
             card.querySelector('.hp-bar').style.width = '0%';
             card.querySelector('.es-bar').style.width = '0%';
-            card.querySelector('.enemy-attack-progress-bar').style.width = '0%';
+            const emptyAttackBar = card.querySelector('.enemy-attack-progress-bar');
+            emptyAttackBar.style.transition = 'none';
+            emptyAttackBar.style.width = '0%';
             card.querySelector('.enemy-target-state').textContent = '';
             renderCombatEffects(card.querySelector('.combat-card-effects'), null);
             continue;
@@ -139,7 +185,7 @@ function updateEnemyStatsDisplay() {
         if (portrait.getAttribute('src') !== candidate.portrait) portrait.src = candidate.portrait || 'icons/default-icon.png';
         portrait.alt = `${candidate.name} portrait`;
         card.querySelector('.enemy-target-state').textContent = forced ? 'TAUNTING' : (selected ? 'TARGET' : '');
-        if (candidate.currentHealth <= 0) card.querySelector('.enemy-attack-progress-bar').style.width = '0%';
+        if (candidate.currentHealth <= 0) setAttackProgressBar(candidate, 0);
         renderCombatEffects(card.querySelector('.combat-card-effects'), candidate);
         updateHPESBars(candidate, false);
     }

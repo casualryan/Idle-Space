@@ -6461,6 +6461,29 @@ hr {
     line-height: 1.35;
 }
 
+.combat-interruption {
+    position: absolute;
+    right: 12px;
+    bottom: 8px;
+    z-index: 8;
+    padding: 3px 7px;
+    border: 1px solid rgba(255, 189, 69, 0.85);
+    border-radius: 4px;
+    background: rgba(38, 22, 3, 0.94);
+    color: #ffd166;
+    font: 700 9px 'Orbitron', sans-serif;
+    letter-spacing: 0.1em;
+    text-shadow: 0 0 7px rgba(255, 189, 69, 0.7);
+    pointer-events: none;
+    animation: combat-interruption 850ms ease-out forwards;
+}
+
+@keyframes combat-interruption {
+    0% { opacity: 0; transform: translateY(5px) scale(0.88); }
+    18%, 72% { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(-8px) scale(0.98); }
+}
+
 .combat-card h2,
 .enemy-combat-card .enemy-card-name {
     overflow: hidden;
