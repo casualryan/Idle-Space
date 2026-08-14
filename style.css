@@ -4591,7 +4591,9 @@ hr {
     position: absolute;
     color: #ffffff;
     font-weight: 900;
+    font-size: 18px;
     letter-spacing: 0.5px;
+    -webkit-text-stroke: 1px rgba(0, 0, 0, 0.72);
     text-shadow: 0 2px 0 rgba(0,0,0,0.6), 0 0 10px rgba(255,255,255,0.4);
     animation: dmgFloat 0.9s ease-out forwards;
     pointer-events: none;
@@ -6331,6 +6333,53 @@ hr {
     pointer-events: none;
 }
 
+.combat-vfx-canvas {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.player-combat-card.enemy-assault-hit {
+    animation: enemy-assault-card-hit 320ms cubic-bezier(0.2, 0.9, 0.25, 1);
+}
+
+.enemy-assault-damage {
+    position: absolute;
+    z-index: 9;
+    transform: translate(-50%, -50%);
+    color: #ff5674;
+    font: 900 26px 'Orbitron', sans-serif;
+    letter-spacing: 0.03em;
+    -webkit-text-stroke: 1px rgba(55, 0, 12, 0.85);
+    text-shadow: 0 3px 3px #000, 0 0 8px #ff173f, 0 0 18px rgba(158, 0, 35, 0.9);
+    pointer-events: none;
+    animation: enemy-assault-number 950ms cubic-bezier(0.16, 0.8, 0.25, 1) forwards;
+}
+
+.enemy-assault-damage.critical {
+    color: #ffd36b;
+    font-size: 32px;
+    text-shadow: 0 3px 3px #000, 0 0 9px #ffb000, 0 0 22px rgba(255, 44, 67, 0.95);
+}
+
+@keyframes enemy-assault-card-hit {
+    0% { transform: translate(0, 0); filter: brightness(1); }
+    18% { transform: translate(-7px, -2px) rotate(-0.45deg); filter: brightness(1.85) saturate(1.5); }
+    42% { transform: translate(5px, 1px) rotate(0.25deg); }
+    68% { transform: translate(-2px, 0); filter: brightness(1.15); }
+    100% { transform: translate(0, 0); filter: brightness(1); }
+}
+
+@keyframes enemy-assault-number {
+    0% { opacity: 0; transform: translate(-50%, -20%) scale(0.55); }
+    18% { opacity: 1; transform: translate(-50%, -65%) scale(1.18); }
+    65% { opacity: 1; transform: translate(-50%, -115%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -175%) scale(0.92); }
+}
+
 .propagation-effect { position: absolute; display: block; pointer-events: none; }
 .propagation-line {
     height: 4px;
@@ -6365,11 +6414,12 @@ hr {
     z-index: 2;
     transform: translate(-50%, -50%);
     color: #bff8ff;
-    font: 700 15px 'Orbitron', sans-serif;
+    font: 800 19px 'Orbitron', sans-serif;
+    -webkit-text-stroke: 1px rgba(0, 18, 27, 0.75);
     text-shadow: 0 2px 4px #000, 0 0 7px #42dbff;
     animation: propagation-number 600ms ease-out forwards;
 }
-.propagation-damage.critical { color: #ffe169; font-size: 18px; text-shadow: 0 2px 4px #000, 0 0 8px #ffd23f; }
+.propagation-damage.critical { color: #ffe169; font-size: 24px; text-shadow: 0 2px 4px #000, 0 0 8px #ffd23f; }
 .propagation-pulse {
     width: 30px;
     height: 30px;

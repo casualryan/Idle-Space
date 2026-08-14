@@ -45,6 +45,7 @@ const COMBAT_RUNTIME_FILES = [
   'delveRewards.js',
   'delveManager.js',
   'combatUI.js',
+  'combatVFX.js',
   'delveUI.js',
   'combat.js'
 ];
@@ -2189,6 +2190,24 @@ test('Staggered visibly reports the attack it interrupts', () => {
   assert.match(source, /showAttackInterrupted\(attacker, 'STAGGERED'\)/);
   assert.match(read('combatUI.js'), /function showAttackInterrupted\(combatant, label = 'INTERRUPTED'\)/);
   assert.match(read('style.css'), /\.combat-interruption\s*\{[^}]*animation:\s*combat-interruption/s);
+});
+
+test('enemy attacks use canvas assault presentation without delaying combat resolution', () => {
+  const html = read('index.html');
+  const vfx = read('combatVFX.js');
+  const resolution = read('combatResolution.js');
+  const styles = read('style.css');
+  assert.equal((html.match(/id=["']combat-vfx-canvas["']/g) || []).length, 1);
+  assert.match(vfx, /function queueEnemyAttackPresentation\(attacker, target, damagePacket\)/);
+  assert.match(vfx, /quadraticCombatVfxPoint/);
+  assert.match(vfx, /spawnEnemyAssaultTrailParticle/);
+  assert.match(vfx, /spawnEnemyAssaultImpact/);
+  assert.match(vfx, /globalCompositeOperation = 'lighter'/);
+  assert.match(resolution, /queueEnemyAttackPresentation\(attacker, player, presentationPacket\);[\s\S]*resolveEnemyAttackImpact\(attacker, presented \? presentationPacket : damageResult\)/);
+  assert.match(resolution, /flags: \{ \.\.\.damageResult\.flags, animate: false \}/);
+  assert.match(styles, /\.combat-vfx-canvas\s*\{[^}]*z-index:\s*5/s);
+  assert.match(styles, /\.enemy-assault-damage\s*\{[^}]*font:\s*900 26px/s);
+  assert.match(read('combatController.js'), /cancelCombatVfx\(\)/);
 });
 
 test('delve deployment grid expands without an internal scrollbar', () => {

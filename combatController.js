@@ -261,6 +261,7 @@ function startCombat() {
     }
 
     if (typeof cancelPropagationPresentations === 'function') cancelPropagationPresentations();
+    if (typeof cancelCombatVfx === 'function') cancelCombatVfx();
     preparePlayerForCombat();
     if (typeof resetCombatStyleState === 'function') resetCombatStyleState(player);
     isCombatActive = true;
@@ -375,6 +376,7 @@ function resetEncounterState() {
 function stopCombat(reason) {
     if (!isCombatActive && !isDelveInProgress && reason !== 'delveCompleted') return;
     if (typeof cancelPropagationPresentations === 'function') cancelPropagationPresentations();
+    if (typeof cancelCombatVfx === 'function') cancelCombatVfx();
     if (isCombatActive) {
         isCombatActive = false;
         clearInterval(combatInterval);

@@ -60,8 +60,9 @@ Primary runtime modules:
   Own attack resolution, hit hooks, applyDamage, healing, and effect processing.
 - delveManager.js + delveRewards.js
   Own delve sequencing/progression and the temporary reward/claim-cache model.
-- combatUI.js + delveUI.js
-  Own all combat/delve DOM rendering and controller-facing UI adapters.
+- combatUI.js + combatVFX.js + delveUI.js
+  Own combat/delve DOM rendering, canvas combat presentation, and
+  controller-facing UI adapters.
 - combat.js
   Bootstrap only; it contains no combat rules or rendering implementation.
 - stats.js

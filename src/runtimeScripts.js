@@ -37,6 +37,7 @@ export const RUNTIME_SCRIPTS = [
   'delveRewards.js',
   'delveManager.js',
   'combatUI.js',
+  'combatVFX.js',
   'delveUI.js',
   'combat.js',
   'codex.js',
