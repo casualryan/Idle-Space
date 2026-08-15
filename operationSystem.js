@@ -1,7 +1,10 @@
 // Operation-only Core effects, randomized between-encounter events, and run modifiers.
 
-const OPERATION_BOARD_VERSION = 1;
-const OPERATION_BOARD_SIZE = 3;
+const OPERATION_BOARD_VERSION = 2;
+const OPERATION_BOARD_SIZE = 6;
+const OPERATION_DIFFICULTY_BANDS = Object.freeze([
+    'current', 'current', 'lower', 'lower', 'higher', 'higher'
+]);
 const OPERATION_SEED_HISTORY_LIMIT = 10;
 const OPERATION_NAME_PREFIXES = Object.freeze([
     'Ashen', 'Broken', 'Cold', 'Crimson', 'Dead', 'Echo', 'Feral', 'Fractured',
@@ -69,13 +72,15 @@ function getOperationEnemyPool(recommendedLevel, enemyRegistry = window.enemies 
 function chooseOperationGuaranteedReward(level, random) {
     const rewardKind = Math.floor(random() * 5);
     if (rewardKind === 0) {
-        return { kind: 'feed', quantity: Math.round(120 + level * 24 + random() * (80 + level * 9)) };
+        // Per-level ranges never overlap, so a harder Feed Operation cannot
+        // display a smaller guaranteed payout than an easier one.
+        return { kind: 'feed', quantity: 160 + level * 28 + Math.floor(random() * 21) };
     }
     if (rewardKind === 1) {
         const caches = (typeof CACHE_DEFINITIONS !== 'undefined' ? CACHE_DEFINITIONS : [])
             .filter(cache => !['flux', 'core'].includes(cache.id));
         const cache = caches[Math.floor(random() * caches.length)] || { id: 'kinetic', name: 'Kinetic Cache' };
-        return { kind: 'cache', id: cache.id, name: cache.name, quantity: level >= 36 && random() < 0.25 ? 2 : 1 };
+        return { kind: 'cache', id: cache.id, name: cache.name, quantity: level >= 41 ? 2 : 1 };
     }
     if (rewardKind === 2) {
         const cores = (typeof CORE_DEFINITIONS !== 'undefined' ? CORE_DEFINITIONS : [])
@@ -112,12 +117,24 @@ function formatOperationReward(reward) {
     return `${quantity}× ${reward.name || reward.id || 'Resource'}`;
 }
 
-function generateOperationOffer(seed, playerLevel = Number(window.player?.level) || 1, enemyRegistry = window.enemies || []) {
+function getOperationLevelForBand(playerLevel, difficultyBand, random) {
+    const baseLevel = Math.max(1, Math.min(50, Math.floor(Number(playerLevel) || 1)));
+    if (difficultyBand === 'lower') {
+        const offset = 3 + Math.floor(random() * 4);
+        return Math.max(1, baseLevel - offset);
+    }
+    if (difficultyBand === 'higher') {
+        const offset = 3 + Math.floor(random() * 4);
+        return Math.min(50, baseLevel + offset);
+    }
+    return baseLevel;
+}
+
+function generateOperationOffer(seed, playerLevel = Number(window.player?.level) || 1, enemyRegistry = window.enemies || [], difficultyBand = 'current') {
     const stableSeed = String(seed || createOperationSeed());
     const random = createOperationRandom(stableSeed);
-    const baseLevel = Math.max(1, Math.min(50, Math.floor(Number(playerLevel) || 1)));
-    const levelOffset = [-2, 0, 2][Math.floor(random() * 3)] || 0;
-    const recommendedLevel = Math.max(1, Math.min(50, baseLevel + levelOffset));
+    const normalizedBand = OPERATION_DIFFICULTY_BANDS.includes(difficultyBand) ? difficultyBand : 'current';
+    const recommendedLevel = getOperationLevelForBand(playerLevel, normalizedBand, random);
     const availableEnemies = getOperationEnemyPool(recommendedLevel, enemyRegistry);
     const shuffledEnemies = availableEnemies
         .map(enemy => ({ enemy, order: random() }))
@@ -138,6 +155,7 @@ function generateOperationOffer(seed, playerLevel = Number(window.player?.level)
         operationId: `generated-operation-${seedHash}`,
         seed: stableSeed,
         generatedOperation: true,
+        difficultyBand: normalizedBand,
         name: `${prefix} ${target}`,
         recommendedLevel,
         enemies,
@@ -150,11 +168,13 @@ function generateOperationOffer(seed, playerLevel = Number(window.player?.level)
 
 function normalizeOperationBoard(source, options = {}) {
     const board = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
-    const playerLevel = Math.max(1, Math.floor(Number(options.playerLevel ?? window.player?.level) || 1));
+    const playerLevel = Math.max(1, Math.min(50, Math.floor(Number(options.playerLevel ?? window.player?.level) || 1)));
     const enemyRegistry = options.enemies || window.enemies || [];
     const random = options.random || Math.random;
     const now = options.now || Date.now;
-    const offers = Array.isArray(board.offers)
+    const canPreserveOffers = Number(board.version) === OPERATION_BOARD_VERSION
+        && Number(board.playerLevel) === playerLevel;
+    const savedOffers = canPreserveOffers && Array.isArray(board.offers)
         ? board.offers.filter(offer => (
             offer?.generatedOperation
             && typeof offer.seed === 'string'
@@ -164,13 +184,20 @@ function normalizeOperationBoard(source, options = {}) {
             && offer.guaranteedReward
         )).slice(0, OPERATION_BOARD_SIZE)
         : [];
+    const offers = [];
     let generation = Math.max(0, Math.floor(Number(board.generation) || 0));
-    while (offers.length < OPERATION_BOARD_SIZE) {
-        const seed = `${createOperationSeed(random, now)}-${generation.toString(36)}-${offers.length}`;
-        offers.push(generateOperationOffer(seed, playerLevel, enemyRegistry));
+    for (let index = 0; index < OPERATION_BOARD_SIZE; index++) {
+        const difficultyBand = OPERATION_DIFFICULTY_BANDS[index];
+        const savedOffer = savedOffers[index];
+        if (savedOffer?.difficultyBand === difficultyBand) {
+            offers.push(savedOffer);
+            continue;
+        }
+        const seed = `${createOperationSeed(random, now)}-${generation.toString(36)}-${index}`;
+        offers.push(generateOperationOffer(seed, playerLevel, enemyRegistry, difficultyBand));
         generation++;
     }
-    return { version: OPERATION_BOARD_VERSION, generation, offers };
+    return { version: OPERATION_BOARD_VERSION, generation, playerLevel, offers };
 }
 
 function ensureOperationBoard(options = {}) {
@@ -185,7 +212,13 @@ function replaceCompletedOperationOffer(operationId, options = {}) {
     const random = options.random || Math.random;
     const now = options.now || Date.now;
     const seed = `${createOperationSeed(random, now)}-${board.generation.toString(36)}-${index}`;
-    const replacement = generateOperationOffer(seed, options.playerLevel ?? window.player?.level, options.enemies || window.enemies || []);
+    const difficultyBand = board.offers[index]?.difficultyBand || OPERATION_DIFFICULTY_BANDS[index] || 'current';
+    const replacement = generateOperationOffer(
+        seed,
+        options.playerLevel ?? window.player?.level,
+        options.enemies || window.enemies || [],
+        difficultyBand
+    );
     board.offers[index] = replacement;
     board.generation++;
     return replacement;
@@ -464,6 +497,9 @@ function isOperationEventVisible() {
 function showOperationEvent(random = Math.random) {
     if (!shouldTriggerOperationEvent()) return false;
     closeOperationEvent();
+    // Combat is already stopped between encounters. Pause the independent
+    // regeneration clock as well so waiting on this choice has no benefit.
+    stopHealthRegen();
     const definition = OPERATION_EVENT_DEFINITIONS[Math.floor(random() * OPERATION_EVENT_DEFINITIONS.length)] || OPERATION_EVENT_DEFINITIONS[0];
     const overlay = document.createElement('div');
     overlay.id = 'operation-event-overlay';
@@ -519,6 +555,7 @@ function clearActiveRunState() {
 
 window.OPERATION_EVENT_DEFINITIONS = OPERATION_EVENT_DEFINITIONS;
 window.OPERATION_BOARD_SIZE = OPERATION_BOARD_SIZE;
+window.OPERATION_BOARD_VERSION = OPERATION_BOARD_VERSION;
 window.OPERATION_SEED_HISTORY_LIMIT = OPERATION_SEED_HISTORY_LIMIT;
 window.createOperationRandom = createOperationRandom;
 window.generateOperationOffer = generateOperationOffer;

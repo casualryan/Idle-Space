@@ -368,27 +368,6 @@ function stopGatheringActivity() {
     logMessage(`You stop ${label}.`);
 }
 
-function displayGatheringLootPopup(message) {
-    const container = document.getElementById('loot-popups-container');
-    if (!container) {
-        console.error('Loot popups container not found in the DOM.');
-        return;
-    }
-
-    const popup = document.createElement('div');
-    popup.classList.add('loot-popup');
-    popup.textContent = message;
-    container.appendChild(popup);
-
-    setTimeout(() => {
-        popup.style.opacity = '0';
-        popup.style.transition = 'opacity 0.5s';
-        setTimeout(() => {
-            if (popup.parentNode) container.removeChild(popup);
-        }, 500);
-    }, 3000);
-}
-
 function performGatheringAction(skillName, activity) {
     const skillLevel = player.gatheringSkills?.[skillName]?.level || 1;
     const { yieldBonus, rareFindBonus } = getGatheringSkillBonuses(skillLevel);
@@ -401,7 +380,7 @@ function performGatheringAction(skillName, activity) {
         const yieldRoll = Math.random() * 100;
         if (yieldRoll < yieldBonus) {
             baseQuantity *= 2;
-            displayGatheringLootPopup('Yield Bonus! Double resources!');
+            logMessage('Yield Bonus! Double resources!');
         }
 
         gatheredItem.quantity = baseQuantity;
@@ -418,7 +397,7 @@ function performGatheringAction(skillName, activity) {
 
         const totalQuantity = getMaterialQuantity(activity.item.name);
 
-        displayGatheringLootPopup(`You gathered ${activity.item.name}. (${totalQuantity})`);
+        logMessage(`You gathered ${activity.item.name}. (${totalQuantity})`);
     } else {
         console.error(`Item template not found for ${activity.item.name}`);
         return { ok: false, reason: 'Missing item template' };
@@ -441,7 +420,7 @@ function performGatheringAction(skillName, activity) {
                         alertSeverity: 'danger'
                     };
                 }
-                displayGatheringLootPopup(`Rare Find! You discovered ${activity.rareFind.name}!`);
+                logMessage(`Rare Find! You discovered ${activity.rareFind.name}!`);
             } else {
                 console.error(`Rare item template not found for ${activity.rareFind.name}`);
             }

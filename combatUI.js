@@ -427,35 +427,6 @@ function updateEnemyDebuffsUI() {
 window.updatePlayerDebuffsUI = updatePlayerDebuffsUI;
 window.updateEnemyDebuffsUI = updateEnemyDebuffsUI;
 
-function displayLootPopup(message) {
-    // Remove any formatting codes like {flashing} and {end}
-    // This regex removes any text enclosed in braces { ... }
-    message = message.replace(/\{[^}]+\}/g, '');
-
-    const container = document.getElementById('loot-popups-container');
-    if (!container) {
-        console.error('Loot popups container not found in the DOM.');
-        return;
-    }
-
-    const popup = document.createElement('div');
-    popup.classList.add('loot-popup');
-    popup.textContent = message;
-
-    // Add the popup to the container
-    container.appendChild(popup);
-
-    // Remove the popup after 3 seconds
-    setTimeout(() => {
-        popup.style.opacity = '0';
-        popup.style.transition = 'opacity 0.5s';
-        // Remove the popup from the DOM after the transition
-        setTimeout(() => {
-            container.removeChild(popup);
-        }, 500);
-    }, 3000);
-}
-
 function createShieldPulseAnimation() {
     // Check if the animation already exists
     if (!document.getElementById('shield-pulse-animation')) {

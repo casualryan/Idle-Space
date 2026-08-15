@@ -306,7 +306,6 @@ function handleLootDrop(enemy) {
 
         const lootMessage = `You received: {flashing}${item.name} x${item.quantity || 1}{end}`;
         logMessage(lootMessage);
-        displayLootPopup(lootMessage);
         lootFound = true;
     });
 
@@ -315,7 +314,6 @@ function handleLootDrop(enemy) {
         if (!addItemToInventory(item)) return;
         const lootMessage = `You received: {flashing}${item.name} x${item.quantity || 1}{end}`;
         logMessage(lootMessage);
-        displayLootPopup(lootMessage);
         lootFound = true;
     });
 

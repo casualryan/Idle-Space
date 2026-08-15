@@ -18,7 +18,7 @@ function updateCurrency(amount) {
 }
 
 // Add this near the top of the file with other constants
-const MAX_PLAYER_LEVEL = 51;
+const MAX_PLAYER_LEVEL = 50;
 const saveProfiles = window.coreboundSaveProfiles;
 const saveCoordinator = window.coreboundSaveCoordinator || null;
 let saveRuntimeReady = false;
@@ -257,6 +257,12 @@ function applyRainbowText(text) {
 
 // Function to gain experience and handle leveling up
 function gainExperience(amount) {
+    if (player.level >= MAX_PLAYER_LEVEL) {
+        player.level = MAX_PLAYER_LEVEL;
+        player.experience = 0;
+        updatePlayerStatsDisplay();
+        return;
+    }
     player.experience += amount;
     logMessage(`You gained ${amount} experience points.`);
     updatePlayerStatsDisplay(); // Update the experience display
@@ -266,6 +272,8 @@ function gainExperience(amount) {
 function checkLevelUp() {
     // Don't level up if already at max level
     if (player.level >= MAX_PLAYER_LEVEL) {
+        player.level = MAX_PLAYER_LEVEL;
+        player.experience = 0;
         return;
     }
     
@@ -614,7 +622,7 @@ function buildGameStateSnapshot() {
         delveClaimCache: (typeof delveClaimCache !== 'undefined') ? delveClaimCache : { items: [], feed: 0 },
         currentRunMode: (typeof currentRunMode !== 'undefined') ? currentRunMode : null,
         operationState: (typeof operationState !== 'undefined') ? operationState : null,
-        operationBoard: (typeof operationBoard !== 'undefined') ? operationBoard : { version: 1, generation: 0, offers: [] },
+        operationBoard: (typeof operationBoard !== 'undefined') ? operationBoard : { version: 2, generation: 0, playerLevel: player.level, offers: [] },
         completedOperationSeeds: (typeof completedOperationSeeds !== 'undefined') ? completedOperationSeeds : [],
         completedOperationCount: (typeof completedOperationCount !== 'undefined') ? completedOperationCount : 0,
         completedDelveLocations: (typeof completedDelveLocations !== 'undefined') ? completedDelveLocations : {},
@@ -752,8 +760,10 @@ function loadGame(slotIndex = null, saveKind = 'autosave') {
 
         player.currentHealth = savedPlayer.currentHealth;
         player.currentShield = savedPlayer.currentShield;
-        player.experience = Number(savedPlayer.experience || 0);
-        player.level = Number(savedPlayer.level || 1);
+        player.level = Math.max(1, Math.min(MAX_PLAYER_LEVEL, Math.floor(Number(savedPlayer.level) || 1)));
+        player.experience = player.level >= MAX_PLAYER_LEVEL
+            ? 0
+            : Math.max(0, Number(savedPlayer.experience) || 0);
         player.gatheringSkills = savedPlayer.gatheringSkills || player.gatheringSkills;
         if (typeof normalizeGatheringSkills === 'function') {
             normalizeGatheringSkills(player);
@@ -822,7 +832,7 @@ function loadGame(slotIndex = null, saveKind = 'autosave') {
         if (typeof operationBoard !== 'undefined') {
             operationBoard = typeof normalizeOperationBoard === 'function'
                 ? normalizeOperationBoard(gameState.operationBoard)
-                : (gameState.operationBoard || { version: 1, generation: 0, offers: [] });
+                : (gameState.operationBoard || { version: 2, generation: 0, playerLevel: player.level, offers: [] });
         }
         if (typeof completedOperationSeeds !== 'undefined') {
             completedOperationSeeds = Array.isArray(gameState.completedOperationSeeds)
@@ -1040,7 +1050,7 @@ function initializeNewCharacterState() {
     window.componentDropCounts = {};
     if (typeof delveClaimCache !== 'undefined') delveClaimCache = { items: [], feed: 0 };
     if (typeof completedDelveLocations !== 'undefined') completedDelveLocations = {};
-    if (typeof operationBoard !== 'undefined') operationBoard = { version: 1, generation: 0, offers: [] };
+    if (typeof operationBoard !== 'undefined') operationBoard = { version: 2, generation: 0, playerLevel: 1, offers: [] };
     if (typeof completedOperationSeeds !== 'undefined') completedOperationSeeds = [];
     if (typeof completedOperationCount !== 'undefined') completedOperationCount = 0;
     if (typeof isDelveInProgress !== 'undefined') isDelveInProgress = false;

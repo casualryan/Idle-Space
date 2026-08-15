@@ -1,7 +1,8 @@
 // Ordered, non-destructive migrations and validation for persisted game snapshots.
 
-const COREBOUND_SAVE_VERSION = 18;
+const COREBOUND_SAVE_VERSION = 19;
 const SAVE_MATERIAL_STACK_CAP = 50000;
+const SAVE_MAX_PLAYER_LEVEL = 50;
 const SAVE_PASSIVE_TREE_VERSION = 6;
 const SAVE_COMBAT_STYLE_VERSION = 2;
 const SAVE_DAMAGE_TYPE_ALIASES = Object.freeze({
@@ -505,7 +506,7 @@ const SAVE_MIGRATIONS = Object.freeze([
     function migrateToVersion18(state) {
         state.operationBoard = state.operationBoard && typeof state.operationBoard === 'object' && !Array.isArray(state.operationBoard)
             ? state.operationBoard
-            : { version: 1, generation: 0, offers: [] };
+            : { version: 2, generation: 0, playerLevel: Math.max(1, Math.min(50, Math.floor(Number(state.player?.level) || 1))), offers: [] };
         state.completedOperationSeeds = Array.isArray(state.completedOperationSeeds)
             ? state.completedOperationSeeds.filter(seed => typeof seed === 'string' && seed).slice(-10)
             : [];
@@ -515,6 +516,22 @@ const SAVE_MIGRATIONS = Object.freeze([
             legacyClearCount,
             Math.max(0, Math.floor(Number(state.completedOperationCount) || 0))
         );
+    },
+    function migrateToVersion19(state) {
+        const previousLevel = Math.max(1, Math.floor(Number(state.player.level) || 1));
+        const overflowLevels = Math.max(0, previousLevel - SAVE_MAX_PLAYER_LEVEL);
+        state.player.level = Math.min(SAVE_MAX_PLAYER_LEVEL, previousLevel);
+        if (state.player.level >= SAVE_MAX_PLAYER_LEVEL) state.player.experience = 0;
+
+        const passives = state.player.passives && typeof state.player.passives === 'object'
+            ? state.player.passives
+            : { allocations: {}, points: 2 };
+        passives.points = Math.max(0, Math.floor(Number(passives.points) || 0) - overflowLevels * 2);
+        state.player.passives = passives;
+
+        // Version 2 boards contain six level-banded offers. Rebuild legacy
+        // three-offer boards the next time the deployment terminal opens.
+        state.operationBoard = { version: 2, generation: 0, playerLevel: state.player.level, offers: [] };
     }
 ]);
 
@@ -585,7 +602,11 @@ function validateGameStateSnapshot(state, options = {}) {
     if (!Array.isArray(state.player?.equipment?.bionicSlots) || state.player.equipment.bionicSlots.length !== 4) {
         errors.push('player equipment must contain exactly four bionic slots');
     }
-    if (!Number.isFinite(Number(state.player?.level)) || Number(state.player.level) < 1) errors.push('player level is invalid');
+    if (!Number.isFinite(Number(state.player?.level))
+        || Number(state.player.level) < 1
+        || Number(state.player.level) > SAVE_MAX_PLAYER_LEVEL) {
+        errors.push('player level is invalid');
+    }
     if (!Number.isFinite(Number(state.player?.feed)) || Number(state.player.feed) < 0) errors.push('player Feed is invalid');
     for (const [label, source, ids] of [
         ['Core', state.coreInventory, SAVE_CORE_IDS],

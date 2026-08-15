@@ -652,6 +652,7 @@ test('level progression awards two passive points and starts level one with two'
   const codexSource = read('codex.js');
   assert.match(globalSource, /passivePoints:\s*2/, 'new characters do not begin with two passive points');
   assert.match(globalSource, /passivePoints\s*=\s*\(player\.passivePoints\s*\|\|\s*0\)\s*\+\s*2/, 'level-up does not award two passive points');
+  assert.match(globalSource, /const MAX_PLAYER_LEVEL = 50;/, 'player level is not hard-capped at 50');
   assert.match(codexSource, /two passive points per level/, 'the Codex does not explain the two-point progression rate');
 });
 
@@ -722,7 +723,7 @@ test('combat mastery choices replace tier siblings and alter live style profiles
 
 test('style cadence state drives Heavy, Balanced, Twin, and Counter attack behavior', () => {
   const testPlayer = {
-    level: 51,
+    level: 50,
     equippedSkillId: 'balancedStyle',
     unlockedSkillIds: [],
     combatStyleAllocations: {},
@@ -1147,8 +1148,8 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   );
 
   assert.equal(result.beforeUnchanged, true, 'migration mutated the parsed legacy payload');
-  assert.equal(result.migrated.toVersion, 18);
-  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+  assert.equal(result.migrated.toVersion, 19);
+  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
   assert.equal(result.migrated.state.inventory.length, 0, 'legacy material stacks still occupy ordinary slots');
   assert.equal(result.migrated.state.materialInventory['Scrap Metal'], 20);
   assert.equal(result.migrated.state.materialInventory['Wire Bundle'], 7);
@@ -1201,7 +1202,7 @@ test('v2 passive saves are refunded and caught up to two points per level', () =
     })()`
   );
 
-  assert.deepEqual([...result.appliedVersions], [13, 14, 15, 16, 17, 18]);
+  assert.deepEqual([...result.appliedVersions], [13, 14, 15, 16, 17, 18, 19]);
   assert.equal(result.state.player.passives.treeVersion, 6);
   assert.deepEqual(Object.keys(result.state.player.passives.allocations), []);
   assert.equal(result.state.player.passives.points, 38);
@@ -1226,8 +1227,8 @@ test('v14 saves with stale passive treeVersion are refunded to tree version 6', 
     })()`
   );
 
-  assert.deepEqual([...result.appliedVersions], [15, 16, 17, 18]);
-  assert.equal(result.toVersion, 18);
+  assert.deepEqual([...result.appliedVersions], [15, 16, 17, 18, 19]);
+  assert.equal(result.toVersion, 19);
   assert.equal(result.state.player.passives.treeVersion, 6);
   assert.deepEqual(Object.keys(result.state.player.passives.allocations), []);
   assert.equal(result.state.player.passives.points, 20);
@@ -1256,7 +1257,7 @@ test('v16 migration converts retired single-type bionic boosters into grouped bo
       meta: { version: 15 }
     })`
   );
-  assert.deepEqual([...result.appliedVersions], [16, 17, 18]);
+  assert.deepEqual([...result.appliedVersions], [16, 17, 18, 19]);
   assert.equal(result.state.player.equipment.bionicSlots[0].name, 'Elemental Booster');
   assert.equal(result.state.player.equipment.bionicSlots[0].statModifiers.damageGroups.elemental, 17);
   assert.equal(result.state.inventory[0].name, 'Physical Booster');
@@ -1280,7 +1281,7 @@ test('v17 migrates Credits to Feed and initializes new resource stores safely', 
     })`
   );
 
-  assert.deepEqual([...result.appliedVersions], [17, 18]);
+  assert.deepEqual([...result.appliedVersions], [17, 18, 19]);
   assert.equal(result.state.player.feed, 4321);
   assert.equal(result.state.player.currency, undefined);
   assert.equal(result.state.delveBag.feed, 77);
@@ -1290,6 +1291,28 @@ test('v17 migrates Credits to Feed and initializes new resource stores safely', 
   assert.equal(result.state.pendingCacheResolution, null);
   assert.deepEqual([...result.state.completedOperationSeeds], []);
   assert.equal(result.state.completedOperationCount, 0);
+  assert.deepEqual([...result.state.operationBoard.offers], []);
+});
+
+test('v19 clamps accidental level-51 saves without discarding allocated passives', () => {
+  const result = evaluateClassic(
+    'saveSchema.js',
+    `migrateGameStateSnapshot({
+      player: {
+        level: 51, experience: 999,
+        passives: { allocations: { 'kept-node': 1 }, points: 4, treeVersion: 6 }
+      },
+      operationBoard: { version: 1, generation: 12, offers: [{ operationId: 'legacy' }] },
+      meta: { version: 18 }
+    })`
+  );
+
+  assert.deepEqual([...result.appliedVersions], [19]);
+  assert.equal(result.state.player.level, 50);
+  assert.equal(result.state.player.experience, 0);
+  assert.equal(result.state.player.passives.points, 2);
+  assert.deepEqual(Object.keys(result.state.player.passives.allocations), ['kept-node']);
+  assert.equal(result.state.operationBoard.version, 2);
   assert.deepEqual([...result.state.operationBoard.offers], []);
 });
 
@@ -1355,6 +1378,7 @@ test('Operations consume one Core, randomize event spacing, and out-reward Patro
   assert.equal(result.encounterTarget, 6);
   assert.ok(result.operationRewards.material > result.patrolRewards.material);
   assert.ok(result.operationRewards.cache > result.patrolRewards.cache);
+  assert.match(read('operationSystem.js'), /function showOperationEvent[\s\S]*?stopHealthRegen\(\)/, 'Operation event choices do not pause regeneration');
 });
 
 test('generated Operation offers are deterministic, persistent, and replaced only after success', () => {
@@ -1383,11 +1407,20 @@ test('generated Operation offers are deterministic, persistent, and replaced onl
       });
       const boardBefore = JSON.parse(JSON.stringify(operationBoard));
       const normalizedAgain = normalizeOperationBoard(JSON.parse(JSON.stringify(operationBoard)), {
-        playerLevel: 50,
+        playerLevel: 28,
         enemies: window.enemies,
         random: () => 0.99,
         now: () => 9999
       });
+      const refreshedForLevel = normalizeOperationBoard(JSON.parse(JSON.stringify(operationBoard)), {
+        playerLevel: 30,
+        enemies: window.enemies,
+        random: () => 0.4,
+        now: () => 2000
+      });
+      let lowRewardRoll = 0;
+      const level45Feed = chooseOperationGuaranteedReward(45, () => lowRewardRoll++ === 0 ? 0 : 0.999999);
+      const level50Feed = chooseOperationGuaranteedReward(50, () => 0);
       const completed = operationBoard.offers[0];
       completed.guaranteedReward = { kind: 'feed', quantity: 333 };
       operationState = normalizeOperationState({
@@ -1406,6 +1439,11 @@ test('generated Operation offers are deterministic, persistent, and replaced onl
         validRewards,
         boardSize: boardBefore.offers.length,
         stableAcrossNormalization: JSON.stringify(boardBefore) === JSON.stringify(normalizedAgain),
+        bands: boardBefore.offers.map(offer => offer.difficultyBand),
+        levels: boardBefore.offers.map(offer => offer.recommendedLevel),
+        refreshedLevels: refreshedForLevel.offers.map(offer => offer.recommendedLevel),
+        level45Feed: level45Feed.quantity,
+        level50Feed: level50Feed.quantity,
         enemyLevels: deterministicA.enemies.map(spawn => window.enemies.find(enemy => enemy.name === spawn.name).level),
         recommendedLevel: deterministicA.recommendedLevel,
         visibleReward: formatOperationReward(deterministicA.guaranteedReward),
@@ -1424,7 +1462,7 @@ test('generated Operation offers are deterministic, persistent, and replaced onl
         player: { level: 28 }, registerCoreboundInitializer: () => {}
       },
       document: { getElementById: () => null },
-      operationBoard: { version: 1, generation: 0, offers: [] },
+      operationBoard: { version: 2, generation: 0, playerLevel: 28, offers: [] },
       operationState: null,
       currentRunMode: 'operation',
       currentMonsterIndex: 0,
@@ -1440,8 +1478,14 @@ test('generated Operation offers are deterministic, persistent, and replaced onl
   assert.equal(result.deterministic, true);
   assert.equal(result.validRewards, true);
   assert.deepEqual(new Set(result.rewardKinds), new Set(['feed', 'cache', 'core', 'material', 'materialBundle']));
-  assert.equal(result.boardSize, 3);
+  assert.equal(result.boardSize, 6);
   assert.equal(result.stableAcrossNormalization, true, 'redrawing or loading rerolled the board');
+  assert.deepEqual([...result.bands], ['current', 'current', 'lower', 'lower', 'higher', 'higher']);
+  assert.deepEqual([...result.levels.slice(0, 2)], [28, 28]);
+  assert.equal(result.levels.slice(2, 4).every(level => level < 28), true);
+  assert.equal(result.levels.slice(4).every(level => level > 28), true);
+  assert.deepEqual([...result.refreshedLevels.slice(0, 2)], [30, 30]);
+  assert.ok(result.level50Feed > result.level45Feed, 'higher-level Feed rewards can roll below lower-level rewards');
   assert.ok(result.enemyLevels.every(level => Math.abs(level - result.recommendedLevel) <= 5));
   assert.ok(result.visibleReward.length > 0);
   assert.equal(result.reward.quantity, 333);
@@ -1498,6 +1542,33 @@ test('Flux rerolls only the permanently bound modifier inside its grade range', 
   assert.equal(result.rerolled.nextDisplayValue, result.range.min);
   assert.equal(result.healthBonus, result.range.min);
   assert.equal(result.deflection, 17);
+});
+
+test('Modification UI exposes the complete eligible roll pool for the selected item', () => {
+  const result = evaluateClassic(
+    'itemgenerator.js',
+    `getPossibleRandomModifiers({
+      name: 'Test Projector', type: 'Weapon', slot: 'mainHand', levelRequirement: 45,
+      weaponBaseDamage: { pyro: 120 }
+    })`
+  );
+  const modifierUi = read('itemModification.js');
+
+  assert.equal(result.level, 45);
+  assert.equal(result.countRange, '3-4');
+  assert.ok(result.modifiers.length > 0);
+  assert.equal(result.modifiers.every(modifier => modifier.grades.map(grade => grade.grade).join(',') === '3,4,5'), true);
+  assert.ok(result.modifiers.some(modifier => modifier.displayName === 'Weapon Attack Speed'));
+  assert.ok(result.modifiers.some(modifier => modifier.displayName === 'Weapon Pyro Damage'));
+  assert.match(modifierUi, /Possible Rolls \(\$\{info\.modifiers\.length\}\)/);
+  assert.match(modifierUi, /renderPossibleModifierBrowser\(item\)/);
+});
+
+test('obsolete bottom-left loot popup system is fully removed', () => {
+  const runtime = [read('combatUI.js'), read('gathering.js'), read('lootHandler.js')].join('\n');
+  assert.doesNotMatch(runtime, /displayLootPopup|displayGatheringLootPopup|loot-popups-container|loot-popup/);
+  assert.doesNotMatch(read('index.html'), /loot-popups-container/);
+  assert.doesNotMatch(read('style.css'), /#loot-popups-container|\.loot-popup/);
 });
 
 test('material storage has deterministic slots, capped stacks, and actionable source tooltips', () => {

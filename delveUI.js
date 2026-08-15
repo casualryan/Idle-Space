@@ -470,7 +470,7 @@ function displayAdventureLocations() {
         const progressionNotice = document.createElement('div');
         progressionNotice.className = 'location-progression-notice';
         if (selectedDeploymentMode === 'operation') {
-            progressionNotice.textContent = 'LIVE OPERATION SIGNALS · OFFERS PERSIST UNTIL COMPLETED';
+            progressionNotice.textContent = '2 CURRENT · 2 CATCH-UP · 2 HIGHER-RISK SIGNALS';
         } else if (nextLevelLocation) {
             progressionNotice.textContent = `NEXT SECTOR SIGNAL · LEVEL ${Math.max(1, nextLevelLocation.recommendedLevel - 2)}`;
         } else if (nextEndgameLocation) {
@@ -576,7 +576,9 @@ function displayAdventureLocations() {
             categoryTag.className = 'category-tag';
             categoryTag.textContent = category === 'endgame'
                 ? `ENDGAME T${loc.endgameTier || 1}`
-                : category.toUpperCase();
+                : (category === 'operation'
+                    ? ({ lower: 'CATCH-UP', current: 'CURRENT', higher: 'HIGHER RISK' }[loc.difficultyBand] || 'OPERATION')
+                    : category.toUpperCase());
             categoryTag.style.position = 'absolute';
             categoryTag.style.top = '8px';
             categoryTag.style.right = '8px';
@@ -621,10 +623,22 @@ function displayAdventureLocations() {
                     locationCard.style.borderColor = '#8f3dcc';
                     break;
                 case 'operation':
-                    categoryTag.style.background = 'rgba(0, 255, 204, 0.18)';
-                    categoryTag.style.border = '1px solid #00ffcc';
-                    categoryTag.style.color = '#8bffe7';
-                    locationCard.style.borderColor = '#00a68a';
+                    if (loc.difficultyBand === 'higher') {
+                        categoryTag.style.background = 'rgba(255, 93, 93, 0.2)';
+                        categoryTag.style.border = '1px solid #ff6868';
+                        categoryTag.style.color = '#ffaaaa';
+                        locationCard.style.borderColor = '#b8465e';
+                    } else if (loc.difficultyBand === 'lower') {
+                        categoryTag.style.background = 'rgba(78, 168, 255, 0.2)';
+                        categoryTag.style.border = '1px solid #5caeff';
+                        categoryTag.style.color = '#acd6ff';
+                        locationCard.style.borderColor = '#397eb4';
+                    } else {
+                        categoryTag.style.background = 'rgba(0, 255, 204, 0.18)';
+                        categoryTag.style.border = '1px solid #00ffcc';
+                        categoryTag.style.color = '#8bffe7';
+                        locationCard.style.borderColor = '#00a68a';
+                    }
                     break;
                 default:
                     categoryTag.style.background = 'rgba(108, 117, 125, 0.3)';

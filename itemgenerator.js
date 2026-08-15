@@ -736,6 +736,53 @@ function getModifierRollRange(item, modifierOrId) {
     };
 }
 
+function getPossibleRandomModifiers(item) {
+    if (!item || !isItemEligibleForRandomModifiers(item)) return null;
+    const level = Math.max(1, Math.min(50, normalizeGeneratedItemLevel(item.levelRequirement)));
+    const gradeBucket = getWeightedBucket(level, RANDOM_MODIFIER_GRADE_WEIGHTS);
+    const possibleGrades = [...new Set(gradeBucket.weights.map(entry => Number(entry.grade)))]
+        .filter(grade => Number.isInteger(grade) && grade >= 1 && grade <= 5)
+        .sort((left, right) => left - right);
+    const context = getModifierContext(item);
+    const modifiers = getEligibleRandomModifiers(item)
+        .filter(definition => level >= definition.minLevel)
+        .map(definition => {
+            const multiplier = typeof definition.valueMultiplier === 'function'
+                ? Math.max(0, Number(definition.valueMultiplier(context)) || 1)
+                : 1;
+            const grades = possibleGrades.map(grade => {
+                const baseRange = asModifierRange(definition.grades[grade]);
+                if (!baseRange) return null;
+                const integerRange = Number.isInteger(baseRange.min) && Number.isInteger(baseRange.max);
+                const normalize = value => integerRange
+                    ? Math.max(1, Math.round(value * multiplier))
+                    : Number((value * multiplier).toFixed(2));
+                return {
+                    grade,
+                    gradeLabel: getModifierGradeLabel(grade),
+                    min: normalize(baseRange.min),
+                    max: normalize(baseRange.max)
+                };
+            }).filter(Boolean);
+            return {
+                id: definition.id,
+                displayName: definition.displayName,
+                isPercent: Boolean(definition.isPercent),
+                grades
+            };
+        })
+        .filter(definition => definition.grades.length > 0)
+        .sort((left, right) => left.displayName.localeCompare(right.displayName));
+
+    return {
+        level,
+        countRange: context.isBionic
+            ? getBionicModifierCountRangeForLevel(level)
+            : getModifierCountRangeForLevel(level),
+        modifiers
+    };
+}
+
 function rerollBoundItemModifier(item, random = Math.random) {
     if (!item?.fluxTargetModifierId || !Array.isArray(item.rolledModifiers)) return null;
     const modifier = item.rolledModifiers.find(candidate => candidate.id === item.fluxTargetModifierId);
@@ -899,6 +946,7 @@ function getRandomModifierPreviewInfo(template) {
 window.getRandomModifierPreviewInfo = getRandomModifierPreviewInfo;
 window.getModifierGradeLabel = getModifierGradeLabel;
 window.getModifierRollRange = getModifierRollRange;
+window.getPossibleRandomModifiers = getPossibleRandomModifiers;
 window.rerollBoundItemModifier = rerollBoundItemModifier;
 
 function generateItemInstance(template) {

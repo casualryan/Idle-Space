@@ -111,6 +111,47 @@ function renderModifierRows(item) {
     return container;
 }
 
+function renderPossibleModifierBrowser(item) {
+    const details = document.createElement('details');
+    details.className = 'possible-modifier-browser';
+    const info = typeof getPossibleRandomModifiers === 'function'
+        ? getPossibleRandomModifiers(item)
+        : null;
+    if (!info || info.modifiers.length === 0) {
+        details.innerHTML = '<summary>Possible Rolls</summary><p>No generated modifiers are available for this item.</p>';
+        return details;
+    }
+
+    const summary = document.createElement('summary');
+    summary.textContent = `Possible Rolls (${info.modifiers.length})`;
+    details.appendChild(summary);
+
+    const intro = document.createElement('p');
+    intro.textContent = `Level ${info.level} items generate ${info.countRange} modifiers from this pool.`;
+    details.appendChild(intro);
+
+    const list = document.createElement('div');
+    list.className = 'possible-modifier-list';
+    info.modifiers.forEach(modifier => {
+        const row = document.createElement('div');
+        row.className = 'possible-modifier-row';
+        const name = document.createElement('strong');
+        name.textContent = modifier.displayName;
+        const ranges = document.createElement('span');
+        ranges.className = 'possible-modifier-ranges';
+        modifier.grades.forEach(grade => {
+            const range = document.createElement('small');
+            range.textContent = `${grade.gradeLabel}: ${formatModificationRoll(grade.min, modifier.isPercent)}–${formatModificationRoll(grade.max, modifier.isPercent)}`;
+            ranges.appendChild(range);
+        });
+        row.appendChild(name);
+        row.appendChild(ranges);
+        list.appendChild(row);
+    });
+    details.appendChild(list);
+    return details;
+}
+
 function renderItemModificationScreen() {
     const root = document.getElementById('item-modification-root');
     if (!root) return;
@@ -163,6 +204,7 @@ function renderItemModificationScreen() {
         <div class="modification-affix-panel"><header><span>MODIFIABLE</span><h3>Generated Modifiers</h3></header></div>`;
     const affixPanel = workspace.querySelector('.modification-affix-panel');
     affixPanel.appendChild(renderModifierRows(item));
+    affixPanel.appendChild(renderPossibleModifierBrowser(item));
 
     if (boundModifier) {
         const grade = Math.max(1, Math.min(5, Number(boundModifier.grade) || 1));
