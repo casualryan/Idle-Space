@@ -84,6 +84,10 @@ function getTemplateDamage(grade, variant) {
   };
 }
 
+function getChassisIcon(grade, family) {
+  return `icons/weapons/${grade.id}_${family}_chassis.png`;
+}
+
 function createChassisTemplate(grade, family, profile) {
   const previewVariant = profile.variants[0];
   const familyLabel = WEAPON_FAMILY_DEFINITIONS[family].label;
@@ -95,7 +99,7 @@ function createChassisTemplate(grade, family, profile) {
     weaponFamily: family,
     weaponFamilyLabel: familyLabel,
     weaponTags: [...previewVariant.tags],
-    icon: 'icons/default-icon.png',
+    icon: getChassisIcon(grade, family),
     slot: 'mainHand',
     levelRequirement: grade.level,
     bAttackSpeed: { ...previewVariant.speed },

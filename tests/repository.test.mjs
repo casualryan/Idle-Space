@@ -159,10 +159,20 @@ test('weapon chassis cover every family at six fixed grades and resolve every da
       assert.ok(template, `missing chassis: ${name}`);
       assert.equal(template.levelRequirement, grade.level);
       assert.equal(template.weaponFamily, family);
+      assert.equal(template.icon, `icons/weapons/${grade.id}_${family}_chassis.png`);
+
+      const iconPath = path.join(repositoryRoot, template.icon);
+      assert.ok(fs.existsSync(iconPath), `${name} icon does not exist`);
+      const png = fs.readFileSync(iconPath);
+      assert.equal(png.toString('hex', 0, 8), '89504e470d0a1a0a', `${name} icon is not a PNG`);
+      assert.equal(png.readUInt32BE(16), 512, `${name} icon is not 512px wide`);
+      assert.equal(png.readUInt32BE(20), 512, `${name} icon is not 512px tall`);
+
       for (const damageType of Object.keys(WEAPON_DAMAGE_CORE_DEFINITIONS)) {
         const resolved = resolveWeaponChassisTemplate(template, damageType, () => 0);
         assert.deepEqual(Object.keys(resolved.weaponBaseDamage), [damageType]);
         assert.equal(resolved.chassisTemplateName, template.name);
+        assert.equal(resolved.icon, template.icon);
         assert.match(resolved.name, new RegExp(WEAPON_DAMAGE_CORE_DEFINITIONS[damageType].label));
       }
     }
