@@ -376,6 +376,14 @@ function resetEncounterState() {
 
 function stopCombat(reason) {
     if (!isCombatActive && !isDelveInProgress && reason !== 'delveCompleted') return;
+    const finishedRunMode = currentRunMode;
+    const finishedRunLocation = currentDelveLocation;
+    let shouldRestartPatrol = false;
+    if (reason === 'playerDefeated' && finishedRunMode === 'patrol' && finishedRunLocation) {
+        try {
+            shouldRestartPatrol = localStorage.getItem('autoPatrolRedeploy') === 'true';
+        } catch (error) { /* local storage is optional */ }
+    }
     if (typeof cancelPropagationPresentations === 'function') cancelPropagationPresentations();
     if (typeof cancelCombatVfx === 'function') cancelCombatVfx();
     if (isCombatActive) {
@@ -431,19 +439,10 @@ function stopCombat(reason) {
     }
 
     if (reason === 'delveCompleted') {
-        const finishedMode = currentRunMode;
         isDelveInProgress = false;
         currentDelveLocation = null;
         currentMonsterIndex = 0;
         clearActiveRunState();
-        try {
-            const auto = localStorage.getItem('autoRedeploy') === 'true';
-            if (auto && finishedMode === 'operation' && window.lastDelveLocation && !hasDelveClaimCacheRewards()) {
-                setTimeout(() => startAdventure(window.lastDelveLocation), 500);
-            } else if (auto && hasDelveClaimCacheRewards()) {
-                logMessage('Auto re-deploy paused until the Operation Claim Cache is cleared.');
-            }
-        } catch (error) { /* local storage is optional */ }
         stopHealthRegen();
         startHealthRegen();
     }
@@ -453,6 +452,10 @@ function stopCombat(reason) {
     initializeEnemyStatsDisplay();
     if (typeof setDelveCombatUIActive === 'function') setDelveCombatUIActive(false);
     displayAdventureLocations();
+    if (shouldRestartPatrol) {
+        logMessage(`Patrol redeploying in ${finishedRunLocation.name} after defeat.`);
+        setTimeout(() => startPatrol(finishedRunLocation), 500);
+    }
     if (!isDelveInProgress || ['playerFled', 'playerDefeated', 'delveCompleted'].includes(reason)) stopHealthRegen();
 }
 

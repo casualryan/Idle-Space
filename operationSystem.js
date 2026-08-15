@@ -1,5 +1,249 @@
 // Operation-only Core effects, randomized between-encounter events, and run modifiers.
 
+const OPERATION_BOARD_VERSION = 1;
+const OPERATION_BOARD_SIZE = 3;
+const OPERATION_SEED_HISTORY_LIMIT = 10;
+const OPERATION_NAME_PREFIXES = Object.freeze([
+    'Ashen', 'Broken', 'Cold', 'Crimson', 'Dead', 'Echo', 'Feral', 'Fractured',
+    'Ghost', 'Hollow', 'Iron', 'Null', 'Obsidian', 'Silent', 'Static', 'Veiled'
+]);
+const OPERATION_NAME_TARGETS = Object.freeze([
+    'Aperture', 'Bastion', 'Conduit', 'Foundry', 'Grid', 'Lattice', 'Relay', 'Spire',
+    'Terminal', 'Vault', 'Vector', 'Warren'
+]);
+const OPERATION_BRIEFINGS = Object.freeze([
+    'Hostile signatures are converging around an exposed recovery route.',
+    'A narrow insertion window has opened inside a contested machine sector.',
+    'Dominion telemetry marks a recoverable payload behind an unstable defense line.',
+    'A damaged signal chain reveals a short, high-value strike opportunity.',
+    'Scavenger traffic has exposed a guarded cache before the sector can seal again.'
+]);
+const OPERATION_MATERIAL_BANDS = Object.freeze([
+    Object.freeze(['Scrap Metal', 'Wire Bundle', 'Metal Fasteners', 'Basic Servo']),
+    Object.freeze(['Titanium', 'Copper Coil', 'Stabilizer', 'Advanced Servo', 'Targeting Module']),
+    Object.freeze(['Titanium Plating', 'High-Density Power Cell', 'Quantum Capacitor', 'Advanced Electronic Circuit']),
+    Object.freeze(['Phase Converter', 'AI Core Fragment', 'Synthetic Biofluid', 'Temporal Stabilizer']),
+    Object.freeze(['Quantum Core', 'Nanite Cluster', 'Flux Crystal', 'Advanced Alloy'])
+]);
+
+function hashOperationSeed(value) {
+    let hash = 2166136261;
+    for (const character of String(value || 'operation')) {
+        hash ^= character.charCodeAt(0);
+        hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+}
+
+function createOperationRandom(seed) {
+    let state = hashOperationSeed(seed) || 0x6d2b79f5;
+    return function seededOperationRandom() {
+        state += 0x6d2b79f5;
+        let value = state;
+        value = Math.imul(value ^ (value >>> 15), value | 1);
+        value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+        return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+function createOperationSeed(random = Math.random, now = Date.now) {
+    const timestamp = Math.max(0, Math.floor(Number(now()) || Date.now())).toString(36);
+    const entropy = Math.floor(Math.min(0.999999999, Math.max(0, random())) * 0x100000000)
+        .toString(36)
+        .padStart(7, '0');
+    return `op-${timestamp}-${entropy}`;
+}
+
+function getOperationEnemyPool(recommendedLevel, enemyRegistry = window.enemies || []) {
+    const level = Math.max(1, Math.min(50, Math.floor(Number(recommendedLevel) || 1)));
+    const eligible = enemyRegistry.filter(enemy => enemy?.name && !enemy.developerOnly && !enemy.isTrainingDummy);
+    const nearby = eligible.filter(enemy => Math.abs(Math.max(1, Number(enemy.level) || 1) - level) <= 5);
+    const source = nearby.length >= 4
+        ? nearby
+        : eligible.slice().sort((left, right) => (
+            Math.abs(Number(left.level || 1) - level) - Math.abs(Number(right.level || 1) - level)
+        )).slice(0, 8);
+    return source;
+}
+
+function chooseOperationGuaranteedReward(level, random) {
+    const rewardKind = Math.floor(random() * 5);
+    if (rewardKind === 0) {
+        return { kind: 'feed', quantity: Math.round(120 + level * 24 + random() * (80 + level * 9)) };
+    }
+    if (rewardKind === 1) {
+        const caches = (typeof CACHE_DEFINITIONS !== 'undefined' ? CACHE_DEFINITIONS : [])
+            .filter(cache => !['flux', 'core'].includes(cache.id));
+        const cache = caches[Math.floor(random() * caches.length)] || { id: 'kinetic', name: 'Kinetic Cache' };
+        return { kind: 'cache', id: cache.id, name: cache.name, quantity: level >= 36 && random() < 0.25 ? 2 : 1 };
+    }
+    if (rewardKind === 2) {
+        const cores = (typeof CORE_DEFINITIONS !== 'undefined' ? CORE_DEFINITIONS : [])
+            .filter(core => Number(core.minLevel || 1) <= level);
+        const core = cores[Math.floor(random() * cores.length)] || { id: 'reclamation', name: 'Reclamation Core' };
+        return { kind: 'core', id: core.id, name: core.name, quantity: 1 };
+    }
+    if (rewardKind === 3) {
+        const grade = Math.max(1, Math.min(5, Math.ceil(level / 10)));
+        return { kind: 'material', name: `Flux ${['I', 'II', 'III', 'IV', 'V'][grade - 1]}`, quantity: level >= 31 ? 2 : 1 };
+    }
+    const band = Math.max(0, Math.min(OPERATION_MATERIAL_BANDS.length - 1, Math.floor((level - 1) / 10)));
+    const pool = OPERATION_MATERIAL_BANDS[band];
+    const first = pool[Math.floor(random() * pool.length)];
+    let second = pool[Math.floor(random() * pool.length)];
+    if (pool.length > 1 && second === first) second = pool[(pool.indexOf(first) + 1) % pool.length];
+    const baseQuantity = Math.max(1, 5 - band);
+    return {
+        kind: 'materialBundle',
+        items: [
+            { name: first, quantity: baseQuantity + Math.floor(random() * 3) },
+            { name: second, quantity: Math.max(1, baseQuantity - 1 + Math.floor(random() * 2)) }
+        ]
+    };
+}
+
+function formatOperationReward(reward) {
+    if (!reward || typeof reward !== 'object') return 'Unknown recovery payload';
+    const quantity = Math.max(1, Math.floor(Number(reward.quantity) || 1));
+    if (reward.kind === 'feed') return `${quantity} Feed`;
+    if (reward.kind === 'materialBundle') {
+        return (reward.items || []).map(item => `${Math.max(1, Number(item.quantity) || 1)}× ${item.name}`).join(' + ');
+    }
+    return `${quantity}× ${reward.name || reward.id || 'Resource'}`;
+}
+
+function generateOperationOffer(seed, playerLevel = Number(window.player?.level) || 1, enemyRegistry = window.enemies || []) {
+    const stableSeed = String(seed || createOperationSeed());
+    const random = createOperationRandom(stableSeed);
+    const baseLevel = Math.max(1, Math.min(50, Math.floor(Number(playerLevel) || 1)));
+    const levelOffset = [-2, 0, 2][Math.floor(random() * 3)] || 0;
+    const recommendedLevel = Math.max(1, Math.min(50, baseLevel + levelOffset));
+    const availableEnemies = getOperationEnemyPool(recommendedLevel, enemyRegistry);
+    const shuffledEnemies = availableEnemies
+        .map(enemy => ({ enemy, order: random() }))
+        .sort((left, right) => left.order - right.order);
+    const enemyCount = Math.min(shuffledEnemies.length, 4 + Math.floor(random() * 3));
+    const empoweredChance = Math.min(0.35, 0.03 + Math.floor(recommendedLevel / 10) * 0.035);
+    const enemies = shuffledEnemies.slice(0, enemyCount).map(({ enemy }) => ({
+        name: enemy.name,
+        spawnRate: 1 + Math.floor(random() * 4),
+        empoweredChance
+    }));
+    const prefix = OPERATION_NAME_PREFIXES[Math.floor(random() * OPERATION_NAME_PREFIXES.length)];
+    const target = OPERATION_NAME_TARGETS[Math.floor(random() * OPERATION_NAME_TARGETS.length)];
+    const encounterCount = Math.max(4, Math.min(10, 4 + Math.floor(recommendedLevel / 10) + Math.floor(random() * 3)));
+    const seedHash = hashOperationSeed(stableSeed).toString(36);
+    return {
+        id: `generated-operation-${seedHash}`,
+        operationId: `generated-operation-${seedHash}`,
+        seed: stableSeed,
+        generatedOperation: true,
+        name: `${prefix} ${target}`,
+        recommendedLevel,
+        enemies,
+        numFights: encounterCount,
+        description: OPERATION_BRIEFINGS[Math.floor(random() * OPERATION_BRIEFINGS.length)],
+        locationCategory: 'operation',
+        guaranteedReward: chooseOperationGuaranteedReward(recommendedLevel, random)
+    };
+}
+
+function normalizeOperationBoard(source, options = {}) {
+    const board = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
+    const playerLevel = Math.max(1, Math.floor(Number(options.playerLevel ?? window.player?.level) || 1));
+    const enemyRegistry = options.enemies || window.enemies || [];
+    const random = options.random || Math.random;
+    const now = options.now || Date.now;
+    const offers = Array.isArray(board.offers)
+        ? board.offers.filter(offer => (
+            offer?.generatedOperation
+            && typeof offer.seed === 'string'
+            && typeof offer.operationId === 'string'
+            && Array.isArray(offer.enemies)
+            && offer.enemies.length > 0
+            && offer.guaranteedReward
+        )).slice(0, OPERATION_BOARD_SIZE)
+        : [];
+    let generation = Math.max(0, Math.floor(Number(board.generation) || 0));
+    while (offers.length < OPERATION_BOARD_SIZE) {
+        const seed = `${createOperationSeed(random, now)}-${generation.toString(36)}-${offers.length}`;
+        offers.push(generateOperationOffer(seed, playerLevel, enemyRegistry));
+        generation++;
+    }
+    return { version: OPERATION_BOARD_VERSION, generation, offers };
+}
+
+function ensureOperationBoard(options = {}) {
+    operationBoard = normalizeOperationBoard(operationBoard, options);
+    return operationBoard;
+}
+
+function replaceCompletedOperationOffer(operationId, options = {}) {
+    const board = ensureOperationBoard(options);
+    const index = board.offers.findIndex(offer => offer.operationId === operationId);
+    if (index < 0) return null;
+    const random = options.random || Math.random;
+    const now = options.now || Date.now;
+    const seed = `${createOperationSeed(random, now)}-${board.generation.toString(36)}-${index}`;
+    const replacement = generateOperationOffer(seed, options.playerLevel ?? window.player?.level, options.enemies || window.enemies || []);
+    board.offers[index] = replacement;
+    board.generation++;
+    return replacement;
+}
+
+function stageOperationGuaranteedReward(reward) {
+    if (!reward || typeof reward !== 'object') return false;
+    if (reward.kind === 'feed') {
+        delveBag.feed += Math.max(1, Math.floor(Number(reward.quantity) || 1));
+        return true;
+    }
+    if (reward.kind === 'materialBundle') {
+        for (const entry of reward.items || []) {
+            const template = (window.materials || []).find(material => material.name === entry.name);
+            addItemToDelveBag({ ...(template || { name: entry.name, type: 'Material', stackable: true }), quantity: Math.max(1, Math.floor(Number(entry.quantity) || 1)) });
+        }
+        return true;
+    }
+    if (reward.kind === 'core') {
+        const definition = typeof getCoreDefinition === 'function' ? getCoreDefinition(reward.id) : null;
+        addItemToDelveBag(definition && typeof makeCoreItem === 'function'
+            ? makeCoreItem(definition, reward.quantity)
+            : { type: 'Core', coreId: reward.id, name: reward.name, stackable: true, quantity: reward.quantity });
+        return true;
+    }
+    if (reward.kind === 'cache') {
+        const definition = typeof getCacheDefinition === 'function' ? getCacheDefinition(reward.id) : null;
+        addItemToDelveBag(definition && typeof makeCacheItem === 'function'
+            ? makeCacheItem(definition, reward.quantity)
+            : { type: 'Cache', cacheId: reward.id, name: reward.name, stackable: true, quantity: reward.quantity });
+        return true;
+    }
+    if (reward.kind === 'material') {
+        const template = (window.materials || []).find(material => material.name === reward.name);
+        addItemToDelveBag({ ...(template || { name: reward.name, type: 'Material', stackable: true }), quantity: Math.max(1, Math.floor(Number(reward.quantity) || 1)) });
+        return true;
+    }
+    return false;
+}
+
+function recordCompletedOperationSeed(seed) {
+    if (typeof seed !== 'string' || !seed) return completedOperationSeeds;
+    completedOperationSeeds = [...(Array.isArray(completedOperationSeeds) ? completedOperationSeeds : []), seed]
+        .slice(-OPERATION_SEED_HISTORY_LIMIT);
+    completedOperationCount = Math.max(0, Math.floor(Number(completedOperationCount) || 0)) + 1;
+    return completedOperationSeeds;
+}
+
+function completeGeneratedOperation(location = currentDelveLocation) {
+    if (!location?.generatedOperation || !operationState || operationState.guaranteedRewardClaimed) return null;
+    const reward = location.guaranteedReward || operationState.guaranteedReward;
+    if (!stageOperationGuaranteedReward(reward)) return null;
+    operationState.guaranteedRewardClaimed = true;
+    recordCompletedOperationSeed(location.seed || operationState.operationSeed);
+    replaceCompletedOperationOffer(location.operationId || operationState.operationId);
+    return reward;
+}
+
 const OPERATION_EVENT_DEFINITIONS = Object.freeze([
     Object.freeze({
         id: 'salvage-fork',
@@ -76,6 +320,12 @@ function normalizeOperationState(source) {
         : 1;
     return {
         activeCoreId: typeof state.activeCoreId === 'string' ? state.activeCoreId : null,
+        operationId: typeof state.operationId === 'string' ? state.operationId : null,
+        operationSeed: typeof state.operationSeed === 'string' ? state.operationSeed : null,
+        guaranteedReward: state.guaranteedReward && typeof state.guaranteedReward === 'object'
+            ? state.guaranteedReward
+            : null,
+        guaranteedRewardClaimed: Boolean(state.guaranteedRewardClaimed),
         encounterTarget: Math.max(1, Math.floor(Number(state.encounterTarget) || fallbackEncounterCount || 1)),
         encountersCompleted: Math.max(0, Math.floor(Number(state.encountersCompleted) || 0)),
         nextEventAt: state.nextEventAt != null && Number.isFinite(Number(state.nextEventAt))
@@ -112,7 +362,13 @@ function applyCoreToOperationState(coreId, state) {
 }
 
 function beginOperationState(location, coreId = null) {
-    const state = normalizeOperationState({ encounterTarget: location?.numFights || 1, nextEventAt: 1 });
+    const state = normalizeOperationState({
+        operationId: location?.operationId || null,
+        operationSeed: location?.seed || null,
+        guaranteedReward: location?.guaranteedReward || null,
+        encounterTarget: location?.numFights || 1,
+        nextEventAt: 1
+    });
     if (coreId) {
         const core = getCoreDefinition(coreId);
         if (!core || !removeStackFromMap(window.coreInventory, core.id, 1)) return null;
@@ -262,6 +518,16 @@ function clearActiveRunState() {
 }
 
 window.OPERATION_EVENT_DEFINITIONS = OPERATION_EVENT_DEFINITIONS;
+window.OPERATION_BOARD_SIZE = OPERATION_BOARD_SIZE;
+window.OPERATION_SEED_HISTORY_LIMIT = OPERATION_SEED_HISTORY_LIMIT;
+window.createOperationRandom = createOperationRandom;
+window.generateOperationOffer = generateOperationOffer;
+window.normalizeOperationBoard = normalizeOperationBoard;
+window.ensureOperationBoard = ensureOperationBoard;
+window.replaceCompletedOperationOffer = replaceCompletedOperationOffer;
+window.formatOperationReward = formatOperationReward;
+window.recordCompletedOperationSeed = recordCompletedOperationSeed;
+window.completeGeneratedOperation = completeGeneratedOperation;
 window.normalizeOperationState = normalizeOperationState;
 window.beginOperationState = beginOperationState;
 window.beginPatrolState = beginPatrolState;

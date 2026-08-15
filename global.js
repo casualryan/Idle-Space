@@ -614,6 +614,9 @@ function buildGameStateSnapshot() {
         delveClaimCache: (typeof delveClaimCache !== 'undefined') ? delveClaimCache : { items: [], feed: 0 },
         currentRunMode: (typeof currentRunMode !== 'undefined') ? currentRunMode : null,
         operationState: (typeof operationState !== 'undefined') ? operationState : null,
+        operationBoard: (typeof operationBoard !== 'undefined') ? operationBoard : { version: 1, generation: 0, offers: [] },
+        completedOperationSeeds: (typeof completedOperationSeeds !== 'undefined') ? completedOperationSeeds : [],
+        completedOperationCount: (typeof completedOperationCount !== 'undefined') ? completedOperationCount : 0,
         completedDelveLocations: (typeof completedDelveLocations !== 'undefined') ? completedDelveLocations : {},
         activityState: {
             active: Boolean(managerState.active),
@@ -816,6 +819,19 @@ function loadGame(slotIndex = null, saveKind = 'autosave') {
         if (typeof operationState !== 'undefined') {
             operationState = currentRunMode === 'operation' ? normalizeOperationState(gameState.operationState) : null;
         }
+        if (typeof operationBoard !== 'undefined') {
+            operationBoard = typeof normalizeOperationBoard === 'function'
+                ? normalizeOperationBoard(gameState.operationBoard)
+                : (gameState.operationBoard || { version: 1, generation: 0, offers: [] });
+        }
+        if (typeof completedOperationSeeds !== 'undefined') {
+            completedOperationSeeds = Array.isArray(gameState.completedOperationSeeds)
+                ? gameState.completedOperationSeeds.filter(seed => typeof seed === 'string' && seed).slice(-10)
+                : [];
+        }
+        if (typeof completedOperationCount !== 'undefined') {
+            completedOperationCount = Math.max(0, Math.floor(Number(gameState.completedOperationCount) || 0));
+        }
         if (typeof completedDelveLocations !== 'undefined') {
             completedDelveLocations = gameState.completedDelveLocations && typeof gameState.completedDelveLocations === 'object'
                 ? Object.fromEntries(Object.entries(gameState.completedDelveLocations)
@@ -880,8 +896,11 @@ function restoreItem(savedItem) {
     const normalizedItem = normalizeSavedItemData(savedItem);
     console.log(`Trying to restore item: ${normalizedItem.name}`);
     
-    // Find the template for this item
-    const itemTemplate = window.items.find(item => item.name === normalizedItem.name);
+    // Generated chassis weapons have unique display names, so restore them
+    // through their stable chassis template instead of treating them as retired.
+    const itemTemplate = window.coreboundSaveSchema?.findSavedItemTemplate
+        ? window.coreboundSaveSchema.findSavedItemTemplate(normalizedItem, window.items)
+        : window.items.find(item => item.name === normalizedItem.name);
     
     if (itemTemplate) {
         console.log(`Template found for ${normalizedItem.name}, type: ${itemTemplate.type}`);
@@ -1021,6 +1040,9 @@ function initializeNewCharacterState() {
     window.componentDropCounts = {};
     if (typeof delveClaimCache !== 'undefined') delveClaimCache = { items: [], feed: 0 };
     if (typeof completedDelveLocations !== 'undefined') completedDelveLocations = {};
+    if (typeof operationBoard !== 'undefined') operationBoard = { version: 1, generation: 0, offers: [] };
+    if (typeof completedOperationSeeds !== 'undefined') completedOperationSeeds = [];
+    if (typeof completedOperationCount !== 'undefined') completedOperationCount = 0;
     if (typeof isDelveInProgress !== 'undefined') isDelveInProgress = false;
     if (typeof currentDelveLocation !== 'undefined') currentDelveLocation = null;
     if (typeof currentMonsterIndex !== 'undefined') currentMonsterIndex = 0;

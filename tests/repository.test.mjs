@@ -179,6 +179,32 @@ test('weapon chassis cover every family at six fixed grades and resolve every da
   }
 });
 
+test('generated chassis weapons restore through their stable chassis template', () => {
+  const result = evaluateClassic(
+    'saveSchema.js',
+    `(() => {
+      const template = window.items.find(item => item.name === 'Dominion Rifles Chassis');
+      const saved = {
+        name: 'Dominion Kinetic Rifle',
+        chassisTemplateName: 'Dominion Rifles Chassis',
+        icon: 'icons/default-icon.png',
+        rolledModifiers: [{ id: 'saved-roll', value: 47 }]
+      };
+      const restoredTemplate = findSavedItemTemplate(saved, window.items);
+      return {
+        templateName: restoredTemplate?.name,
+        icon: restoredTemplate?.icon,
+        savedRoll: saved.rolledModifiers[0].value
+      };
+    })()`,
+    { window: { items: weaponChassisTemplates } }
+  );
+
+  assert.equal(result.templateName, 'Dominion Rifles Chassis');
+  assert.equal(result.icon, 'icons/weapons/dominion_rifles_chassis.png');
+  assert.equal(result.savedRoll, 47);
+});
+
 test('mixed chassis families randomize one- and two-handed subtypes per craft', () => {
   for (const family of ['blades', 'impact', 'conduits']) {
     const template = weaponChassisTemplates.find(item =>
@@ -1121,8 +1147,8 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   );
 
   assert.equal(result.beforeUnchanged, true, 'migration mutated the parsed legacy payload');
-  assert.equal(result.migrated.toVersion, 17);
-  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
+  assert.equal(result.migrated.toVersion, 18);
+  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
   assert.equal(result.migrated.state.inventory.length, 0, 'legacy material stacks still occupy ordinary slots');
   assert.equal(result.migrated.state.materialInventory['Scrap Metal'], 20);
   assert.equal(result.migrated.state.materialInventory['Wire Bundle'], 7);
@@ -1175,7 +1201,7 @@ test('v2 passive saves are refunded and caught up to two points per level', () =
     })()`
   );
 
-  assert.deepEqual([...result.appliedVersions], [13, 14, 15, 16, 17]);
+  assert.deepEqual([...result.appliedVersions], [13, 14, 15, 16, 17, 18]);
   assert.equal(result.state.player.passives.treeVersion, 6);
   assert.deepEqual(Object.keys(result.state.player.passives.allocations), []);
   assert.equal(result.state.player.passives.points, 38);
@@ -1200,8 +1226,8 @@ test('v14 saves with stale passive treeVersion are refunded to tree version 6', 
     })()`
   );
 
-  assert.deepEqual([...result.appliedVersions], [15, 16, 17]);
-  assert.equal(result.toVersion, 17);
+  assert.deepEqual([...result.appliedVersions], [15, 16, 17, 18]);
+  assert.equal(result.toVersion, 18);
   assert.equal(result.state.player.passives.treeVersion, 6);
   assert.deepEqual(Object.keys(result.state.player.passives.allocations), []);
   assert.equal(result.state.player.passives.points, 20);
@@ -1230,7 +1256,7 @@ test('v16 migration converts retired single-type bionic boosters into grouped bo
       meta: { version: 15 }
     })`
   );
-  assert.deepEqual([...result.appliedVersions], [16, 17]);
+  assert.deepEqual([...result.appliedVersions], [16, 17, 18]);
   assert.equal(result.state.player.equipment.bionicSlots[0].name, 'Elemental Booster');
   assert.equal(result.state.player.equipment.bionicSlots[0].statModifiers.damageGroups.elemental, 17);
   assert.equal(result.state.inventory[0].name, 'Physical Booster');
@@ -1254,7 +1280,7 @@ test('v17 migrates Credits to Feed and initializes new resource stores safely', 
     })`
   );
 
-  assert.deepEqual([...result.appliedVersions], [17]);
+  assert.deepEqual([...result.appliedVersions], [17, 18]);
   assert.equal(result.state.player.feed, 4321);
   assert.equal(result.state.player.currency, undefined);
   assert.equal(result.state.delveBag.feed, 77);
@@ -1262,6 +1288,9 @@ test('v17 migrates Credits to Feed and initializes new resource stores safely', 
   assert.deepEqual({ ...result.state.coreInventory }, {});
   assert.deepEqual({ ...result.state.cacheInventory }, {});
   assert.equal(result.state.pendingCacheResolution, null);
+  assert.deepEqual([...result.state.completedOperationSeeds], []);
+  assert.equal(result.state.completedOperationCount, 0);
+  assert.deepEqual([...result.state.operationBoard.offers], []);
 });
 
 test('Core, Cache, and Flux registries use distinct dedicated 512px icons', () => {
@@ -1326,6 +1355,103 @@ test('Operations consume one Core, randomize event spacing, and out-reward Patro
   assert.equal(result.encounterTarget, 6);
   assert.ok(result.operationRewards.material > result.patrolRewards.material);
   assert.ok(result.operationRewards.cache > result.patrolRewards.cache);
+});
+
+test('generated Operation offers are deterministic, persistent, and replaced only after success', () => {
+  const result = evaluateClassic(
+    ['resourceSystem.js', 'operationSystem.js'],
+    `(() => {
+      const deterministicA = generateOperationOffer('fixed-operation-seed', 28, window.enemies);
+      const deterministicB = generateOperationOffer('fixed-operation-seed', 28, window.enemies);
+      const sampleRewards = Array.from({ length: 250 }, (_, index) =>
+        generateOperationOffer('reward-sample-' + index, 28, window.enemies).guaranteedReward
+      );
+      const materialNames = new Set(window.materials.map(material => material.name));
+      const validRewards = sampleRewards.every(reward => {
+        if (reward.kind === 'feed') return reward.quantity > 0;
+        if (reward.kind === 'cache') return CACHE_DEFINITIONS.some(cache => cache.id === reward.id);
+        if (reward.kind === 'core') return CORE_DEFINITIONS.some(core => core.id === reward.id);
+        if (reward.kind === 'material') return materialNames.has(reward.name);
+        if (reward.kind === 'materialBundle') return reward.items.every(item => materialNames.has(item.name) && item.quantity > 0);
+        return false;
+      });
+      operationBoard = normalizeOperationBoard(null, {
+        playerLevel: 28,
+        enemies: window.enemies,
+        random: () => 0.25,
+        now: () => 1000
+      });
+      const boardBefore = JSON.parse(JSON.stringify(operationBoard));
+      const normalizedAgain = normalizeOperationBoard(JSON.parse(JSON.stringify(operationBoard)), {
+        playerLevel: 50,
+        enemies: window.enemies,
+        random: () => 0.99,
+        now: () => 9999
+      });
+      const completed = operationBoard.offers[0];
+      completed.guaranteedReward = { kind: 'feed', quantity: 333 };
+      operationState = normalizeOperationState({
+        operationId: completed.operationId,
+        operationSeed: completed.seed,
+        guaranteedReward: completed.guaranteedReward,
+        encounterTarget: completed.numFights
+      });
+      currentDelveLocation = completed;
+      const idsBeforeCompletion = operationBoard.offers.map(offer => offer.operationId);
+      const reward = completeGeneratedOperation(completed);
+      const idsAfterCompletion = operationBoard.offers.map(offer => offer.operationId);
+      return {
+        deterministic: JSON.stringify(deterministicA) === JSON.stringify(deterministicB),
+        rewardKinds: [...new Set(sampleRewards.map(reward => reward.kind))],
+        validRewards,
+        boardSize: boardBefore.offers.length,
+        stableAcrossNormalization: JSON.stringify(boardBefore) === JSON.stringify(normalizedAgain),
+        enemyLevels: deterministicA.enemies.map(spawn => window.enemies.find(enemy => enemy.name === spawn.name).level),
+        recommendedLevel: deterministicA.recommendedLevel,
+        visibleReward: formatOperationReward(deterministicA.guaranteedReward),
+        reward,
+        completedSeed: completed.seed,
+        stagedFeed: delveBag.feed,
+        idsBeforeCompletion,
+        idsAfterCompletion,
+        completedOperationSeeds,
+        completedOperationCount
+      };
+    })()`,
+    {
+      window: {
+        coreInventory: {}, cacheInventory: {}, materials, enemies,
+        player: { level: 28 }, registerCoreboundInitializer: () => {}
+      },
+      document: { getElementById: () => null },
+      operationBoard: { version: 1, generation: 0, offers: [] },
+      operationState: null,
+      currentRunMode: 'operation',
+      currentMonsterIndex: 0,
+      currentDelveLocation: null,
+      delveBag: { items: [], feed: 0 },
+      completedOperationSeeds: Array.from({ length: 10 }, (_, index) => `old-${index}`),
+      completedOperationCount: 10,
+      addItemToDelveBag: () => {},
+      logMessage: () => {}
+    }
+  );
+
+  assert.equal(result.deterministic, true);
+  assert.equal(result.validRewards, true);
+  assert.deepEqual(new Set(result.rewardKinds), new Set(['feed', 'cache', 'core', 'material', 'materialBundle']));
+  assert.equal(result.boardSize, 3);
+  assert.equal(result.stableAcrossNormalization, true, 'redrawing or loading rerolled the board');
+  assert.ok(result.enemyLevels.every(level => Math.abs(level - result.recommendedLevel) <= 5));
+  assert.ok(result.visibleReward.length > 0);
+  assert.equal(result.reward.quantity, 333);
+  assert.equal(result.stagedFeed, 333);
+  assert.notEqual(result.idsAfterCompletion[0], result.idsBeforeCompletion[0]);
+  assert.deepEqual([...result.idsAfterCompletion.slice(1)], [...result.idsBeforeCompletion.slice(1)]);
+  assert.equal(result.completedOperationSeeds.length, 10);
+  assert.equal(result.completedOperationSeeds[0], 'old-1');
+  assert.equal(result.completedOperationSeeds[9], result.completedSeed);
+  assert.equal(result.completedOperationCount, 11);
 });
 
 test('Caches retain themed outcomes and unopened guaranteed Feed value', () => {
@@ -2294,7 +2420,9 @@ test('character detail export captures the complete balance-facing build', () =>
     `buildCharacterDetailsExport(player, {
       recalculate: false,
       generatedAt: new Date('2026-08-10T12:00:00.000Z'),
-      currency: 7654,
+      feed: 7654,
+      completedOperationCount: 14,
+      completedOperationSeeds: ['op-seed-five', 'op-seed-six'],
       completedLocations: { 'Corebound Terminus': 2 },
       locationDefinitions: [{ name: 'Corebound Terminus', locationCategory: 'endgame', endgameTier: 4, recommendedLevel: 50 }]
     })`,
@@ -2318,6 +2446,10 @@ test('character detail export captures the complete balance-facing build', () =>
 
   assert.match(exportText, /Level: 50/);
   assert.match(exportText, /Highest Endgame Tier Cleared: 4/);
+  assert.match(exportText, /Total Operation Clears: 14/);
+  assert.match(exportText, /COMPLETED OPERATION SEEDS \(LAST 10\)/);
+  assert.match(exportText, /1\. op-seed-five/);
+  assert.match(exportText, /2\. op-seed-six/);
   assert.match(exportText, /Active Style: Heavy Style \(heavyStyle\)/);
   assert.match(exportText, /Singular Force \(heavy-choice\)/);
   assert.match(exportText, /Terminus Breaker/);
@@ -2938,18 +3070,23 @@ test('max-level areas form four ordered endgame tiers', () => {
   }
 });
 
-test('delve visibility and endgame clears are persistent progression', () => {
+test('Patrol visibility is level-gated while generated Operation progress is persistent', () => {
   const combat = readCombatRuntime();
   const global = read('global.js');
 
   assert.match(combat, /function getVisibleDelveLocations/);
   assert.match(combat, /recommendedLevel \|\| 1\) <= playerLevel \+ 2/);
-  assert.match(combat, /Number\(candidate\.endgameTier\) === tier - 1/);
-  assert.match(combat, /completed\[previousTier\.name\] > 0/);
-  assert.match(combat, /recordDelveCompletion\(currentDelveLocation\);\s*finalizeDelveLoot\(\);/);
+  assert.match(combat, /return playerLevel >= 48/);
+  assert.match(combat, /completeGeneratedOperation\(currentDelveLocation\)/);
+  assert.match(combat, /currentDelveLocation\?\.generatedOperation/);
+  assert.match(combat, /ensureOperationBoard\(\)\.offers/);
+  assert.match(combat, /Guaranteed on success:/);
   assert.match(global, /completedDelveLocations:/);
   assert.match(global, /completedDelveLocations = gameState\.completedDelveLocations/);
   assert.match(global, /completedDelveLocations = \{\}/);
+  assert.match(global, /operationBoard:/);
+  assert.match(global, /completedOperationSeeds:/);
+  assert.match(global, /completedOperationCount:/);
 });
 
 test('balance simulation preserves the authored difficulty curve', () => {
@@ -2986,7 +3123,10 @@ test('new-character, fabrication, empowered reward, and claim-cache rules remain
   assert.match(combat, /instance\.isEmpowered = true/);
   assert.match(combat, /xp = Math\.floor\(xp \* 1\.5\)/);
   assert.match(combat, /Starting a new Operation destroyed/);
-  assert.match(combat, /Auto re-deploy paused until the Operation Claim Cache is cleared/);
+  assert.match(combat, /autoPatrolRedeploy/);
+  assert.doesNotMatch(combat, /autoRedeploy/);
+  assert.match(combat, /reason === 'playerDefeated'/);
+  assert.match(combat, /setTimeout\(\(\) => startPatrol\(finishedRunLocation\), 500\)/);
   assert.match(read('global.js'), /delveClaimCache/);
   assert.match(combat, /function preparePlayerForCombat/);
   assert.doesNotMatch(combat, /player\.baseStats = JSON\.parse\(JSON\.stringify\(playerBaseStats\)\)/);

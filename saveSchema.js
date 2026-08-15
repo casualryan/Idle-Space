@@ -1,6 +1,6 @@
 // Ordered, non-destructive migrations and validation for persisted game snapshots.
 
-const COREBOUND_SAVE_VERSION = 17;
+const COREBOUND_SAVE_VERSION = 18;
 const SAVE_MATERIAL_STACK_CAP = 50000;
 const SAVE_PASSIVE_TREE_VERSION = 6;
 const SAVE_COMBAT_STYLE_VERSION = 2;
@@ -132,6 +132,17 @@ function normalizeSavedItemData(savedItem) {
         if (!validTarget) delete item.fluxTargetModifierId;
     }
     return item;
+}
+
+function findSavedItemTemplate(savedItem, items = window.items) {
+    if (!savedItem || !Array.isArray(items)) return null;
+    const exactName = typeof savedItem.name === 'string' ? savedItem.name : '';
+    const chassisName = typeof savedItem.chassisTemplateName === 'string'
+        ? savedItem.chassisTemplateName
+        : '';
+    return items.find(item => item?.name === exactName)
+        || items.find(item => chassisName && item?.name === chassisName)
+        || null;
 }
 
 function normalizeSavedResourceMap(source, ids, cap = 9999) {
@@ -490,6 +501,20 @@ const SAVE_MIGRATIONS = Object.freeze([
         state.operationState = state.operationState && typeof state.operationState === 'object'
             ? state.operationState
             : null;
+    },
+    function migrateToVersion18(state) {
+        state.operationBoard = state.operationBoard && typeof state.operationBoard === 'object' && !Array.isArray(state.operationBoard)
+            ? state.operationBoard
+            : { version: 1, generation: 0, offers: [] };
+        state.completedOperationSeeds = Array.isArray(state.completedOperationSeeds)
+            ? state.completedOperationSeeds.filter(seed => typeof seed === 'string' && seed).slice(-10)
+            : [];
+        const legacyClearCount = Object.values(state.completedDelveLocations || {})
+            .reduce((total, count) => total + Math.max(0, Math.floor(Number(count) || 0)), 0);
+        state.completedOperationCount = Math.max(
+            legacyClearCount,
+            Math.max(0, Math.floor(Number(state.completedOperationCount) || 0))
+        );
     }
 ]);
 
@@ -532,6 +557,18 @@ function validateGameStateSnapshot(state, options = {}) {
     if (!state.player || typeof state.player !== 'object') errors.push('player object is required');
     if (getSaveVersion(state) !== COREBOUND_SAVE_VERSION) errors.push(`save version must be ${COREBOUND_SAVE_VERSION}`);
     if (!Array.isArray(state.inventory)) errors.push('inventory must be an array');
+    if (!state.operationBoard || typeof state.operationBoard !== 'object' || Array.isArray(state.operationBoard)) {
+        errors.push('operation board must be an object');
+    } else if (!Array.isArray(state.operationBoard.offers)) {
+        errors.push('operation board offers must be an array');
+    }
+    if (!Array.isArray(state.completedOperationSeeds) || state.completedOperationSeeds.length > 10
+        || state.completedOperationSeeds.some(seed => typeof seed !== 'string' || !seed)) {
+        errors.push('completed Operation seed history is invalid');
+    }
+    if (!Number.isInteger(Number(state.completedOperationCount)) || Number(state.completedOperationCount) < 0) {
+        errors.push('completed Operation count is invalid');
+    }
     if (!state.materialInventory || typeof state.materialInventory !== 'object' || Array.isArray(state.materialInventory)) {
         errors.push('material inventory must be an object');
     } else {
@@ -634,5 +671,6 @@ window.coreboundSaveSchema = Object.freeze({
     validateGameStateSnapshot,
     assertGameStateSnapshot,
     normalizeSavedItemData,
+    findSavedItemTemplate,
     normalizeSavedMaterialInventory
 });

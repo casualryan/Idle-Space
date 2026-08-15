@@ -95,12 +95,20 @@ facts in UI copy.
 - Health persists between encounters inside a deployment. Energy Shield is restored
   to its current maximum after each victory before the next enemy appears.
 - Patrols run indefinitely, secure loot immediately, and trade peak rewards for
-  low-attention reliability. Operations are finite, stage rewards at risk, use
+  low-attention reliability. Patrols use the authored sector list and may
+  optionally restart the same sector after a defeat; manually stopping never
+  triggers a restart. Operations are finite, stage rewards at risk, use
   occasional choices, and allow one consumed Core per run.
+- The Operation terminal maintains three persistent generated offers. Each offer
+  has a stable seed, level-appropriate enemy pool, encounter count, and visible
+  guaranteed reward. An offer is replaced only after a successful clear, so a
+  failed or aborted Operation remains available to retry.
 - Successful Operations automatically collect resources and Feed. Ordinary
   items enter the persistent claim cache unless Auto-claim all items is enabled
   and the complete item batch fits. Starting another Operation destroys anything
-  left there; auto re-deploy waits for the cache to be claimed or sold.
+  left there. Operation completion never auto-redeploys.
+- The most recent ten successfully completed Operation seeds and the lifetime
+  Operation clear count are stored in the save and included in Character Details exports.
 - Cores and Caches use dedicated stack storage. Flux I–V uses material storage
   and rerolls one permanently bound generated modifier within its existing grade.
 - Recipes are all available during the current baseline. A future blueprint

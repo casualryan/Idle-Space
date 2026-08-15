@@ -36,10 +36,10 @@
         'delve': {
             title: 'Deployments',
             sections: [
-                ['Patrols', 'Patrols repeat until stopped or defeated. They use the current area enemy pool, secure every reward immediately, and offer reliable but lower rewards.'],
-                ['Operations', 'Operations are finite, more rewarding runs. Occasional events alter the remaining route, and one Core may be consumed at launch for an Operation-wide effect.'],
+                ['Patrols', 'Patrols use authored sectors, repeat until stopped or defeated, secure every reward immediately, and offer reliable but lower rewards. Auto-redeploy can restart the same Patrol after defeat, but never after manual Stop.'],
+                ['Operations', 'The terminal maintains three persistent generated offers with stable seeds, level-appropriate enemies, finite encounter counts, and visible guaranteed rewards. Only a successful clear replaces an offer. Occasional events alter the remaining route, and one Core may be consumed at launch for an Operation-wide effect.'],
                 ['Operation Bag', 'Operation drops remain at risk until the run succeeds. Materials, Cores, Caches, and Feed are then stored automatically; ordinary items use the Operation Claim Cache when they cannot be claimed safely.'],
-                ['Saving', 'Loading an active deployment restarts the current encounter with a fresh enemy group while preserving completed encounters, run modifiers, and secured or staged rewards.']
+                ['Saving', 'Loading preserves the generated Operation board and exact active offer state. It restarts the current encounter with a fresh enemy group while preserving completed encounters, run modifiers, and secured or staged rewards. Character Details also lists the last ten completed Operation seeds.']
             ]
         },
         'fabrication': {

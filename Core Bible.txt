@@ -145,8 +145,12 @@ State transitions:
 ================================================================================
 
 Definition:
-- An Operation is a location-defined sequence of fights (numFights); a Patrol
-  repeats the same level-appropriate encounter pool until stopped or defeated.
+- The Operation terminal persists three generated offers. Each offer has a stable
+  seed, generated identity/briefing, level-appropriate enemy pool, finite fight
+  count, and a guaranteed reward displayed before launch. Failure or abort leaves
+  the offer available; success replaces only that completed offer.
+- A Patrol uses an authored sector and repeats its level-appropriate encounter
+  pool until stopped or defeated.
 - currentMonsterIndex tracks sequence progress.
 
 Per-fight behavior inside a deployment:
@@ -161,14 +165,21 @@ Per-fight behavior inside a deployment:
 Deployment outcomes:
 - Operation enemyDefeated: push rewards to the Operation Bag and continue.
 - Patrol enemyDefeated: store rewards immediately and continue indefinitely.
-- delveCompleted: finalize Operation rewards, full recover, optional auto-redeploy.
+- delveCompleted: stage the guaranteed reward, finalize Operation rewards, replace
+  the completed offer, record its seed, and fully recover. Operations never auto-redeploy.
 - playerFled/playerDefeated: Operations forfeit staged rewards; Patrol rewards stay secured.
 
 Auto-redeploy:
-- Controlled by localStorage key autoRedeploy.
+- Patrol-only and controlled by localStorage key autoPatrolRedeploy.
+- Restarts the same authored Patrol after player defeat only. Manual Stop never restarts it.
 - Materials, Cores, Caches, and Feed are collected automatically when an Operation succeeds.
 - localStorage key autoClaimAllItems claims the complete ordinary-item batch only
   when every item fits; otherwise the intact batch remains in the claim cache.
+
+Persistence:
+- The Operation board and active generated offer state are authoritative save data.
+- The lifetime generated-Operation clear count and last ten completed Operation
+  seeds are saved; the seed history is included in Character Details exports.
 
 Empowered enemies:
 - Spawn-time roll per enemy entry.

@@ -1,6 +1,6 @@
 // Human-readable character snapshots for balance analysis and build comparison.
 
-const CHARACTER_EXPORT_SCHEMA_VERSION = 1;
+const CHARACTER_EXPORT_SCHEMA_VERSION = 2;
 const CHARACTER_EXPORT_STANDARD_SLOTS = Object.freeze([
     ['mainHand', 'Main Hand'],
     ['offHand', 'Off Hand'],
@@ -176,6 +176,12 @@ function buildCharacterDetailsExport(playerObject, context = {}) {
     const feed = context.feed ?? (typeof playerFeed !== 'undefined' ? playerFeed : 0);
     const completedLocations = context.completedLocations
         ?? (typeof completedDelveLocations !== 'undefined' ? completedDelveLocations : {});
+    const operationSeeds = context.completedOperationSeeds
+        ?? (typeof completedOperationSeeds !== 'undefined' ? completedOperationSeeds : []);
+    const operationClearCount = Math.max(0, Math.floor(Number(
+        context.completedOperationCount
+        ?? (typeof completedOperationCount !== 'undefined' ? completedOperationCount : 0)
+    ) || 0));
     const locationDefinitions = context.locationDefinitions
         ?? (typeof allLocations !== 'undefined' ? allLocations : []);
     const progressRows = getCharacterExportProgressRows(completedLocations, locationDefinitions);
@@ -207,7 +213,7 @@ function buildCharacterDetailsExport(playerObject, context = {}) {
         `Passive Points Spent: ${formatCharacterExportScalar(passivePointTotal)}`,
         `Passive Points Unspent: ${formatCharacterExportScalar(playerObject.passivePoints)}`,
         `Highest Endgame Tier Cleared: ${highestEndgameTier || 'None'}`,
-        `Total Operation Clears: ${progressRows.reduce((total, row) => total + row.clears, 0)}`
+        `Total Operation Clears: ${operationClearCount}`
     );
     lines.push('Gathering Skills:');
     lines.push(formatCharacterExportJson(playerObject.gatheringSkills || {}));
@@ -327,6 +333,13 @@ function buildCharacterDetailsExport(playerObject, context = {}) {
             lines.push(`- ${row.name}: ${row.clears} clear(s) · ${row.category}${tier}${level}`);
         });
     }
+
+    pushCharacterExportSection(lines, 'COMPLETED OPERATION SEEDS (LAST 10)');
+    const savedSeeds = Array.isArray(operationSeeds)
+        ? operationSeeds.filter(seed => typeof seed === 'string' && seed).slice(-10)
+        : [];
+    if (savedSeeds.length === 0) lines.push('None');
+    else savedSeeds.forEach((seed, index) => lines.push(`${index + 1}. ${seed}`));
 
     return `${lines.join('\n').trim()}\n`;
 }

@@ -9,15 +9,7 @@ function closeDelveClaimCachePopup() {
 function refreshDelveClaimCacheUI(reopenPopup = false) {
     displayAdventureLocations();
     if (reopenPopup && hasDelveClaimCacheRewards()) showDelveClaimCachePopup();
-    else if (!hasDelveClaimCacheRewards()) {
-        closeDelveClaimCachePopup();
-        try {
-            const auto = localStorage.getItem('autoRedeploy') === 'true';
-            if (auto && window.lastDelveLocation && !isCombatActive && !isDelveInProgress) {
-                setTimeout(() => startAdventure(window.lastDelveLocation), 500);
-            }
-        } catch (error) { /* localStorage may be unavailable */ }
-    }
+    else if (!hasDelveClaimCacheRewards()) closeDelveClaimCachePopup();
 }
 function showDelveClaimCachePopup(warningMessage = '') {
     closeDelveClaimCachePopup();
@@ -257,7 +249,9 @@ function displayAdventureLocations() {
         // Subtitle with blinking cursor effect
         const subtitle = document.createElement('div');
         subtitle.className = 'locations-subtitle';
-        subtitle.innerHTML = 'SELECT DESTINATION<span class="blink-cursor">_</span>';
+        subtitle.innerHTML = selectedDeploymentMode === 'operation'
+            ? 'SELECT OPERATION SIGNAL<span class="blink-cursor">_</span>'
+            : 'SELECT PATROL SECTOR<span class="blink-cursor">_</span>';
         subtitle.style.color = '#7fdbff';
         subtitle.style.textAlign = 'center';
         subtitle.style.marginBottom = '20px';
@@ -337,35 +331,37 @@ function displayAdventureLocations() {
             interfaceContainer.appendChild(coreSelector);
         }
 
-        // Operation automation toggles
+        // Automation is mode-specific: Operations may auto-claim, while Patrols
+        // may restart the same authored sector after defeat.
         const autoRow = document.createElement('div');
         autoRow.className = 'delve-automation-options';
-        autoRow.hidden = selectedDeploymentMode === 'patrol';
-
-        const redeployOption = document.createElement('label');
-        redeployOption.className = 'delve-automation-option';
-        const autoChk = document.createElement('input');
-        autoChk.type = 'checkbox';
-        autoChk.checked = localStorage.getItem('autoRedeploy') === 'true';
-        autoChk.addEventListener('change', ()=> localStorage.setItem('autoRedeploy', autoChk.checked ? 'true' : 'false'));
-        const autoLbl = document.createElement('span');
-        autoLbl.textContent = 'Auto re-deploy after Operation completion';
-        redeployOption.appendChild(autoChk);
-        redeployOption.appendChild(autoLbl);
-        autoRow.appendChild(redeployOption);
-
-        const claimOption = document.createElement('label');
-        claimOption.className = 'delve-automation-option';
-        claimOption.title = 'Resources and Feed are always claimed. This also claims every item when the ordinary inventory has enough room.';
-        const claimChk = document.createElement('input');
-        claimChk.type = 'checkbox';
-        claimChk.checked = localStorage.getItem('autoClaimAllItems') === 'true';
-        claimChk.addEventListener('change', () => localStorage.setItem('autoClaimAllItems', claimChk.checked ? 'true' : 'false'));
-        const claimLbl = document.createElement('span');
-        claimLbl.textContent = 'Auto-claim all items';
-        claimOption.appendChild(claimChk);
-        claimOption.appendChild(claimLbl);
-        autoRow.appendChild(claimOption);
+        if (selectedDeploymentMode === 'patrol') {
+            const redeployOption = document.createElement('label');
+            redeployOption.className = 'delve-automation-option';
+            redeployOption.title = 'Restart the selected Patrol after player defeat. Manually stopping a Patrol never restarts it.';
+            const autoChk = document.createElement('input');
+            autoChk.type = 'checkbox';
+            autoChk.checked = localStorage.getItem('autoPatrolRedeploy') === 'true';
+            autoChk.addEventListener('change', () => localStorage.setItem('autoPatrolRedeploy', autoChk.checked ? 'true' : 'false'));
+            const autoLbl = document.createElement('span');
+            autoLbl.textContent = 'Auto-redeploy Patrol after defeat';
+            redeployOption.appendChild(autoChk);
+            redeployOption.appendChild(autoLbl);
+            autoRow.appendChild(redeployOption);
+        } else {
+            const claimOption = document.createElement('label');
+            claimOption.className = 'delve-automation-option';
+            claimOption.title = 'Resources and Feed are always claimed. This also claims every item when the ordinary inventory has enough room.';
+            const claimChk = document.createElement('input');
+            claimChk.type = 'checkbox';
+            claimChk.checked = localStorage.getItem('autoClaimAllItems') === 'true';
+            claimChk.addEventListener('change', () => localStorage.setItem('autoClaimAllItems', claimChk.checked ? 'true' : 'false'));
+            const claimLbl = document.createElement('span');
+            claimLbl.textContent = 'Auto-claim all items';
+            claimOption.appendChild(claimChk);
+            claimOption.appendChild(claimLbl);
+            autoRow.appendChild(claimOption);
+        }
 
         interfaceContainer.appendChild(autoRow);
         appendDelveClaimCacheAccess(interfaceContainer);
@@ -400,7 +396,7 @@ function displayAdventureLocations() {
         // Add search and filter controls
         const controlsRow = document.createElement('div');
         controlsRow.className = 'locations-controls';
-        controlsRow.style.display = 'flex';
+        controlsRow.style.display = selectedDeploymentMode === 'patrol' ? 'flex' : 'none';
         controlsRow.style.justifyContent = 'space-between';
         controlsRow.style.marginBottom = '15px';
         controlsRow.style.zIndex = '2';
@@ -461,6 +457,9 @@ function displayAdventureLocations() {
         filterSelect.style.appearance = 'none';
 
         const visibleLocations = getVisibleDelveLocations();
+        const deploymentEntries = selectedDeploymentMode === 'operation'
+            ? ensureOperationBoard().offers
+            : visibleLocations;
         const playerLevel = Math.max(1, Number(player?.level) || 1);
         const nextLevelLocation = locations
             .filter(location => location.locationCategory !== 'endgame' && Number(location.recommendedLevel || 1) > playerLevel + 2)
@@ -470,15 +469,12 @@ function displayAdventureLocations() {
             .sort((a, b) => a.endgameTier - b.endgameTier)[0];
         const progressionNotice = document.createElement('div');
         progressionNotice.className = 'location-progression-notice';
-        if (nextLevelLocation) {
+        if (selectedDeploymentMode === 'operation') {
+            progressionNotice.textContent = 'LIVE OPERATION SIGNALS · OFFERS PERSIST UNTIL COMPLETED';
+        } else if (nextLevelLocation) {
             progressionNotice.textContent = `NEXT SECTOR SIGNAL · LEVEL ${Math.max(1, nextLevelLocation.recommendedLevel - 2)}`;
         } else if (nextEndgameLocation) {
-            const previousTier = locations.find(location =>
-                location.locationCategory === 'endgame' && Number(location.endgameTier) === Number(nextEndgameLocation.endgameTier) - 1
-            );
-            progressionNotice.textContent = previousTier
-                ? `NEXT ENDGAME SIGNAL · CLEAR ${previousTier.name.toUpperCase()}`
-                : 'ENDGAME SIGNALS DETECTED AT LEVEL 48';
+            progressionNotice.textContent = 'ENDGAME PATROL SIGNALS DETECTED AT LEVEL 48';
         } else {
             progressionNotice.textContent = 'ALL KNOWN SECTOR SIGNALS ACQUIRED';
         }
@@ -486,7 +482,7 @@ function displayAdventureLocations() {
 
         // Get unique categories from currently visible locations
         const uniqueCategories = ['all sectors'];
-        visibleLocations.forEach(loc => {
+        deploymentEntries.forEach(loc => {
             if (loc.locationCategory && !uniqueCategories.includes(loc.locationCategory.toLowerCase())) {
                 uniqueCategories.push(loc.locationCategory.toLowerCase());
             }
@@ -555,7 +551,7 @@ function displayAdventureLocations() {
         locationScrollContainer.appendChild(locationGrid);
 
         // Create location cards for each location
-        visibleLocations.forEach(loc => {
+        deploymentEntries.forEach(loc => {
             // Get the category from the locationCategory property, with a fallback to "industrial"
             const category = loc.locationCategory || "industrial";
 
@@ -624,6 +620,12 @@ function displayAdventureLocations() {
                     categoryTag.style.color = '#e0b3ff';
                     locationCard.style.borderColor = '#8f3dcc';
                     break;
+                case 'operation':
+                    categoryTag.style.background = 'rgba(0, 255, 204, 0.18)';
+                    categoryTag.style.border = '1px solid #00ffcc';
+                    categoryTag.style.color = '#8bffe7';
+                    locationCard.style.borderColor = '#00a68a';
+                    break;
                 default:
                     categoryTag.style.background = 'rgba(108, 117, 125, 0.3)';
                     categoryTag.style.border = '1px solid #6c757d';
@@ -632,7 +634,7 @@ function displayAdventureLocations() {
 
             locationCard.appendChild(categoryTag);
 
-            if (completedDelveLocations[loc.name] > 0) {
+            if (selectedDeploymentMode === 'patrol' && completedDelveLocations[loc.name] > 0) {
                 const clearedTag = document.createElement('div');
                 clearedTag.className = 'location-cleared-tag';
                 clearedTag.textContent = `CLEARED ×${completedDelveLocations[loc.name]}`;
@@ -696,6 +698,17 @@ function displayAdventureLocations() {
             fightCount.style.color = '#7fdbff';
             fightCount.style.fontSize = '11px';
             enemyInfo.appendChild(fightCount);
+
+            if (selectedDeploymentMode === 'operation') {
+                const reward = document.createElement('span');
+                reward.className = 'operation-guaranteed-reward';
+                reward.textContent = `Guaranteed on success: ${formatOperationReward(loc.guaranteedReward)}`;
+                reward.style.color = '#ffd166';
+                reward.style.fontSize = '12px';
+                reward.style.fontWeight = 'bold';
+                reward.style.marginTop = '5px';
+                enemyInfo.appendChild(reward);
+            }
 
             // Action button
             const actionButton = document.createElement('button');

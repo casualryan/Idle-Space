@@ -29,6 +29,9 @@ const combatState = {
     delveClaimCache: { items: [], feed: 0 },
     currentRunMode: null,
     operationState: null,
+    operationBoard: { version: 1, generation: 0, offers: [] },
+    completedOperationSeeds: [],
+    completedOperationCount: 0,
     completedDelveLocations: {}
 };
 

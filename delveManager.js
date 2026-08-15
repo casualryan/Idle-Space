@@ -44,8 +44,7 @@ function startDeployment(location, mode = 'operation', coreId = null) {
         ? `Patrol started in ${location.name}. Loot is secured immediately.`
         : `Operation started in ${location.name}.`);
     currentLocation = location;
-    // Remember for auto re-deploy preference
-    window.lastDelveLocation = location;
+    if (mode === 'patrol') window.lastPatrolLocation = location;
 
     // Make sure health regen is properly initialized before entering delve mode
     // This ensures it's ready to work when the delve ends
@@ -78,19 +77,12 @@ function startPatrol(location) {
 
 function getVisibleDelveLocations() {
     const playerLevel = Math.max(1, Number(player?.level) || 1);
-    const completed = completedDelveLocations || {};
 
     return locations.filter(location => {
         if (location.developerOnly) return true;
 
         if (location.locationCategory === 'endgame') {
-            if (playerLevel < 48) return false;
-            const tier = Math.max(1, Number(location.endgameTier) || 1);
-            if (tier === 1) return true;
-            const previousTier = locations.find(candidate =>
-                candidate.locationCategory === 'endgame' && Number(candidate.endgameTier) === tier - 1
-            );
-            return Boolean(previousTier && completed[previousTier.name] > 0);
+            return playerLevel >= 48;
         }
 
         return Number(location.recommendedLevel || 1) <= playerLevel + 2;
@@ -111,12 +103,20 @@ function beginNextMonsterInSequence() {
         return;
     }
 
-    // Patrols repeat forever. Operations end at their authored or event-modified length.
+    // Patrols repeat forever. Operations end at their generated or event-modified length.
     if (currentRunMode === 'operation' && currentMonsterIndex >= getOperationEncounterTarget()) {
         console.log("Delve complete - before finalizeDelveLoot - isDelveInProgress:", isDelveInProgress);
-        recordDelveCompletion(currentDelveLocation);
+        const guaranteedReward = currentDelveLocation?.generatedOperation
+            ? completeGeneratedOperation(currentDelveLocation)
+            : null;
+        if (!currentDelveLocation?.generatedOperation) {
+            recordDelveCompletion(currentDelveLocation);
+            completedOperationCount = Math.max(0, Math.floor(Number(completedOperationCount) || 0)) + 1;
+        }
         finalizeDelveLoot();
-        logMessage(`Operation complete: ${currentDelveLocation.name}.`);
+        logMessage(guaranteedReward
+            ? `Operation complete: ${currentDelveLocation.name}. Guaranteed reward recovered: ${formatOperationReward(guaranteedReward)}.`
+            : `Operation complete: ${currentDelveLocation.name}.`);
 
         // Make sure the isDelveInProgress flag is set to false before stopping combat
         isDelveInProgress = false;
