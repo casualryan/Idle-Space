@@ -1524,6 +1524,50 @@ test('Caches retain themed outcomes and unopened guaranteed Feed value', () => {
   assert.equal(result.playerFeed, 105);
 });
 
+test('Operation and Cache reward manifests are informational and confirm before overflow handling', () => {
+  const resources = read('resourceSystem.js');
+  const delveRewards = read('delveRewards.js');
+  const summaryStart = resources.indexOf('function showRewardSummaryPopup');
+  const summaryEnd = resources.indexOf('function attemptResolvePendingCache');
+  const summarySource = resources.slice(summaryStart, summaryEnd);
+
+  assert.ok(summaryStart >= 0 && summaryEnd > summaryStart);
+  assert.match(summarySource, /confirmButton\.textContent = 'Confirm'/);
+  assert.doesNotMatch(summarySource, /Claim|Discard|Sell Remaining/);
+  assert.match(resources, /attemptResolvePendingCache\(\{ suppressPopup: true \}\)/);
+  assert.match(resources, /if \(window\.pendingCacheResolution\) showCacheResolutionPopup\(\)/);
+  assert.match(resources, /eyebrow: 'CACHE OPENED'/);
+  assert.match(delveRewards, /eyebrow: 'OPERATION COMPLETE'/);
+  assert.match(delveRewards, /rewards: rewardSummary/);
+  assert.match(delveRewards, /onConfirm: showPendingClaims/);
+});
+
+test('Equipment telemetry exposes complete tabbed stats and presents resistance caps honestly', () => {
+  const source = read('inventory.js');
+  const styles = read('style.css');
+  const requiredStats = [
+    'health', 'energyShield', 'healthRegen', 'attackSpeed', 'criticalChance', 'criticalMultiplier',
+    'precision', 'deflection', 'armorEfficiency', 'weaponEfficiency', 'bionicEfficiency', 'bionicSync',
+    'comboAttack', 'comboEffectiveness', 'additionalComboAttacks', 'propagationTargets',
+    'armorPenetration', 'damageRollFloorBonus', 'debuffChanceBonus', 'debuffDurationBonus',
+    'statusResistance', 'statusDurationReduction', 'directDamageMultiplier', 'dotDamageMultiplier',
+    'damageVsDebuffed', 'damageTakenReduction', 'kineticMastery', 'slashingMastery',
+    'severedLimbChance', 'maxSeveredLimbs', 'maxSeepingWoundStacks'
+  ];
+
+  for (const stat of requiredStats) {
+    assert.match(source, new RegExp(`total\\.${stat}\\b`), `${stat} is missing from Equipment telemetry`);
+  }
+  assert.match(source, /\['kinetic', 'slashing', 'pyro', 'cryo', 'electric', 'corrosive', 'radiation'\]/);
+  assert.match(source, /data-equipment-stats-tab="overview"/);
+  assert.match(source, /data-equipment-stats-tab="offense"/);
+  assert.match(source, /data-equipment-stats-tab="defense"/);
+  assert.match(source, /const cappedPointPercent = \(value, cap = 80\)/);
+  assert.match(source, /raw > cap \? `\$\{effectiveText\} <span class="equipment-stat-raw">/);
+  assert.match(styles, /grid-template-columns: minmax\(330px, 380px\) minmax\(660px, 980px\)/);
+  assert.match(styles, /\.equipment-stat-card-grid/);
+});
+
 test('Flux rerolls only the permanently bound modifier inside its grade range', () => {
   const result = evaluateClassic(
     'itemgenerator.js',
@@ -3204,7 +3248,7 @@ test('new-character, fabrication, empowered reward, and claim-cache rules remain
   assert.match(read('buffs.js'), /damageTypes:\s*\{\s*kinetic: 5/);
 });
 
-test('delve completion auto-claims materials and atomically claims optional item batches', () => {
+test('delve completion auto-claims rewards and preserves atomic overflow batches', () => {
   const result = JSON.parse(evaluateClassic(
     'delveRewards.js',
     `JSON.stringify((() => {
@@ -3295,12 +3339,13 @@ test('delve completion auto-claims materials and atomically claims optional item
   assert.equal(result.autoOverflows.playerFeed, 13);
   assert.deepEqual(result.autoOverflows.storedMaterials, [{ name: 'Iron Ore', quantity: 3 }]);
 
-  assert.deepEqual(result.manualClaim.cacheNames, ['Saved Item']);
-  assert.deepEqual(result.manualClaim.popupWarnings, ['']);
+  assert.equal(result.manualClaim.inventoryCount, 1);
+  assert.deepEqual(result.manualClaim.cacheNames, []);
+  assert.deepEqual(result.manualClaim.popupWarnings, []);
 
   const uiSource = read('delveUI.js');
-  assert.match(uiSource, /Auto-claim all items/);
-  assert.match(uiSource, /localStorage\.setItem\('autoClaimAllItems'/);
+  assert.doesNotMatch(uiSource, /Auto-claim all items/);
+  assert.doesNotMatch(uiSource, /localStorage\.setItem\('autoClaimAllItems'/);
 });
 
 test('Exposed maximizes the roll and Zapped adds 50% critical damage', () => {

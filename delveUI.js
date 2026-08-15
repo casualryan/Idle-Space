@@ -331,11 +331,11 @@ function displayAdventureLocations() {
             interfaceContainer.appendChild(coreSelector);
         }
 
-        // Automation is mode-specific: Operations may auto-claim, while Patrols
-        // may restart the same authored sector after defeat.
-        const autoRow = document.createElement('div');
-        autoRow.className = 'delve-automation-options';
+        // Patrols may restart the same authored sector after defeat. Operation
+        // rewards are always processed automatically and summarized on completion.
         if (selectedDeploymentMode === 'patrol') {
+            const autoRow = document.createElement('div');
+            autoRow.className = 'delve-automation-options';
             const redeployOption = document.createElement('label');
             redeployOption.className = 'delve-automation-option';
             redeployOption.title = 'Restart the selected Patrol after player defeat. Manually stopping a Patrol never restarts it.';
@@ -348,22 +348,9 @@ function displayAdventureLocations() {
             redeployOption.appendChild(autoChk);
             redeployOption.appendChild(autoLbl);
             autoRow.appendChild(redeployOption);
-        } else {
-            const claimOption = document.createElement('label');
-            claimOption.className = 'delve-automation-option';
-            claimOption.title = 'Resources and Feed are always claimed. This also claims every item when the ordinary inventory has enough room.';
-            const claimChk = document.createElement('input');
-            claimChk.type = 'checkbox';
-            claimChk.checked = localStorage.getItem('autoClaimAllItems') === 'true';
-            claimChk.addEventListener('change', () => localStorage.setItem('autoClaimAllItems', claimChk.checked ? 'true' : 'false'));
-            const claimLbl = document.createElement('span');
-            claimLbl.textContent = 'Auto-claim all items';
-            claimOption.appendChild(claimChk);
-            claimOption.appendChild(claimLbl);
-            autoRow.appendChild(claimOption);
+            interfaceContainer.appendChild(autoRow);
         }
 
-        interfaceContainer.appendChild(autoRow);
         appendDelveClaimCacheAccess(interfaceContainer);
 
         // Add scanner effect

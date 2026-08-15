@@ -652,110 +652,90 @@ function updateEquipmentDisplay() {
 
 function renderEquipmentStatsPanel() {
     const statsPanel = document.getElementById('equipment-stats-panel');
-    const buildPanel = document.getElementById('equipment-build-panel');
-    if (!statsPanel || !buildPanel || !player || !player.equipment) return;
+    if (!statsPanel || !player || !player.equipment) return;
 
     if (typeof player.calculateStats === 'function') {
         player.calculateStats();
     }
 
     const total = player.totalStats || {};
-    const asPercent = (value, decimals = 1) => `${((value || 0) * 100).toFixed(decimals)}%`;
-    const asInt = (value) => Math.round(value || 0);
+    const numeric = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+    const trimFixed = (value, decimals = 1) => numeric(value).toFixed(decimals).replace(/\.0+$/, '');
+    const asFractionPercent = (value, decimals = 1) => `${trimFixed(numeric(value) * 100, decimals)}%`;
+    const asPointPercent = (value, decimals = 1) => `${trimFixed(value, decimals)}%`;
+    const asSignedFractionPercent = (value, decimals = 1) => {
+        const amount = numeric(value) * 100;
+        return `${amount > 0 ? '+' : ''}${trimFixed(amount, decimals)}%`;
+    };
+    const asSignedMultiplierBonus = (value, decimals = 1) => asSignedFractionPercent(numeric(value, 1) - 1, decimals);
+    const asInt = (value) => Math.round(numeric(value));
+    const asRate = (value) => `${trimFixed(value, 2)}/s`;
+    const cappedPointPercent = (value, cap = 80) => {
+        const raw = numeric(value);
+        const effective = Math.min(cap, Math.max(0, raw));
+        const effectiveText = asPointPercent(effective);
+        return raw > cap ? `${effectiveText} <span class="equipment-stat-raw">(${asPointPercent(raw)})</span>` : effectiveText;
+    };
+    const cappedFractionPercent = (value, cap = 0.75) => {
+        const raw = numeric(value);
+        const effective = Math.min(cap, Math.max(0, raw));
+        const effectiveText = asFractionPercent(effective);
+        return raw > cap ? `${effectiveText} <span class="equipment-stat-raw">(${asFractionPercent(raw)})</span>` : effectiveText;
+    };
     const toDamageGroup = (type) => {
         if (type === 'kinetic' || type === 'slashing') return 'physical';
         if (type === 'pyro' || type === 'cryo' || type === 'electric') return 'elemental';
         if (type === 'corrosive' || type === 'radiation') return 'chemical';
         return null;
     };
-    const sectionRow = (label, value) => `
+    const sectionRow = (label, value, tone = '') => `
         <div class="equipment-stat-row">
             <span class="equipment-stat-label">${label}</span>
-            <span class="equipment-stat-value">${value}</span>
+            <span class="equipment-stat-value${tone ? ` is-${tone}` : ''}">${value}</span>
         </div>
     `;
+    const statCard = (title, content, modifier = '') => `
+        <section class="equipment-stat-card${modifier ? ` ${modifier}` : ''}">
+            <div class="equipment-stat-section-title">${title}</div>
+            ${content}
+        </section>
+    `;
 
+    const damageTypeOrder = ['kinetic', 'slashing', 'pyro', 'cryo', 'electric', 'corrosive', 'radiation'];
     const damageTypes = total.damageTypes || {};
     const damageTypeModifiers = total.damageTypeModifiers || {};
     const damageGroupModifiers = total.damageGroupModifiers || {};
-    const critChance = Math.max(0, Number(total.criticalChance || 0));
-    const critMultiplier = Math.max(1, Number(total.criticalMultiplier || 1));
-    const attackSpeed = Math.max(0, Number(total.attackSpeed || 0));
+    const critChance = Math.max(0, numeric(total.criticalChance));
+    const critMultiplier = Math.max(1, numeric(total.criticalMultiplier, 1));
+    const attackSpeed = Math.max(0, numeric(total.attackSpeed));
     const critFactor = 1 + (critChance * Math.max(critMultiplier - 1, 0));
+    const directMultiplier = Math.max(0.1, numeric(total.directDamageMultiplier, 1));
 
     const dpsByType = {};
-    Object.keys(damageTypes).forEach(type => {
-        const base = Number(damageTypes[type] || 0);
-        if (base <= 0) return;
-        const typeMult = Number(damageTypeModifiers[type] || 1);
+    const hitByType = {};
+    damageTypeOrder.forEach(type => {
+        const base = Math.max(0, numeric(damageTypes[type]));
+        const typeMult = numeric(damageTypeModifiers[type], 1);
         const groupKey = toDamageGroup(type);
-        const groupMult = groupKey ? Number(damageGroupModifiers[groupKey] || 1) : 1;
-        const dps = base * typeMult * groupMult * attackSpeed * critFactor;
-        dpsByType[type] = dps;
+        const groupMult = groupKey ? numeric(damageGroupModifiers[groupKey], 1) : 1;
+        const masteryMult = type === 'kinetic'
+            ? 1 + (numeric(total.kineticMastery) * 0.1)
+            : type === 'slashing'
+                ? 1 + (numeric(total.slashingMastery) * 0.1)
+                : 1;
+        hitByType[type] = base * typeMult * groupMult * masteryMult * directMultiplier;
+        dpsByType[type] = hitByType[type] * attackSpeed * critFactor;
     });
     const totalDps = Object.values(dpsByType).reduce((sum, value) => sum + value, 0);
-    const dpsRows = Object.keys(dpsByType)
-        .sort((a, b) => dpsByType[b] - dpsByType[a])
-        .map(type => sectionRow(capitalize(type), dpsByType[type].toFixed(2)))
-        .join('');
+    const totalHit = Object.values(hitByType).reduce((sum, value) => sum + value, 0);
 
-    statsPanel.innerHTML = `
-        <h3>Equipment Stats</h3>
-        <div class="equipment-stat-section">
-            <div class="equipment-stat-section-title">Core</div>
-            ${sectionRow('Health', asInt(total.health))}
-            ${sectionRow('Energy Shield', asInt(total.energyShield))}
-            ${sectionRow('Attack Speed', (total.attackSpeed || 0).toFixed(2))}
-        </div>
-        <div class="equipment-stat-section">
-            <div class="equipment-stat-section-title">Combat</div>
-            ${sectionRow('Crit Chance', asPercent(total.criticalChance, 2))}
-            ${sectionRow('Crit Multiplier', `${(total.criticalMultiplier || 0).toFixed(2)}x`)}
-            ${sectionRow('Precision', asInt(total.precision))}
-            ${sectionRow('Deflection', asInt(total.deflection))}
-            ${sectionRow('Propagation Targets', Math.min(5, 1 + asInt(total.propagationTargets)))}
-        </div>
-        <div class="equipment-stat-section">
-            <div class="equipment-stat-section-title">Damage Per Second</div>
-            ${sectionRow('Total DPS', totalDps.toFixed(2))}
-            ${dpsRows || `<div class="equipment-panel-empty">No damage sources equipped.</div>`}
-        </div>
-        <div class="equipment-stat-section">
-            <div class="equipment-stat-section-title">Resistances</div>
-            ${sectionRow('Physical', `${asInt(total.defenseTypes?.physicalResistance)}%`)}
-            ${sectionRow('Elemental', `${asInt(total.defenseTypes?.elementalResistance)}%`)}
-            ${sectionRow('Chemical', `${asInt(total.defenseTypes?.chemicalResistance)}%`)}
-        </div>
-        <div class="equipment-stat-section">
-            <div class="equipment-stat-section-title">Efficiency</div>
-            ${sectionRow('Weapon', `${asInt(total.weaponEfficiency)}%`)}
-            ${sectionRow('Armor', `${asInt(total.armorEfficiency)}%`)}
-            ${sectionRow('Bionic', `${asInt(total.bionicEfficiency)}%`)}
-        </div>
-    `;
-
-    const normalSlots = ['mainHand', 'offHand', 'head', 'chest', 'legs', 'feet', 'gloves'];
     const armorSlots = ['head', 'chest', 'legs', 'feet', 'gloves'];
-    const equippedItems = normalSlots
-        .map(slot => player.equipment[slot])
-        .filter(Boolean);
     const bionicSlots = Array.isArray(player.equipment.bionicSlots) ? player.equipment.bionicSlots : [];
     const equippedBionics = bionicSlots.filter(Boolean);
 
-    const damageTotals = {};
-    equippedItems.forEach(item => {
-        if (!item || !item.damageTypes) return;
-        Object.keys(item.damageTypes).forEach(type => {
-            const value = typeof item.damageTypes[type] === 'number'
-                ? item.damageTypes[type]
-                : 0;
-            if (value > 0) {
-                damageTotals[type] = (damageTotals[type] || 0) + value;
-            }
-        });
-    });
-
-    const dominantDamageType = Object.keys(damageTotals).sort((a, b) => damageTotals[b] - damageTotals[a])[0];
+    const dominantDamageType = damageTypeOrder
+        .filter(type => hitByType[type] > 0)
+        .sort((left, right) => hitByType[right] - hitByType[left])[0];
     const warnings = [];
     if (!player.equipment.mainHand) warnings.push('No main hand equipped.');
     if (!player.equipment.chest) warnings.push('No chest armor equipped.');
@@ -765,22 +745,182 @@ function renderEquipmentStatsPanel() {
         warnings.unshift(`${chipState.blackCount} Black Chips detected. All Black Chips are disabled.`);
     }
 
-    buildPanel.innerHTML = `
-        <h3>Build Summary</h3>
-        <div class="equipment-stat-section">
-            <div class="equipment-stat-section-title">Loadout</div>
+    const activeStyle = (window.combatStyles || []).find(style => style.id === total.activeCombatStyle);
+    const activeWeapon = player.equipment.mainHand;
+    const weaponFamily = activeWeapon?.weaponFamilyLabel || total.activeWeaponFamily || 'Unarmed';
+    const weaponTags = Array.isArray(total.activeWeaponTags) && total.activeWeaponTags.length
+        ? total.activeWeaponTags.map(capitalize).join(' · ')
+        : 'No weapon tags';
+    const conversion = total.weaponDamageConversion;
+    const conversionLabel = conversion?.source && conversion?.target
+        ? `${capitalize(conversion.source)} → ${capitalize(conversion.target)} (${asPointPercent(conversion.percent || 100, 0)})`
+        : 'None';
+    const propagationRaw = 1 + asInt(total.propagationTargets);
+    const propagationDisplay = propagationRaw > 5 ? `5 <span class="equipment-stat-raw">(${propagationRaw})</span>` : Math.max(1, propagationRaw);
+    const damageRollFloor = Math.min(0.85, Math.max(0.1, 0.35 + numeric(total.damageRollFloorBonus)));
+    const activeTab = ['overview', 'offense', 'defense'].includes(statsPanel.dataset.activeTab)
+        ? statsPanel.dataset.activeTab
+        : 'overview';
+
+    const overviewContent = `
+        <div class="equipment-stat-card-grid equipment-stat-card-grid--overview">
+            ${statCard('Vital Systems', `
+                ${sectionRow('Health', asInt(total.health))}
+                ${sectionRow('Energy Shield', asInt(total.energyShield))}
+                ${sectionRow('Health Regeneration', asRate(total.healthRegen))}
+            `)}
+            ${statCard('Combat Output', `
+                ${sectionRow('Sheet DPS', trimFixed(totalDps, 2), 'accent')}
+                ${sectionRow('Damage per Hit', trimFixed(totalHit, 2))}
+                ${sectionRow('Attack Speed', asRate(attackSpeed))}
+                ${sectionRow('Critical Chance', asFractionPercent(total.criticalChance, 2))}
+                ${sectionRow('Critical Multiplier', `${trimFixed(total.criticalMultiplier || 1, 2)}x`)}
+            `)}
+            ${statCard('Resistances · 80% Cap', `
+                ${sectionRow('Physical', cappedPointPercent(total.defenseTypes?.physicalResistance))}
+                ${sectionRow('Elemental', cappedPointPercent(total.defenseTypes?.elementalResistance))}
+                ${sectionRow('Chemical', cappedPointPercent(total.defenseTypes?.chemicalResistance))}
+            `)}
+            ${statCard('Loadout', `
             ${sectionRow('Armor Slots Filled', `${armorSlots.filter(slot => !!player.equipment[slot]).length}/5`)}
             ${sectionRow('Main/Off Hand', `${player.equipment.mainHand ? 1 : 0}/${player.equipment.offHand ? 1 : 0}`)}
             ${sectionRow('Bionics Filled', `${equippedBionics.length}/4`)}
             ${sectionRow('Dominant Damage', dominantDamageType ? capitalize(dominantDamageType) : 'None')}
-        </div>
-        <div class="equipment-stat-section">
-            <div class="equipment-stat-section-title">Quick Warnings</div>
-            <div class="equipment-warning-list">
+            `)}
+            ${statCard('System Check', `<div class="equipment-warning-list">
                 ${warnings.length ? warnings.map(w => `<div class="equipment-warning-item">${w}</div>`).join('') : '<div class="equipment-ok-item">Loadout looks solid.</div>'}
-            </div>
+            </div>`, 'equipment-stat-card--wide')}
         </div>
     `;
+
+    const damageProfileRows = damageTypeOrder.map(type => (
+        sectionRow(`${capitalize(type)} DPS`, trimFixed(dpsByType[type], 2))
+    )).join('');
+    const flatDamageRows = damageTypeOrder.map(type => (
+        sectionRow(`${capitalize(type)} Damage`, trimFixed(damageTypes[type], 1))
+    )).join('');
+    const typeIncreaseRows = damageTypeOrder.map(type => (
+        sectionRow(`${capitalize(type)} Increase`, asSignedMultiplierBonus(damageTypeModifiers[type], 1))
+    )).join('');
+    const groupIncreaseRows = ['physical', 'elemental', 'chemical'].map(group => (
+        sectionRow(`${capitalize(group)} Increase`, asSignedMultiplierBonus(damageGroupModifiers[group], 1))
+    )).join('');
+    const offenseContent = `
+        <div class="equipment-stat-card-grid">
+            ${statCard('Attack', `
+                ${sectionRow('Attack Speed', asRate(attackSpeed))}
+                ${sectionRow('Weapon Base Speed', asRate(total.weaponBaseAttackSpeed || 1))}
+                ${sectionRow('Weapon Local Speed', asRate(total.weaponLocalAttackSpeed || 1))}
+                ${sectionRow('Weapon Local Speed Bonus', asPointPercent(total.weaponLocalAttackSpeedPercent))}
+                ${sectionRow('Precision', asInt(total.precision))}
+                ${sectionRow('Critical Chance', asFractionPercent(total.criticalChance, 2))}
+                ${sectionRow('Critical Multiplier', `${trimFixed(total.criticalMultiplier || 1, 2)}x`)}
+                ${sectionRow('Minimum Damage Roll', asFractionPercent(damageRollFloor))}
+                ${sectionRow('Armor Penetration', asPointPercent(total.armorPenetration))}
+            `)}
+            ${statCard('Damage Output', `
+                ${sectionRow('Sheet DPS', trimFixed(totalDps, 2), 'accent')}
+                ${sectionRow('Damage per Hit', trimFixed(totalHit, 2))}
+                ${damageProfileRows}
+            `)}
+            ${statCard('Flat Damage', flatDamageRows)}
+            ${statCard('Damage Type Increases', typeIncreaseRows)}
+            ${statCard('Damage Group Increases', groupIncreaseRows)}
+            ${statCard('Damage Multipliers', `
+                ${sectionRow('Direct Hit Damage', `${trimFixed(total.directDamageMultiplier || 1, 2)}x`)}
+                ${sectionRow('Damage over Time', `${trimFixed(total.dotDamageMultiplier || 1, 2)}x`)}
+                ${sectionRow('Damage vs Debuffed', asSignedFractionPercent(total.damageVsDebuffed))}
+            `)}
+            ${statCard('Combo & Propagation', `
+                ${sectionRow('Combo Attack Chance', asPointPercent(total.comboAttack))}
+                ${sectionRow('Combo Effectiveness', `${asPointPercent(20 + numeric(total.comboEffectiveness))} total`)}
+                ${sectionRow('Additional Combo Hits', asInt(total.additionalComboAttacks))}
+                ${sectionRow('Propagation Targets', propagationDisplay)}
+            `)}
+            ${statCard('Mastery & Wounds', `
+                ${sectionRow('Kinetic Mastery', `${trimFixed(total.kineticMastery, 1)} (${asSignedFractionPercent(numeric(total.kineticMastery) * 0.1)})`)}
+                ${sectionRow('Slashing Mastery', `${trimFixed(total.slashingMastery, 1)} (${asSignedFractionPercent(numeric(total.slashingMastery) * 0.1)})`)}
+                ${sectionRow('Severed Limb Chance', asPointPercent(total.severedLimbChance))}
+                ${sectionRow('Maximum Severed Limbs', asInt(total.maxSeveredLimbs))}
+                ${sectionRow('Maximum Seeping Wounds', asInt(total.maxSeepingWoundStacks))}
+            `)}
+            ${statCard('Weapon Configuration', `
+                ${sectionRow('Family', capitalize(String(weaponFamily)))}
+                ${sectionRow('Tags', weaponTags)}
+                ${sectionRow('Damage Conversion', conversionLabel)}
+            `, 'equipment-stat-card--wide')}
+        </div>
+    `;
+
+    const defenseContent = `
+        <div class="equipment-stat-card-grid">
+            ${statCard('Vital Systems', `
+                ${sectionRow('Health', asInt(total.health))}
+                ${sectionRow('Energy Shield', asInt(total.energyShield))}
+                ${sectionRow('Health Regeneration', asRate(total.healthRegen))}
+            `)}
+            ${statCard('Resistances · 80% Cap', `
+                ${sectionRow('Physical', cappedPointPercent(total.defenseTypes?.physicalResistance))}
+                ${sectionRow('Elemental', cappedPointPercent(total.defenseTypes?.elementalResistance))}
+                ${sectionRow('Chemical', cappedPointPercent(total.defenseTypes?.chemicalResistance))}
+            `)}
+            ${statCard('Mitigation & Control', `
+                ${sectionRow('Deflection', asInt(total.deflection))}
+                ${sectionRow('Damage Taken Reduction', cappedFractionPercent(total.damageTakenReduction))}
+                ${sectionRow('Status Resistance', asFractionPercent(total.statusResistance))}
+                ${sectionRow('Reduced Status Duration', cappedFractionPercent(total.statusDurationReduction))}
+            `)}
+            ${statCard('Status Application', `
+                ${sectionRow('Application Chance Bonus', asSignedFractionPercent(total.debuffChanceBonus))}
+                ${sectionRow('Duration Bonus', asSignedFractionPercent(total.debuffDurationBonus))}
+                ${sectionRow('Propagation Targets', propagationDisplay)}
+            `)}
+            ${statCard('System Efficiency', `
+                ${sectionRow('Weapon Efficiency', asPointPercent(total.weaponEfficiency))}
+                ${sectionRow('Armor Efficiency', asPointPercent(total.armorEfficiency))}
+                ${sectionRow('Bionic Efficiency', asPointPercent(total.bionicEfficiency))}
+                ${sectionRow('Bionic Sync', asPointPercent(total.bionicSync))}
+            `)}
+        </div>
+    `;
+
+    const panel = (id, content) => `
+        <div class="equipment-stat-tab-panel" data-equipment-tab-panel="${id}"${activeTab === id ? '' : ' hidden'}>
+            ${content}
+        </div>`;
+    statsPanel.innerHTML = `
+        <header class="equipment-telemetry-header">
+            <div>
+                <span>LIVE LOADOUT</span>
+                <h3>Combat Telemetry</h3>
+                <p>${activeWeapon?.name || 'No main-hand weapon equipped'} · ${activeStyle?.name || 'Balanced Style'}</p>
+            </div>
+            <div class="equipment-telemetry-tags"><span>${capitalize(String(weaponFamily))}</span><span>${weaponTags}</span></div>
+        </header>
+        <nav class="equipment-stat-tabs" role="tablist" aria-label="Equipment statistic categories">
+            <button type="button" role="tab" data-equipment-stats-tab="overview" class="${activeTab === 'overview' ? 'is-active' : ''}" aria-selected="${activeTab === 'overview'}">Overview</button>
+            <button type="button" role="tab" data-equipment-stats-tab="offense" class="${activeTab === 'offense' ? 'is-active' : ''}" aria-selected="${activeTab === 'offense'}">Offense</button>
+            <button type="button" role="tab" data-equipment-stats-tab="defense" class="${activeTab === 'defense' ? 'is-active' : ''}" aria-selected="${activeTab === 'defense'}">Defense &amp; Utility</button>
+        </nav>
+        ${panel('overview', overviewContent)}
+        ${panel('offense', offenseContent)}
+        ${panel('defense', defenseContent)}
+    `;
+
+    statsPanel.querySelectorAll('[data-equipment-stats-tab]').forEach(button => {
+        button.addEventListener('click', () => {
+            const nextTab = button.dataset.equipmentStatsTab;
+            statsPanel.dataset.activeTab = nextTab;
+            statsPanel.querySelectorAll('[data-equipment-stats-tab]').forEach(candidate => {
+                const selected = candidate.dataset.equipmentStatsTab === nextTab;
+                candidate.classList.toggle('is-active', selected);
+                candidate.setAttribute('aria-selected', String(selected));
+            });
+            statsPanel.querySelectorAll('[data-equipment-tab-panel]').forEach(candidate => {
+                candidate.hidden = candidate.dataset.equipmentTabPanel !== nextTab;
+            });
+        });
+    });
 }
 
 // Function to show confirmation popup with optional secondary action

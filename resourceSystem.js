@@ -248,7 +248,130 @@ function getCacheRewardSaleValue(reward) {
     return quantity * Math.max(8, Math.floor(Number(template?.sellValue) || 20));
 }
 
-function attemptResolvePendingCache() {
+function getRewardSummaryIcon(reward) {
+    if (reward?.icon) return reward.icon;
+    if (reward?.kind === 'core') return getCoreDefinition(reward.id || reward.name)?.icon || '';
+    if (reward?.kind === 'material') {
+        return (window.materials || []).find(material => material.name === reward.name)?.icon || '';
+    }
+    return '';
+}
+
+function closeRewardSummaryPopup() {
+    const overlay = document.getElementById('reward-summary-overlay');
+    if (!overlay) return;
+    if (typeof overlay._cleanupRewardSummary === 'function') overlay._cleanupRewardSummary();
+    overlay.remove();
+}
+
+function showRewardSummaryPopup({
+    eyebrow = 'RECOVERY MANIFEST',
+    title = 'Rewards Acquired',
+    description = 'All rewards have been recorded.',
+    rewards = [],
+    emptyMessage = 'No recoverable matter was found.',
+    onConfirm = null
+} = {}) {
+    closeRewardSummaryPopup();
+
+    const normalizedRewards = (Array.isArray(rewards) ? rewards : [])
+        .filter(reward => reward && Math.max(0, Number(reward.quantity) || 0) > 0)
+        .map(reward => ({
+            ...reward,
+            name: String(reward.name || 'Unknown Reward'),
+            quantity: Math.max(1, Math.floor(Number(reward.quantity) || 1)),
+            icon: getRewardSummaryIcon(reward)
+        }));
+
+    const overlay = document.createElement('div');
+    overlay.id = 'reward-summary-overlay';
+    overlay.className = 'resource-overlay reward-summary-overlay';
+
+    const popup = document.createElement('section');
+    popup.className = 'reward-summary-popup';
+    popup.setAttribute('role', 'dialog');
+    popup.setAttribute('aria-modal', 'true');
+    popup.setAttribute('aria-labelledby', 'reward-summary-title');
+
+    const header = document.createElement('header');
+    const eyebrowElement = document.createElement('span');
+    eyebrowElement.textContent = eyebrow;
+    const titleElement = document.createElement('h2');
+    titleElement.id = 'reward-summary-title';
+    titleElement.textContent = title;
+    const descriptionElement = document.createElement('p');
+    descriptionElement.textContent = description;
+    header.append(eyebrowElement, titleElement, descriptionElement);
+    popup.appendChild(header);
+
+    const rewardList = document.createElement('div');
+    rewardList.className = 'reward-summary-list';
+    if (normalizedRewards.length === 0) {
+        const emptyState = document.createElement('div');
+        emptyState.className = 'reward-summary-empty';
+        emptyState.textContent = emptyMessage;
+        rewardList.appendChild(emptyState);
+    } else {
+        normalizedRewards.forEach(reward => {
+            const row = document.createElement('article');
+            row.className = `reward-summary-row reward-kind-${String(reward.kind || reward.type || 'item').toLowerCase()}`;
+
+            const visual = document.createElement('div');
+            visual.className = 'reward-summary-visual';
+            if (reward.icon) {
+                const icon = document.createElement('img');
+                icon.src = reward.icon;
+                icon.alt = '';
+                visual.appendChild(icon);
+            } else {
+                visual.textContent = reward.kind === 'feed' ? 'F' : String(reward.name).charAt(0).toUpperCase();
+            }
+
+            const copy = document.createElement('div');
+            copy.className = 'reward-summary-copy';
+            const name = document.createElement('strong');
+            name.textContent = reward.name;
+            const type = document.createElement('span');
+            type.textContent = reward.kind === 'feed'
+                ? 'Currency'
+                : String(reward.type || reward.kind || 'Item').replace(/\b\w/g, letter => letter.toUpperCase());
+            copy.append(name, type);
+
+            const quantity = document.createElement('b');
+            quantity.textContent = `×${reward.quantity.toLocaleString()}`;
+            row.append(visual, copy, quantity);
+            rewardList.appendChild(row);
+        });
+    }
+    popup.appendChild(rewardList);
+
+    const actions = document.createElement('div');
+    actions.className = 'reward-summary-actions';
+    const confirmButton = document.createElement('button');
+    confirmButton.type = 'button';
+    confirmButton.textContent = 'Confirm';
+    actions.appendChild(confirmButton);
+    popup.appendChild(actions);
+    overlay.appendChild(popup);
+
+    let closed = false;
+    const confirm = () => {
+        if (closed) return;
+        closed = true;
+        closeRewardSummaryPopup();
+        if (typeof onConfirm === 'function') onConfirm();
+    };
+    const onKeyDown = event => {
+        if (event.key === 'Enter' || event.key === 'Escape') confirm();
+    };
+    overlay._cleanupRewardSummary = () => document.removeEventListener('keydown', onKeyDown);
+    confirmButton.addEventListener('click', confirm);
+    document.addEventListener('keydown', onKeyDown);
+    document.body.appendChild(overlay);
+    confirmButton.focus();
+}
+
+function attemptResolvePendingCache(options = {}) {
     if (!window.pendingCacheResolution) return true;
     const remaining = [];
     for (const reward of window.pendingCacheResolution.rewards || []) {
@@ -265,7 +388,7 @@ function attemptResolvePendingCache() {
         if (typeof updateInventoryDisplay === 'function') updateInventoryDisplay();
         return true;
     }
-    showCacheResolutionPopup();
+    if (!options.suppressPopup) showCacheResolutionPopup();
     refreshResourceStorageUI();
     return false;
 }
@@ -288,10 +411,29 @@ function openCache(cacheId) {
         window.pendingCacheResolution = null;
         logMessage(`${definition.name} contained no recoverable matter.`);
         refreshResourceStorageUI();
+        showRewardSummaryPopup({
+            eyebrow: 'CACHE OPENED',
+            title: definition.name,
+            description: 'Cache contents have been processed.',
+            rewards: [],
+            emptyMessage: 'No recoverable matter was found.'
+        });
         return true;
     }
     logMessage(`Opened ${definition.name}: ${rewards.map(reward => `${reward.name} ×${reward.quantity}`).join(', ')}.`);
-    return attemptResolvePendingCache();
+    const secured = attemptResolvePendingCache({ suppressPopup: true });
+    showRewardSummaryPopup({
+        eyebrow: 'CACHE OPENED',
+        title: definition.name,
+        description: secured
+            ? 'Recovered contents were moved to storage.'
+            : 'Recovered contents are reserved; resolve any capacity conflict after confirming.',
+        rewards,
+        onConfirm: () => {
+            if (window.pendingCacheResolution) showCacheResolutionPopup();
+        }
+    });
+    return secured;
 }
 
 function sellCache(cacheId, quantity = 1) {
@@ -403,6 +545,8 @@ window.rollEnemySpecialDrops = rollEnemySpecialDrops;
 window.rollCacheContents = rollCacheContents;
 window.openCache = openCache;
 window.sellCache = sellCache;
+window.showRewardSummaryPopup = showRewardSummaryPopup;
+window.closeRewardSummaryPopup = closeRewardSummaryPopup;
 window.showCacheResolutionPopup = showCacheResolutionPopup;
 window.refreshResourceStorageUI = refreshResourceStorageUI;
 

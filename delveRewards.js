@@ -4,14 +4,6 @@ function hasDelveClaimCacheRewards() {
     return delveClaimCache.items.length > 0 || delveClaimCache.feed > 0;
 }
 
-function isAutoClaimAllItemsEnabled() {
-    try {
-        return localStorage.getItem('autoClaimAllItems') === 'true';
-    } catch (error) {
-        return false;
-    }
-}
-
 function getInventorySlotsRequiredForItems(items = []) {
     const existingStackNames = new Set((window.inventory || [])
         .filter(item => item && item.type !== 'Chip' && item.stackable === true && !isMaterialItem(item))
@@ -167,8 +159,17 @@ function finalizeDelveLoot() {
 
     clearBuffs(player);
 
+    const operationName = typeof currentDelveLocation !== 'undefined' && currentDelveLocation?.name
+        ? currentDelveLocation.name
+        : 'Operation';
     const completedItems = delveBag.items.slice();
     const completedFeed = Math.max(0, Number(delveBag.feed) || 0);
+    const rewardSummary = completedItems.map(item => ({
+        ...item,
+        kind: String(item?.type || 'item').toLowerCase(),
+        quantity: Math.max(1, Number(item?.quantity) || 1)
+    }));
+    if (completedFeed > 0) rewardSummary.push({ kind: 'feed', name: 'Feed', quantity: completedFeed });
     const ordinaryItems = [];
     const remainingItems = [];
     let storedResourceUnits = 0;
@@ -195,7 +196,7 @@ function finalizeDelveLoot() {
     }
 
     let inventoryWasFull = false;
-    if (ordinaryItems.length > 0 && isAutoClaimAllItemsEnabled()) {
+    if (ordinaryItems.length > 0) {
         if (canClaimAllItemsToInventory(ordinaryItems)) {
             for (const item of ordinaryItems) {
                 if (addItemToInventory(item)) {
@@ -208,19 +209,34 @@ function finalizeDelveLoot() {
             inventoryWasFull = true;
             remainingItems.push(...ordinaryItems);
         }
-    } else {
-        remainingItems.push(...ordinaryItems);
     }
 
     delveClaimCache = { items: remainingItems, feed: 0 };
     delveBag = { items: [], feed: 0 };
     updateDelveBagUI();
 
-    if (hasDelveClaimCacheRewards()) {
+    const hasPendingClaims = hasDelveClaimCacheRewards();
+    const showPendingClaims = () => {
+        if (hasPendingClaims) showDelveClaimCachePopup(inventoryWasFull ? 'Your inventory is full.' : '');
+    };
+
+    if (hasPendingClaims) {
         logMessage("Operation complete. Unclaimed items are waiting in the Operation Claim Cache.");
-        setTimeout(() => showDelveClaimCachePopup(inventoryWasFull ? 'Your inventory is full.' : ''), 0);
     } else {
         logMessage("Operation complete. Your rewards were claimed automatically.");
+    }
+
+    if (typeof showRewardSummaryPopup === 'function') {
+        setTimeout(() => showRewardSummaryPopup({
+            eyebrow: 'OPERATION COMPLETE',
+            title: operationName,
+            description: 'Recovery manifest for this Operation. Rewards have already been processed.',
+            rewards: rewardSummary,
+            emptyMessage: 'No rewards were recovered during this Operation.',
+            onConfirm: showPendingClaims
+        }), 0);
+    } else if (hasPendingClaims) {
+        setTimeout(showPendingClaims, 0);
     }
 }
 
