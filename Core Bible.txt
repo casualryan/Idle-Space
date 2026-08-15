@@ -145,10 +145,11 @@ State transitions:
 ================================================================================
 
 Definition:
-- A delve is a location-defined sequence of fights (numFights).
+- An Operation is a location-defined sequence of fights (numFights); a Patrol
+  repeats the same level-appropriate encounter pool until stopped or defeated.
 - currentMonsterIndex tracks sequence progress.
 
-Per-fight behavior inside a delve:
+Per-fight behavior inside a deployment:
 - Current Health persists between fights.
 - Energy Shield is restored to the player's current maximum after a victory and
   before the next enemy spawns. This boundary restoration is not regeneration
@@ -157,14 +158,15 @@ Per-fight behavior inside a delve:
 - 3 second inter-fight pause.
 - attack timers reset on new spawn.
 
-Delve outcomes:
-- enemyDefeated: push rewards to delve bag and continue sequence.
-- delveCompleted: finalize staged rewards, full recover, optional auto-redeploy.
-- playerFled/playerDefeated: delve failure, staged delve bag is forfeited.
+Deployment outcomes:
+- Operation enemyDefeated: push rewards to the Operation Bag and continue.
+- Patrol enemyDefeated: store rewards immediately and continue indefinitely.
+- delveCompleted: finalize Operation rewards, full recover, optional auto-redeploy.
+- playerFled/playerDefeated: Operations forfeit staged rewards; Patrol rewards stay secured.
 
 Auto-redeploy:
 - Controlled by localStorage key autoRedeploy.
-- Materials and credits are collected automatically when a delve succeeds.
+- Materials, Cores, Caches, and Feed are collected automatically when an Operation succeeds.
 - localStorage key autoClaimAllItems claims the complete ordinary-item batch only
   when every item fits; otherwise the intact batch remains in the claim cache.
 

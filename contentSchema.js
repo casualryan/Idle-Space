@@ -38,6 +38,7 @@ const CONTENT_ITEM_TEMPLATE_KEYS = new Set([
     'name', 'description', 'icon', 'color', 'type', 'slot', 'weaponType', 'weaponFamily',
     'weaponFamilyLabel', 'weaponTags', 'levelRequirement',
     'developerOnly', 'disableRandomModifiers', 'stackable', 'quantity', 'salePrice', 'sellValue', 'isDisassembleable',
+    'resourceType', 'fluxGrade',
     'disassembleResults', 'effects', 'passiveBonuses', 'rollGroups', 'wires',
     'weaponBaseDamage', 'weaponLocalFlatDamage', 'weaponLocalTypeIncrease',
     'weaponLocalGroupIncrease', 'weaponDamageConversion', 'weaponLocalAttackSpeedPercent',

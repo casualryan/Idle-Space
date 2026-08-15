@@ -37,6 +37,7 @@ import advancedBarrel from './advancedBarrel.js';
 import precisionMechanism from './precisionMechanism.js';
 import enhancedCuttingEdge from './enhancedCuttingEdge.js';
 import advancedElectronicCircuit from './advancedElectronicCircuit.js';
+import flux from './flux.js';
 
 // Export all materials as an array
 const materials = [
@@ -94,7 +95,8 @@ const materials = [
     advancedBarrel,
     precisionMechanism,
     enhancedCuttingEdge,
-    advancedElectronicCircuit
+    advancedElectronicCircuit,
+    ...flux
 ];
 
 // Make materials available globally (only in browser environment)

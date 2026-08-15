@@ -421,7 +421,10 @@ function collectTooltipModifierLines(item, showRanges) {
                 : `Grade ${modifier.grade || '?'}`);
             const colorPath = String(modifier.statPath || '').split('.').pop();
             const color = TOOLTIP_DAMAGE_COLORS[colorPath] || (/health/i.test(modifier.displayName || '') ? '#51cf88' : /shield/i.test(modifier.displayName || '') ? '#74c0fc' : '#cfe6ff');
-            const detail = ` <span style="color:#9cc5ff;">[${grade}]</span>`;
+            const fluxSymbol = item.fluxTargetModifierId === modifier.id
+                ? ' <span class="tooltip-flux-bound" aria-label="Flux bound">◈</span>'
+                : '';
+            const detail = `${fluxSymbol} <span style="color:#9cc5ff;">[${grade}]</span>`;
             lines.push(renderTooltipLine(formatted, modifier.displayName || modifier.id || 'Modifier', color, { detail }));
         });
         return lines;

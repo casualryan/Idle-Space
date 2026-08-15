@@ -62,6 +62,10 @@
                     <img src="icons/equipment-icon.png" alt="Equipment Icon">
                     <span>Equipment</span>
                 </li>
+                <li data-screen="modification-screen">
+                    <img src="icons/flux_iii.png" alt="Modification Icon">
+                    <span>Modification</span>
+                </li>
                 <li data-screen="passives-screen">
                     <img src="icons/passives-icon.png" alt="Passives Icon">
                     <span>Passives</span>
@@ -88,8 +92,8 @@
         <div class="sidebar-section">
             <ul class="sidebar-menu">
                 <li data-screen="adventure-screen">
-                    <img src="icons/adventure-icon.png" alt="Delve Icon">
-                    <span>Delve</span>
+                    <img src="icons/adventure-icon.png" alt="Deployment Icon">
+                    <span>Deployments</span>
                 </li>
             </ul>
         </div>
@@ -155,11 +159,25 @@
                 </select>
             </div>
             <ul id="inventory"></ul>
+            <section id="core-storage" class="resource-storage-section" aria-labelledby="core-storage-heading">
+                <div class="material-inventory-heading-row">
+                    <div><h3 id="core-storage-heading">Core Storage</h3><p>Enemy-extracted enhancements consumed when an Operation begins.</p></div>
+                    <span>One Core per Operation</span>
+                </div>
+                <div id="core-storage-grid" class="resource-storage-grid"></div>
+            </section>
+            <section id="cache-storage" class="resource-storage-section" aria-labelledby="cache-storage-heading">
+                <div class="material-inventory-heading-row">
+                    <div><h3 id="cache-storage-heading">Cache Storage</h3><p>Open for uncertain themed rewards or sell unopened for guaranteed Feed.</p></div>
+                    <button type="button" id="cache-overflow-open" class="cache-overflow-open" hidden>Resolve Open Cache</button>
+                </div>
+                <div id="cache-storage-grid" class="resource-storage-grid"></div>
+            </section>
             <section id="material-inventory" aria-labelledby="material-inventory-heading">
                 <div class="material-inventory-heading-row">
                     <div>
                         <h3 id="material-inventory-heading">Material Storage</h3>
-                        <p>Foundations for volume. Thematic ladders for identity. Exceptional parts for special gear.</p>
+                        <p>Foundations, themed components, exceptional technology, and Flux reserves.</p>
                     </div>
                     <span>50,000 maximum per material</span>
                 </div>
@@ -202,6 +220,15 @@
             </div>
         </div>
 
+        <div id="modification-screen" class="screen">
+            <header class="modification-page-header">
+                <div><span>FLUX CALIBRATION</span><h2>Item Modification</h2></div>
+                <p>Bind one generated modifier, then reroll only that modifier within its current grade.</p>
+            </header>
+            <div id="modification-run-lock" class="modification-run-lock" hidden>Unavailable during an active Patrol or Operation.</div>
+            <div id="item-modification-root" class="item-modification-root"></div>
+        </div>
+
         <!-- Just after the equipment-screen or somewhere convenient -->
         <div id="passives-screen" class="screen"></div>
 
@@ -222,15 +249,15 @@
 
         <!-- Adventure Screen -->
         <div id="adventure-screen" class="screen">
-            <h2>Delve</h2>
+            <h2>Deployments</h2>
             <div id="delve-chip-warning" class="chip-conflict-warning" role="alert"></div>
             <div id="delve-controls"></div>
-            <h3 id="delve-locations-heading">Delve Locations</h3>
+            <h3 id="delve-locations-heading">Deployment Routes</h3>
             <div id="adventure-locations"></div>
             <div id="delve-combat-stage" class="delve-combat-stage hidden" aria-hidden="true">
                 <canvas id="combat-vfx-canvas" class="combat-vfx-canvas" aria-hidden="true"></canvas>
                 <div id="propagation-effects-layer" class="propagation-effects-layer" aria-hidden="true"></div>
-                <div class="combat-stage-tools" aria-label="Delve utilities">
+                <div class="combat-stage-tools" aria-label="Deployment utilities">
                     <button id="delve-bag-toggle" class="combat-stage-tool" type="button" aria-expanded="false">Open Bag</button>
                     <button id="combat-log-toggle" class="combat-stage-tool" type="button" aria-expanded="false">Combat Log</button>
                 </div>
@@ -261,9 +288,9 @@
 
                 <aside id="delve-bag-drawer" class="combat-drawer" aria-hidden="true">
                     <section id="delve-bag-container" class="delve-bag operations-panel">
-                        <header class="operations-panel-header"><span>Field Recovery</span><h2>Delve Bag</h2></header>
-                        <button class="combat-drawer-close" type="button" data-close-combat-drawer="delve-bag-drawer" aria-label="Close Delve Bag">&times;</button>
-                        <div id="delve-bag-credits" class="delve-bag-credits">Credits: 0</div>
+                        <header class="operations-panel-header"><span>Field Recovery</span><h2>Operation Bag</h2></header>
+                        <button class="combat-drawer-close" type="button" data-close-combat-drawer="delve-bag-drawer" aria-label="Close Operation Bag">&times;</button>
+                        <div id="delve-bag-credits" class="delve-bag-credits">Feed: 0</div>
                         <ul id="delve-bag-items"><li class="delve-bag-empty">No recovered items</li></ul>
                     </section>
                 </aside>
@@ -402,7 +429,7 @@
                 <div id="settings-panel-dev" class="settings-panel" hidden>
                     <div class="settings-action-grid settings-action-grid--stacked">
                         <button type="button" id="dev-add-level" class="settings-btn settings-btn-secondary">Add +1 Level</button>
-                        <button type="button" id="dev-add-credits" class="settings-btn settings-btn-secondary">Add +1,000,000 Credits</button>
+                        <button type="button" id="dev-add-credits" class="settings-btn settings-btn-secondary">Add +1,000,000 Feed</button>
                     </div>
                 </div>
             </div>

@@ -173,7 +173,7 @@ function buildCharacterDetailsExport(playerObject, context = {}) {
     }
 
     const generatedAt = context.generatedAt instanceof Date ? context.generatedAt : new Date();
-    const currency = context.currency ?? (typeof playerCurrency !== 'undefined' ? playerCurrency : 0);
+    const feed = context.feed ?? (typeof playerFeed !== 'undefined' ? playerFeed : 0);
     const completedLocations = context.completedLocations
         ?? (typeof completedDelveLocations !== 'undefined' ? completedDelveLocations : {});
     const locationDefinitions = context.locationDefinitions
@@ -201,13 +201,13 @@ function buildCharacterDetailsExport(playerObject, context = {}) {
         `Name: ${formatCharacterExportScalar(playerObject.name || 'Player')}`,
         `Level: ${formatCharacterExportScalar(playerObject.level)}`,
         `Experience: ${formatCharacterExportScalar(playerObject.experience)}`,
-        `Credits: ${formatCharacterExportScalar(currency)}`,
+        `Feed: ${formatCharacterExportScalar(feed)}`,
         `Current Health: ${formatCharacterExportScalar(playerObject.currentHealth)}`,
         `Current Energy Shield: ${formatCharacterExportScalar(playerObject.currentShield)}`,
         `Passive Points Spent: ${formatCharacterExportScalar(passivePointTotal)}`,
         `Passive Points Unspent: ${formatCharacterExportScalar(playerObject.passivePoints)}`,
         `Highest Endgame Tier Cleared: ${highestEndgameTier || 'None'}`,
-        `Total Delve Clears: ${progressRows.reduce((total, row) => total + row.clears, 0)}`
+        `Total Operation Clears: ${progressRows.reduce((total, row) => total + row.clears, 0)}`
     );
     lines.push('Gathering Skills:');
     lines.push(formatCharacterExportJson(playerObject.gatheringSkills || {}));

@@ -1,7 +1,7 @@
 // Claim cache, temporary delve rewards, XP awards, and loot handoff.
 
 function hasDelveClaimCacheRewards() {
-    return delveClaimCache.items.length > 0 || delveClaimCache.credits > 0;
+    return delveClaimCache.items.length > 0 || delveClaimCache.feed > 0;
 }
 
 function isAutoClaimAllItemsEnabled() {
@@ -19,7 +19,7 @@ function getInventorySlotsRequiredForItems(items = []) {
     let requiredSlots = 0;
 
     for (const item of items) {
-        if (!item || isMaterialItem(item)) continue;
+        if (!item || isMaterialItem(item) || item.type === 'Core' || item.type === 'Cache') continue;
         if (item.type === 'Chip') {
             requiredSlots += Math.max(1, Math.floor(Number(item.quantity) || 1));
         } else if (item.stackable === true) {
@@ -44,11 +44,11 @@ function getDelveClaimCacheSaleValue() {
         return total + (typeof getItemSalePrice === 'function' ? getItemSalePrice(item) * quantity : 0);
     }, 0);
 }
-function claimDelveCacheCredits() {
-    if (delveClaimCache.credits <= 0) return;
-    playerCurrency += delveClaimCache.credits;
-    logMessage(`Claimed ${delveClaimCache.credits} credits from the Delve Claim Cache.`);
-    delveClaimCache.credits = 0;
+function claimDelveCacheFeed() {
+    if (delveClaimCache.feed <= 0) return;
+    playerFeed += delveClaimCache.feed;
+    logMessage(`Claimed ${delveClaimCache.feed} Feed from the Operation Claim Cache.`);
+    delveClaimCache.feed = 0;
 }
 
 function claimDelveCacheItem(index) {
@@ -67,7 +67,7 @@ function claimDelveCacheItem(index) {
 }
 
 function claimAllDelveCacheRewards() {
-    claimDelveCacheCredits();
+    claimDelveCacheFeed();
     const remaining = [];
     for (const item of delveClaimCache.items) {
         if (!addItemToInventory(item)) remaining.push(item);
@@ -83,20 +83,20 @@ function claimAllDelveCacheRewards() {
 function sellRemainingDelveCacheRewards() {
     const saleValue = getDelveClaimCacheSaleValue();
     const itemCount = delveClaimCache.items.length;
-    playerCurrency += delveClaimCache.credits + saleValue;
-    const totalCredits = delveClaimCache.credits + saleValue;
-    delveClaimCache = { items: [], credits: 0 };
-    logMessage(`Cleared the Delve Claim Cache: ${itemCount} item${itemCount === 1 ? '' : 's'} sold or discarded for ${totalCredits} credits.`);
+    playerFeed += delveClaimCache.feed + saleValue;
+    const totalFeed = delveClaimCache.feed + saleValue;
+    delveClaimCache = { items: [], feed: 0 };
+    logMessage(`Cleared the Operation Claim Cache: ${itemCount} item${itemCount === 1 ? '' : 's'} sold or discarded for ${totalFeed} Feed.`);
     refreshDelveClaimCacheUI(false);
 }
 
 function discardDelveClaimCacheForNewDelve() {
     if (!hasDelveClaimCacheRewards()) return;
     const lostItems = delveClaimCache.items.length;
-    const lostCredits = delveClaimCache.credits;
-    delveClaimCache = { items: [], credits: 0 };
+    const lostFeed = delveClaimCache.feed;
+    delveClaimCache = { items: [], feed: 0 };
     closeDelveClaimCachePopup();
-    logMessage(`Starting a new delve destroyed ${lostItems} unclaimed item${lostItems === 1 ? '' : 's'} and ${lostCredits} unclaimed credits.`);
+    logMessage(`Starting a new Operation destroyed ${lostItems} unclaimed item${lostItems === 1 ? '' : 's'} and ${lostFeed} unclaimed Feed.`);
 }
 function addItemToDelveBag(itemInstance) {
     if (!itemInstance) return;
@@ -134,6 +134,10 @@ function addMonsterLootToDelveBag(monster) {
         });
     }
 
+    if (typeof rollEnemySpecialDrops === 'function') {
+        rollEnemySpecialDrops(monster).forEach(addItemToDelveBag);
+    }
+
     if (monster.currencyDrop) {
         const rewardScale = Math.max(0, Number(monster._rewardScale ?? 1));
         if (Math.random() < monster.currencyDrop.dropRate * rewardScale) {
@@ -147,8 +151,8 @@ function addMonsterLootToDelveBag(monster) {
             }
             if (monster.isEmpowered) finalAmount = Math.floor(finalAmount * 1.5);
 
-            delveBag.credits += finalAmount;
-            logMessage(`Credits added to delve bag: ${finalAmount}`);
+            delveBag.feed += finalAmount;
+            logMessage(`Feed added to Operation Bag: ${finalAmount}`);
         }
     }
 
@@ -164,29 +168,30 @@ function finalizeDelveLoot() {
     clearBuffs(player);
 
     const completedItems = delveBag.items.slice();
-    const completedCredits = Math.max(0, Number(delveBag.credits) || 0);
+    const completedFeed = Math.max(0, Number(delveBag.feed) || 0);
     const ordinaryItems = [];
     const remainingItems = [];
-    let storedMaterialUnits = 0;
+    let storedResourceUnits = 0;
 
     for (const item of completedItems) {
-        if (!isMaterialItem(item)) {
+        const isDedicatedResource = isMaterialItem(item) || item?.type === 'Core' || item?.type === 'Cache';
+        if (!isDedicatedResource) {
             ordinaryItems.push(item);
             continue;
         }
         if (addItemToInventory(item)) {
-            storedMaterialUnits += Math.max(1, Number(item.quantity) || 1);
+            storedResourceUnits += Math.max(1, Number(item.quantity) || 1);
         } else {
             remainingItems.push(item);
         }
     }
 
-    if (completedCredits > 0) {
-        playerCurrency += completedCredits;
-        logMessage(`Automatically claimed ${completedCredits} delve credits.`);
+    if (completedFeed > 0) {
+        playerFeed += completedFeed;
+        logMessage(`Automatically claimed ${completedFeed} Operation Feed.`);
     }
-    if (storedMaterialUnits > 0) {
-        logMessage(`Automatically stored ${storedMaterialUnits} delve material${storedMaterialUnits === 1 ? '' : 's'}.`);
+    if (storedResourceUnits > 0) {
+        logMessage(`Automatically stored ${storedResourceUnits} Operation resource${storedResourceUnits === 1 ? '' : 's'}.`);
     }
 
     let inventoryWasFull = false;
@@ -207,22 +212,26 @@ function finalizeDelveLoot() {
         remainingItems.push(...ordinaryItems);
     }
 
-    delveClaimCache = { items: remainingItems, credits: 0 };
-    delveBag = { items: [], credits: 0 };
+    delveClaimCache = { items: remainingItems, feed: 0 };
+    delveBag = { items: [], feed: 0 };
     updateDelveBagUI();
 
     if (hasDelveClaimCacheRewards()) {
-        logMessage("You successfully cleared the delve. Unclaimed items are waiting in the Delve Claim Cache.");
+        logMessage("Operation complete. Unclaimed items are waiting in the Operation Claim Cache.");
         setTimeout(() => showDelveClaimCachePopup(inventoryWasFull ? 'Your inventory is full.' : ''), 0);
     } else {
-        logMessage("You successfully cleared the delve. Your rewards were claimed automatically.");
+        logMessage("Operation complete. Your rewards were claimed automatically.");
     }
 }
 
 function stopDelveWithFailure() {
     if (isDelveInProgress) {
-        logMessage("Your delve fails, and you lose all items you found!");
-        delveBag = { items: [], credits: 0 };
+        if (currentRunMode === 'patrol') {
+            logMessage('Patrol ended. All secured loot was retained.');
+        } else {
+            logMessage('The Operation failed. Operation Bag loot was lost.');
+        }
+        delveBag = { items: [], feed: 0 };
         isDelveInProgress = false;
         currentDelveLocation = null;
         currentMonsterIndex = 0;

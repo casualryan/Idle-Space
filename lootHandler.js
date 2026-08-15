@@ -265,7 +265,12 @@ function generateLoot(enemy, player) {
         
         // Generate an instance of the item
         const itemInstance = generateItemInstance(itemTemplate);
-        itemInstance.quantity = rollLootQuantity(lootEntry, enemy);
+        const baseQuantity = rollLootQuantity(lootEntry, enemy);
+        const materialMultiplier = typeof getActiveOperationRewardModifiers === 'function'
+            ? Math.max(0, Number(getActiveOperationRewardModifiers().material) || 1)
+            : 1;
+        const exactQuantity = baseQuantity * materialMultiplier;
+        itemInstance.quantity = Math.max(1, Math.floor(exactQuantity) + (Math.random() < exactQuantity % 1 ? 1 : 0));
         
         // Add the generated item to the loot list
         lootItems.push(itemInstance);
@@ -282,9 +287,9 @@ function generateLoot(enemy, player) {
 function handleLootDrop(enemy) {
     if (!enemy || enemy.name.includes('Training Dummy')) return;
 
-    const inDelve = typeof isDelveInProgress !== 'undefined' && isDelveInProgress;
+    const inOperation = typeof isDelveInProgress !== 'undefined' && isDelveInProgress && currentRunMode === 'operation';
 
-    if (inDelve) {
+    if (inOperation) {
         addMonsterLootToDelveBag(enemy);
         return;
     }
@@ -305,6 +310,15 @@ function handleLootDrop(enemy) {
         lootFound = true;
     });
 
+    const specialDrops = typeof rollEnemySpecialDrops === 'function' ? rollEnemySpecialDrops(enemy) : [];
+    specialDrops.forEach(item => {
+        if (!addItemToInventory(item)) return;
+        const lootMessage = `You received: {flashing}${item.name} x${item.quantity || 1}{end}`;
+        logMessage(lootMessage);
+        displayLootPopup(lootMessage);
+        lootFound = true;
+    });
+
     if (enemy.currencyDrop) {
         const rewardScale = Math.max(0, Number(enemy._rewardScale ?? 1));
         if (Math.random() < enemy.currencyDrop.dropRate * rewardScale) {
@@ -317,8 +331,8 @@ function handleLootDrop(enemy) {
             }
             if (enemy.isEmpowered) finalAmount = Math.floor(finalAmount * 1.5);
 
-            updateCurrency(finalAmount);
-            logMessage(`You found {flashing}${finalAmount} currency{end}`);
+            updateFeed(finalAmount);
+            logMessage(`You recovered {flashing}${finalAmount} Feed{end}`);
             lootFound = true;
         }
     }

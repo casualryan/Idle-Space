@@ -104,6 +104,18 @@ const MATERIAL_STORAGE_GROUPS = Object.freeze([
             'Phase Converter',
             'Quantum Core'
         ])
+    }),
+    Object.freeze({
+        id: 'flux',
+        label: 'Flux Reserves',
+        description: 'Condensed fabrication energy used to reroll one permanently bound equipment modifier.',
+        materials: Object.freeze([
+            'Flux I',
+            'Flux II',
+            'Flux III',
+            'Flux IV',
+            'Flux V'
+        ])
     })
 ]);
 
@@ -116,7 +128,8 @@ const MATERIAL_STORAGE_ROLE = Object.freeze({
     electric: 'Electric thematic ladder',
     chemical: 'Corrosive thematic ladder',
     radiation: 'Radiation thematic ladder',
-    exceptional: 'Exceptional neutral material'
+    exceptional: 'Exceptional neutral material',
+    flux: 'Equipment modification resource'
 });
 
 const MATERIAL_STORAGE_NAMES = Object.freeze(MATERIAL_STORAGE_GROUPS.flatMap(group => group.materials));
@@ -255,6 +268,8 @@ function getMaterialStorageTooltipContent(itemName, groupLabel) {
     content += `<div class="material-tooltip-section"><div class="material-tooltip-heading">Known enemy drops</div>`;
     if (dropRows.length > 0) {
         content += dropRows.map(row => `<div class="material-tooltip-source"><span>${escapeMaterialTooltipText(row.enemy)}</span><small>${escapeMaterialTooltipText(row.location)}${row.targeted ? ' · TARGETED' : ''}</small></div>`).join('');
+    } else if (group?.id === 'flux') {
+        content += `<div class="material-tooltip-muted">Enemy Flux drops scale with area level. Flux Caches can also yield level-appropriate grades.</div>`;
     } else {
         content += `<div class="material-tooltip-muted">No enemy drop has been documented. Check gathering or fabrication sources above.</div>`;
     }
@@ -271,7 +286,7 @@ function updateMaterialInventoryDisplay() {
         const section = document.createElement('section');
         section.className = 'material-storage-group';
         section.dataset.materialGroup = group.id;
-        const isThematicLadder = !['foundational', 'exceptional'].includes(group.id);
+        const isThematicLadder = !['foundational', 'exceptional', 'flux'].includes(group.id);
         if (isThematicLadder) section.classList.add('is-thematic-ladder');
 
         const heading = document.createElement('div');

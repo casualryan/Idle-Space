@@ -200,7 +200,7 @@ Object.entries(LOOT_THEME_LADDERS).forEach(([family, ladder]) => {
         const suffix = LOOT_THEME_POOL_SUFFIXES[index];
         LOOT_POOL_ACQUISITION[`theme${family[0].toUpperCase()}${family.slice(1)}${suffix}`] = {
             level: LOOT_ZONE_LEVELS[zone],
-            source: `${family === 'corrosive' ? 'corrosive' : family} enemies in ${LOOT_ZONE_NAMES[zone]} or later delves`
+            source: `${family === 'corrosive' ? 'corrosive' : family} enemies in ${LOOT_ZONE_NAMES[zone]} or later deployments`
         };
     });
 });
@@ -229,6 +229,15 @@ const GATHERING_ACQUISITION = {
 Object.entries(GATHERING_ACQUISITION).forEach(([itemName, source]) => {
     const current = MATERIAL_ACQUISITION[itemName];
     if (!current || source.level < current.level) MATERIAL_ACQUISITION[itemName] = { ...source };
+});
+[
+    ['Flux I', 1],
+    ['Flux II', 11],
+    ['Flux III', 21],
+    ['Flux IV', 31],
+    ['Flux V', 41]
+].forEach(([itemName, level]) => {
+    MATERIAL_ACQUISITION[itemName] = { level, source: 'enemy drops and Flux Caches' };
 });
 Object.freeze(MATERIAL_ACQUISITION);
 

@@ -1111,8 +1111,8 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   );
 
   assert.equal(result.beforeUnchanged, true, 'migration mutated the parsed legacy payload');
-  assert.equal(result.migrated.toVersion, 16);
-  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+  assert.equal(result.migrated.toVersion, 17);
+  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
   assert.equal(result.migrated.state.inventory.length, 0, 'legacy material stacks still occupy ordinary slots');
   assert.equal(result.migrated.state.materialInventory['Scrap Metal'], 20);
   assert.equal(result.migrated.state.materialInventory['Wire Bundle'], 7);
@@ -1132,6 +1132,9 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   assert.equal(result.migrated.state.player.passives.points, 24, 'retired ranks and two-points-per-level catch-up were not applied');
   assert.equal(Object.keys(result.migrated.state.player.passives.allocations).length, 0);
   assert.equal(result.migrated.state.player.combatStyles.version, 2);
+  assert.equal(result.migrated.state.player.feed, 1000);
+  assert.deepEqual({ ...result.migrated.state.coreInventory }, {});
+  assert.deepEqual({ ...result.migrated.state.cacheInventory }, {});
   assert.deepEqual(Object.keys(result.migrated.state.player.combatStyles.allocations), []);
   assert.equal(result.validation.valid, true);
   assert.equal(result.repeatUnchanged, true, 'current save migration was not idempotent');
@@ -1162,7 +1165,7 @@ test('v2 passive saves are refunded and caught up to two points per level', () =
     })()`
   );
 
-  assert.deepEqual([...result.appliedVersions], [13, 14, 15, 16]);
+  assert.deepEqual([...result.appliedVersions], [13, 14, 15, 16, 17]);
   assert.equal(result.state.player.passives.treeVersion, 6);
   assert.deepEqual(Object.keys(result.state.player.passives.allocations), []);
   assert.equal(result.state.player.passives.points, 38);
@@ -1187,8 +1190,8 @@ test('v14 saves with stale passive treeVersion are refunded to tree version 6', 
     })()`
   );
 
-  assert.deepEqual([...result.appliedVersions], [15, 16]);
-  assert.equal(result.toVersion, 16);
+  assert.deepEqual([...result.appliedVersions], [15, 16, 17]);
+  assert.equal(result.toVersion, 17);
   assert.equal(result.state.player.passives.treeVersion, 6);
   assert.deepEqual(Object.keys(result.state.player.passives.allocations), []);
   assert.equal(result.state.player.passives.points, 20);
@@ -1217,11 +1220,148 @@ test('v16 migration converts retired single-type bionic boosters into grouped bo
       meta: { version: 15 }
     })`
   );
-  assert.deepEqual([...result.appliedVersions], [16]);
+  assert.deepEqual([...result.appliedVersions], [16, 17]);
   assert.equal(result.state.player.equipment.bionicSlots[0].name, 'Elemental Booster');
   assert.equal(result.state.player.equipment.bionicSlots[0].statModifiers.damageGroups.elemental, 17);
   assert.equal(result.state.inventory[0].name, 'Physical Booster');
   assert.equal(result.state.inventory[0].statModifiers.damageGroups.physical, 13);
+});
+
+test('v17 migrates Credits to Feed and initializes new resource stores safely', () => {
+  const result = evaluateClassic(
+    'saveSchema.js',
+    `migrateGameStateSnapshot({
+      player: {
+        level: 20, currency: 4321,
+        equipment: { mainHand: null, offHand: null, head: null, chest: null, legs: null, feet: null, gloves: null, bionicSlots: [] },
+        passives: { allocations: {}, points: 40, treeVersion: 6 },
+        combatStyles: { version: 2, allocations: {} }
+      },
+      inventory: [], materialInventory: {},
+      delveBag: { items: [], credits: 77 },
+      delveClaimCache: { items: [], credits: 19 },
+      meta: { version: 16 }
+    })`
+  );
+
+  assert.deepEqual([...result.appliedVersions], [17]);
+  assert.equal(result.state.player.feed, 4321);
+  assert.equal(result.state.player.currency, undefined);
+  assert.equal(result.state.delveBag.feed, 77);
+  assert.equal(result.state.delveClaimCache.feed, 19);
+  assert.deepEqual({ ...result.state.coreInventory }, {});
+  assert.deepEqual({ ...result.state.cacheInventory }, {});
+  assert.equal(result.state.pendingCacheResolution, null);
+});
+
+test('Core, Cache, and Flux registries use distinct dedicated 512px icons', () => {
+  const resources = evaluateClassic(
+    'resourceSystem.js',
+    `({ cores: CORE_DEFINITIONS, caches: CACHE_DEFINITIONS })`,
+    { window: { coreInventory: {}, cacheInventory: {}, registerCoreboundInitializer: () => {} } }
+  );
+  const flux = materials.filter(material => material.resourceType === 'Flux');
+  assert.equal(resources.cores.length, 8);
+  assert.equal(resources.caches.length, 9);
+  assert.equal(flux.length, 5);
+  assert.equal(new Set(resources.cores.map(entry => entry.id)).size, resources.cores.length);
+  assert.equal(new Set(resources.caches.map(entry => entry.id)).size, resources.caches.length);
+
+  for (const entry of [...resources.cores, ...resources.caches, ...flux]) {
+    const iconPath = path.join(repositoryRoot, entry.icon);
+    assert.ok(fs.existsSync(iconPath), `${entry.name} icon does not exist`);
+    const png = fs.readFileSync(iconPath);
+    assert.equal(png.toString('hex', 0, 8), '89504e470d0a1a0a', `${entry.name} icon is not a PNG`);
+    assert.equal(png.readUInt32BE(16), 512, `${entry.name} icon is not 512px wide`);
+    assert.equal(png.readUInt32BE(20), 512, `${entry.name} icon is not 512px tall`);
+  }
+});
+
+test('Operations consume one Core, randomize event spacing, and out-reward Patrols', () => {
+  const result = evaluateClassic(
+    ['resourceSystem.js', 'operationSystem.js'],
+    `(() => {
+      const spacing = [randomOperationSpacing(() => 0), randomOperationSpacing(() => 0.4), randomOperationSpacing(() => 0.999)];
+      const normalizedExhausted = normalizeOperationState({ encounterTarget: 6, nextEventAt: null });
+      window.coreInventory.accelerator = 2;
+      const operation = beginOperationState({ numFights: 6 }, 'accelerator');
+      const operationRewards = getActiveOperationRewardModifiers();
+      currentRunMode = 'patrol';
+      const patrolRewards = getActiveOperationRewardModifiers();
+      return {
+        spacing,
+        exhaustedEventIsInfinite: normalizedExhausted.nextEventAt === Number.POSITIVE_INFINITY,
+        remainingCores: window.coreInventory.accelerator,
+        attackSpeed: operation.modifiers.attackSpeedPercent,
+        encounterTarget: operation.encounterTarget,
+        operationRewards,
+        patrolRewards
+      };
+    })()`,
+    {
+      window: { coreInventory: {}, cacheInventory: {}, registerCoreboundInitializer: () => {} },
+      document: { getElementById: () => null },
+      currentRunMode: null,
+      operationState: null,
+      currentMonsterIndex: 0,
+      currentDelveLocation: null,
+      logMessage: () => {}
+    }
+  );
+
+  assert.deepEqual([...result.spacing], [1, 2, 3]);
+  assert.equal(result.exhaustedEventIsInfinite, true);
+  assert.equal(result.remainingCores, 1);
+  assert.equal(result.attackSpeed, 0.15);
+  assert.equal(result.encounterTarget, 6);
+  assert.ok(result.operationRewards.material > result.patrolRewards.material);
+  assert.ok(result.operationRewards.cache > result.patrolRewards.cache);
+});
+
+test('Caches retain themed outcomes and unopened guaranteed Feed value', () => {
+  const result = evaluateClassic(
+    'resourceSystem.js',
+    `(() => {
+      const kinetic = rollCacheContents('kinetic', () => 0.2);
+      const flux = rollCacheContents('flux', () => 0.2);
+      window.cacheInventory.kinetic = 2;
+      const sold = sellCache('kinetic', 1);
+      return { kinetic, flux, sold, remaining: window.cacheInventory.kinetic, playerFeed };
+    })()`,
+    {
+      window: { coreInventory: {}, cacheInventory: {}, registerCoreboundInitializer: () => {} },
+      document: { getElementById: () => null },
+      player: { level: 30 },
+      playerFeed: 0,
+      logMessage: () => {}
+    }
+  );
+
+  assert.equal(result.kinetic[0].name, 'Stabilizer');
+  assert.match(result.flux[0].name, /^Flux I{1,3}|Flux IV|Flux V$/);
+  assert.equal(result.sold, true);
+  assert.equal(result.remaining, 1);
+  assert.equal(result.playerFeed, 105);
+});
+
+test('Flux rerolls only the permanently bound modifier inside its grade range', () => {
+  const result = evaluateClassic(
+    'itemgenerator.js',
+    `(() => {
+      const item = {
+        name: 'Test Plate', type: 'Armor', slot: 'chest', healthBonus: 150, deflection: 17,
+        fluxTargetModifierId: 'flatMaxHealth',
+        rolledModifiers: [{ id: 'flatMaxHealth', displayName: 'Max Health', grade: 3, value: 150, displayValue: 150 }]
+      };
+      const range = getModifierRollRange(item, item.rolledModifiers[0]);
+      const rerolled = rerollBoundItemModifier(item, () => 0);
+      return { range, rerolled, healthBonus: item.healthBonus, deflection: item.deflection };
+    })()`
+  );
+
+  assert.equal(result.rerolled.nextDisplayValue, result.range.min);
+  assert.equal(result.healthBonus, result.range.min);
+  assert.equal(result.deflection, 17);
 });
 
 test('material storage has deterministic slots, capped stacks, and actionable source tooltips', () => {
@@ -1663,7 +1803,11 @@ test('fabrication economy uses compact recipes with progression-scaled bulk cost
   assert.ok(averages[3] >= 28 && averages[3] <= 38);
   assert.ok(averages[4] >= 45 && averages[4] <= 58);
   assert.ok(averages[5] >= 60 && averages[5] <= 80);
-  assert.deepEqual(materials.map(material => material.name).filter(name => !usedMaterials.has(name)), []);
+  assert.deepEqual(materials.map(material => material.name)
+    .filter(name => !name.startsWith('Flux ') && !usedMaterials.has(name)), []);
+  for (const recipe of recipes) {
+    assert.ok(Number.isInteger(recipe.feedCost) && recipe.feedCost >= 20, `${recipe.name} has no Feed cost`);
+  }
   assert.equal(materials.some(material => retiredMaterials.has(material.name)), false);
 });
 
@@ -1771,7 +1915,7 @@ test('Energy Shield refills between delve encounters without healing Health', ()
   assert.equal(result.health, 37);
   assert.equal(result.shield, 42);
   assert.match(logs[0], /Energy Shield reconstituted/);
-  assert.match(read('combatController.js'), /currentMonsterIndex < currentDelveLocation\.numFights/);
+  assert.match(read('combatController.js'), /currentMonsterIndex < getOperationEncounterTarget\(\)/);
 });
 
 test('status resistance affixes modify chance and hostile duration through live stats', () => {
@@ -2471,7 +2615,7 @@ test('taunt redirects attacks without replacing the selected target', () => {
 
 test('multi-enemy encounter rewards share the original encounter budget', () => {
   const combat = readCombatRuntime();
-  assert.match(combat, /const rewardScale = 1 \/ entries\.length/);
+  assert.match(combat, /const rewardScale = runRewardScale \/ entries\.length/);
   const xpAllocations = JSON.parse(evaluateClassic(
     'combatController.js',
     `JSON.stringify((() => {
@@ -2484,6 +2628,7 @@ test('multi-enemy encounter rewards share the original encounter budget', () => 
   assert.match(combat, /Number\.isFinite\(target\._experienceReward\)/);
   assert.match(read('lootHandler.js'), /dropChance \*= Math\.max\(0, Number\(enemy\._rewardScale \?\? 1\)\)/);
   assert.match(read('delveRewards.js'), /dropRate \* rewardScale/);
+  assert.match(read('resourceSystem.js'), /Number\(enemy\?\._rewardScale \?\? 1\)/);
 });
 
 test('weapon propagation profiles enforce coefficients, geometry, uniqueness, and Chain revisits', () => {
@@ -2825,12 +2970,13 @@ test('balance simulation preserves the authored difficulty curve', () => {
 
 test('new-character, fabrication, empowered reward, and claim-cache rules remain wired', () => {
   const combat = readCombatRuntime();
-  assert.match(read('global.js'), /const STARTING_CREDITS = 1000/);
+  assert.match(read('global.js'), /const STARTING_FEED = 1000/);
+  assert.match(read('fabrication.js'), /playerFeed < fabricationRecipe\.feedCost/);
   assert.match(read('fabrication.js'), /Object\.keys\(ongoingFabrications\)\.length > 0/);
   assert.match(combat, /instance\.isEmpowered = true/);
   assert.match(combat, /xp = Math\.floor\(xp \* 1\.5\)/);
-  assert.match(combat, /Starting a new delve destroyed/);
-  assert.match(combat, /Auto re-deploy paused until the Delve Claim Cache is cleared/);
+  assert.match(combat, /Starting a new Operation destroyed/);
+  assert.match(combat, /Auto re-deploy paused until the Operation Claim Cache is cleared/);
   assert.match(read('global.js'), /delveClaimCache/);
   assert.match(combat, /function preparePlayerForCombat/);
   assert.doesNotMatch(combat, /player\.baseStats = JSON\.parse\(JSON\.stringify\(playerBaseStats\)\)/);
@@ -2841,15 +2987,15 @@ test('delve completion auto-claims materials and atomically claims optional item
   const result = JSON.parse(evaluateClassic(
     'delveRewards.js',
     `JSON.stringify((() => {
-      function runScenario({ autoClaim, usedSlots, maxSlots, items, credits }) {
+      function runScenario({ autoClaim, usedSlots, maxSlots, items, feed }) {
         const storedMaterials = [];
         const popupWarnings = [];
         const messages = [];
         window.inventory = Array.from({ length: usedSlots }, (_, index) => ({ name: 'Owned ' + index }));
         globalThis.player = { maxInventorySlots: maxSlots };
-        globalThis.playerCurrency = 10;
-        globalThis.delveBag = { items: items.map(item => ({ ...item })), credits };
-        globalThis.delveClaimCache = { items: [], credits: 0 };
+        globalThis.playerFeed = 10;
+        globalThis.delveBag = { items: items.map(item => ({ ...item })), feed };
+        globalThis.delveClaimCache = { items: [], feed: 0 };
         globalThis.isDelveInProgress = true;
         globalThis.localStorage = {
           getItem: key => key === 'autoClaimAllItems' && autoClaim ? 'true' : 'false'
@@ -2878,18 +3024,18 @@ test('delve completion auto-claims materials and atomically claims optional item
           messages,
           inventoryCount: window.inventory.length,
           cacheNames: delveClaimCache.items.map(item => item.name),
-          cacheCredits: delveClaimCache.credits,
-          playerCurrency
+          cacheFeed: delveClaimCache.feed,
+          playerFeed
         };
       }
 
       return {
         materialsOnly: runScenario({
-          autoClaim: false, usedSlots: 30, maxSlots: 30, credits: 7,
+          autoClaim: false, usedSlots: 30, maxSlots: 30, feed: 7,
           items: [{ name: 'Scrap Metal', type: 'Material', quantity: 4, stackable: true }]
         }),
         autoFits: runScenario({
-          autoClaim: true, usedSlots: 28, maxSlots: 30, credits: 5,
+          autoClaim: true, usedSlots: 28, maxSlots: 30, feed: 5,
           items: [
             { name: 'Copper Ore', type: 'Material', quantity: 2, stackable: true },
             { name: 'Test Sword', type: 'Weapon' },
@@ -2897,7 +3043,7 @@ test('delve completion auto-claims materials and atomically claims optional item
           ]
         }),
         autoOverflows: runScenario({
-          autoClaim: true, usedSlots: 29, maxSlots: 30, credits: 3,
+          autoClaim: true, usedSlots: 29, maxSlots: 30, feed: 3,
           items: [
             { name: 'Iron Ore', type: 'Material', quantity: 3, stackable: true },
             { name: 'First Item', type: 'Weapon' },
@@ -2905,7 +3051,7 @@ test('delve completion auto-claims materials and atomically claims optional item
           ]
         }),
         manualClaim: runScenario({
-          autoClaim: false, usedSlots: 0, maxSlots: 30, credits: 0,
+          autoClaim: false, usedSlots: 0, maxSlots: 30, feed: 0,
           items: [{ name: 'Saved Item', type: 'Weapon' }]
         })
       };
@@ -2916,7 +3062,7 @@ test('delve completion auto-claims materials and atomically claims optional item
   assert.equal(result.materialsOnly.inventoryCount, 30, 'materials consumed an ordinary inventory slot');
   assert.deepEqual(result.materialsOnly.cacheNames, []);
   assert.deepEqual(result.materialsOnly.popupWarnings, []);
-  assert.equal(result.materialsOnly.playerCurrency, 17, 'delve credits were not collected automatically');
+  assert.equal(result.materialsOnly.playerFeed, 17, 'Operation Feed was not collected automatically');
 
   assert.equal(result.autoFits.inventoryCount, 30);
   assert.deepEqual(result.autoFits.cacheNames, []);
@@ -2925,7 +3071,7 @@ test('delve completion auto-claims materials and atomically claims optional item
   assert.equal(result.autoOverflows.inventoryCount, 29, 'an overflowing auto-claim partially moved ordinary items');
   assert.deepEqual(result.autoOverflows.cacheNames, ['First Item', 'Second Item']);
   assert.deepEqual(result.autoOverflows.popupWarnings, ['Your inventory is full.']);
-  assert.equal(result.autoOverflows.playerCurrency, 13);
+  assert.equal(result.autoOverflows.playerFeed, 13);
   assert.deepEqual(result.autoOverflows.storedMaterials, [{ name: 'Iron Ore', quantity: 3 }]);
 
   assert.deepEqual(result.manualClaim.cacheNames, ['Saved Item']);

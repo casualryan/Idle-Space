@@ -23,7 +23,11 @@ function getItemSalePrice(item) {
     const direct = Number(item.salePrice);
     if (!isNaN(direct) && direct > 0) return direct;
     // Default pricing rules by type/name if no salePrice present
-    if (item.type === 'Material') {
+    if (item.type === 'Cache') {
+        return Math.max(0, Number(getCacheDefinition(item.cacheId || item.name)?.sellValue) || 0);
+    } else if (item.type === 'Core') {
+        return 125;
+    } else if (item.type === 'Material') {
         // Basic materials like Scrap Metal have a small default value
         if ((item.name||'').toLowerCase() === 'scrap metal') return 1;
         return 1; // generic material baseline
@@ -43,6 +47,17 @@ function hasInventorySpace(slotsNeeded = 1) {
 // Function to add an item to the inventory, handling stackable items
 function addItemToInventory(newItem) {
     console.log('Adding item to inventory:', newItem);
+
+    if (newItem?.type === 'Core') {
+        const added = addCoreToStorage(newItem, newItem.quantity);
+        if (added) notifyInventoryChange();
+        return added;
+    }
+    if (newItem?.type === 'Cache') {
+        const added = addCacheToStorage(newItem, newItem.quantity);
+        if (added) notifyInventoryChange();
+        return added;
+    }
 
     // Materials belong to their own fixed-slot, capacity-free storage and are
     // accepted even when the ordinary inventory is full.
@@ -111,6 +126,8 @@ function addItemToInventory(newItem) {
 
 // Function to remove an item from the inventory
 function removeItemFromInventory(itemOrName, quantity = 1) {
+    if (itemOrName?.type === 'Core') return removeStackFromMap(window.coreInventory, itemOrName.coreId, quantity);
+    if (itemOrName?.type === 'Cache') return removeStackFromMap(window.cacheInventory, itemOrName.cacheId, quantity);
     const possibleMaterialName = typeof itemOrName === 'string' ? itemOrName : itemOrName?.name;
     if (isMaterialName(possibleMaterialName)) {
         const removed = removeMaterialFromStorage(possibleMaterialName, quantity);
@@ -187,6 +204,7 @@ function updateInventoryDisplay() {
     if (!Array.isArray(inventory)) {
         console.error('Inventory is not an array:', inventory);
         updateMaterialInventoryDisplay();
+        refreshResourceStorageUI();
         return;
     }
 
@@ -325,6 +343,7 @@ function updateInventoryDisplay() {
     });
 
     updateMaterialInventoryDisplay();
+    refreshResourceStorageUI();
 }
 
 // Wire up inventory controls events (search/filter/sort)
@@ -388,6 +407,10 @@ window.wouldEquipItemCreateBlackChipConflict = wouldEquipItemCreateBlackChipConf
 
 // Function to equip an item from inventory
 function equipItem(item) {
+    if (isDelveInProgress || isCombatActive) {
+        logMessage('Equipment cannot be changed during an active Patrol or Operation.');
+        return;
+    }
     if (!item || !item.slot) {
         console.error('Invalid item or slot.');
         return;
@@ -928,6 +951,10 @@ function getEquippedItemBySlot(slotName) {
 
 // Function to unequip an item
 function unequipItem(slotName) {
+    if (isDelveInProgress || isCombatActive) {
+        logMessage('Equipment cannot be changed during an active Patrol or Operation.');
+        return;
+    }
     // If the slot is a bionic slot, handle differently
     if (slotName.startsWith('bionic-slot-')) {
         const slotIndex = parseInt(slotName.split('-')[2]);
@@ -1430,7 +1457,7 @@ function showItemOptionsPopup(item, clickEvent) {
 		if (disableConfirm) {
 			doSell();
 		} else {
-			showConfirmationPopup(`Sell ${item.name} for ${price} credits?`, doSell);
+			showConfirmationPopup(`Sell ${item.name} for ${price} Feed?`, doSell);
 		}
 	});
 	buttonsContainer.appendChild(sellButton);
@@ -1531,10 +1558,10 @@ function sellItem(item, quantity = 1) {
 		soldCount = 1;
 	}
 	const total = pricePer * soldCount;
-	if (typeof playerCurrency === 'number') {
-		playerCurrency += total;
+	if (typeof playerFeed === 'number') {
+		playerFeed += total;
 	}
-	logMessage(`Sold ${item.name}${soldCount > 1 ? ' x' + soldCount : ''} for ${total} credits.`);
+	logMessage(`Sold ${item.name}${soldCount > 1 ? ' x' + soldCount : ''} for ${total} Feed.`);
 	updateInventoryDisplay();
 }
 
@@ -1547,22 +1574,22 @@ function sellAllInInventory() {
     const doAll = () => {
         // Recompute defensively and remove as we go
         let soldCount = 0;
-        let credits = 0;
+        let feed = 0;
         window.inventory = window.inventory.filter(it => {
             if (!it || it.locked) return true;
             const price = getItemSalePrice(it);
             if (price <= 0) return true;
             const qty = it.stackable ? (it.quantity||1) : 1;
-            credits += price * qty;
+            feed += price * qty;
             soldCount += 1;
             return false; // remove from inventory
         });
-        if (typeof playerCurrency === 'number') playerCurrency += credits;
-        logMessage(`Sold ${soldCount} item${soldCount!==1?'s':''} for ${credits} credits.`);
+        if (typeof playerFeed === 'number') playerFeed += feed;
+        logMessage(`Sold ${soldCount} item${soldCount!==1?'s':''} for ${feed} Feed.`);
         updateInventoryDisplay();
         notifyInventoryChange();
     };
-    if (disableConfirm) doAll(); else showConfirmationPopup(`Sell all (${sellable.length}) items for ${previewTotal} credits?`, doAll);
+    if (disableConfirm) doAll(); else showConfirmationPopup(`Sell all (${sellable.length}) items for ${previewTotal} Feed?`, doAll);
 }
 
 // Bulk: Disassemble all eligible, unlocked items
@@ -1593,6 +1620,10 @@ function disassembleAllInInventory() {
 
 // Manage Wires UI
 function openManageWiresWindow(item) {
+    if (isDelveInProgress || isCombatActive) {
+        logMessage('Wires cannot be changed during an active Patrol or Operation.');
+        return;
+    }
     // Overlay
     const overlay = document.createElement('div');
     overlay.id = 'manage-wires-overlay';

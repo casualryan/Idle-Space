@@ -147,7 +147,7 @@ function getStylePointSummary(playerObject, styleId) {
 
 function canAllocateStyleNode(playerObject, styleId, nodeId) {
     if (!playerObject) return { ok: false, reason: 'No player.' };
-    if (!canChangeSkills()) return { ok: false, reason: 'Cannot modify combat styles during combat or a delve.' };
+    if (!canChangeSkills()) return { ok: false, reason: 'Cannot modify combat styles during combat or a deployment.' };
     normalizeCombatStylesState(playerObject);
     const style = getCombatStyles().find(candidate => candidate.id === styleId);
     const node = style ? getStyleNode(style.id, nodeId) : null;
@@ -176,7 +176,7 @@ function allocateStyleNode(playerObject, styleId, nodeId) {
 
 function canRefundStyleNode(playerObject, styleId, nodeId) {
     if (!playerObject) return { ok: false, reason: 'No player.' };
-    if (!canChangeSkills()) return { ok: false, reason: 'Cannot modify combat styles during combat or a delve.' };
+    if (!canChangeSkills()) return { ok: false, reason: 'Cannot modify combat styles during combat or a deployment.' };
     normalizeCombatStylesState(playerObject);
     if (!getStyleNode(styleId, nodeId)) return { ok: false, reason: 'Unknown combat style choice.' };
     if (!isStyleNodePurchased(playerObject, styleId, nodeId)) return { ok: false, reason: 'Choice is not selected.' };
@@ -192,7 +192,7 @@ function refundStyleNode(playerObject, styleId, nodeId) {
 
 function refundAllStyleNodes(playerObject, styleId) {
     if (!playerObject) return { ok: false, reason: 'No player.' };
-    if (!canChangeSkills()) return { ok: false, reason: 'Cannot modify combat styles during combat or a delve.' };
+    if (!canChangeSkills()) return { ok: false, reason: 'Cannot modify combat styles during combat or a deployment.' };
     normalizeCombatStylesState(playerObject);
     if (!playerObject.combatStyleAllocations[styleId]) return { ok: false, reason: 'Unknown combat style.' };
     playerObject.combatStyleAllocations[styleId].nodes = {};
@@ -476,7 +476,7 @@ function canChangeSkills() {
 }
 
 function equipCombatSkill(playerObject, styleId) {
-    if (!canChangeSkills()) return { ok: false, reason: 'Cannot change combat styles during combat or a delve.' };
+    if (!canChangeSkills()) return { ok: false, reason: 'Cannot change combat styles during combat or a deployment.' };
     if (!playerObject) return { ok: false, reason: 'No player.' };
     normalizeCombatStylesState(playerObject);
     if (!playerObject.unlockedSkillIds.includes(styleId)) return { ok: false, reason: 'Combat style not unlocked.' };

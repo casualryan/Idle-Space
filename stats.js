@@ -744,6 +744,8 @@ function calculatePlayerStats(playerObject) {
         stats.damageMultipliers.severedLimb = Math.pow(0.75, Math.max(1, Number(severedLimb.stacks) || 1));
     }
 
+    if (typeof applyActiveRunPlayerModifiers === 'function') applyActiveRunPlayerModifiers(stats);
+
     assertPlayerStatSnapshot(stats);
 
     // Assign the newly calculated stats back to the player object
@@ -1045,6 +1047,8 @@ function calculateEnemyStats(enemyObject) {
              // Note: Resistance reduction is often handled directly in the debuff's onApply/onRemove
          });
     }
+
+    if (typeof applyActiveRunEnemyModifiers === 'function') applyActiveRunEnemyModifiers(enemyObject.totalStats);
 
     // Ensure health/shield are positive
     enemyObject.totalStats.health = Math.max(1, Math.round(enemyObject.totalStats.health));

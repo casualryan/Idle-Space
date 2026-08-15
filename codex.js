@@ -3,7 +3,7 @@
         'new-player': {
             title: 'Welcome to Corebound',
             sections: [
-                ['Getting Started', 'A new character begins with a Broken Phase Sword and 1,000 credits. Equip a weapon, choose a combat style, and enter a Delve.'],
+                ['Getting Started', 'A new character begins with a Broken Phase Sword and 1,000 Feed. Equip a weapon, choose a combat style, and choose a Patrol or Operation.'],
                 ['Equipment', 'Weapons, armor, off-hands, chips, and up to four bionics shape your build. An unequipped item grants no stats, passives, or triggered effects. Bionic Sync amplifies static stats from bionics; Bionic Efficiency increases bionic triggered-effect chances.']
             ]
         },
@@ -12,7 +12,7 @@
             sections: [
                 ['Automatic Attacks', 'Combatants attack automatically according to attack speed. Precision improves damage rolls against enemy Deflection. Critical hits use the attacker’s critical multiplier.'],
                 ['Targeting', 'A fight may contain up to six enemies. Click an enemy card to select it; combat defaults to the leftmost living target. Taunts temporarily redirect your attacks without changing that selection, so attacks return to your chosen target when the taunt expires.'],
-                ['Encounter Boundaries', 'Each fight creates a fresh enemy group at full Health and Energy Shield. Your Health persists between delve encounters, while your Energy Shield reconstitutes to full after the entire group is defeated. Buffs and debuffs are cleared between fights.'],
+                ['Encounter Boundaries', 'Each fight creates a fresh enemy group at full Health and Energy Shield. Your Health persists between deployment encounters, while your Energy Shield reconstitutes to full after the entire group is defeated. Buffs and debuffs are cleared between fights.'],
                 ['Damage-Type Debuffs', 'The dominant damage type of a hit has a base chance to apply one of its two inherent debuffs. Enemies and players follow the same application rules.']
             ]
         },
@@ -34,22 +34,30 @@
             ]
         },
         'delve': {
-            title: 'Delves',
+            title: 'Deployments',
             sections: [
-                ['Temporary Loot', 'Drops and credits remain in the Delve Bag until the entire delve is completed. On success, materials and credits are collected automatically. Ordinary items move to the Delve Claim Cache unless automatic claiming is enabled and the entire batch fits.'],
-                ['Claim Cache', 'When an automatic item claim would overflow the inventory, the complete ordinary-item batch remains in the cache. Remaining items may be claimed, sold, or discarded, but starting another delve permanently destroys them. Auto re-deploy pauses while rewards are waiting.'],
-                ['Failure and Fleeing', 'Death and voluntary retreat both end the delve and destroy everything in its temporary bag.'],
-                ['Saving During a Delve', 'Loading a save restarts the current encounter with a fresh enemy group while preserving completed encounters and the exact contents of the Delve Bag.']
+                ['Patrols', 'Patrols repeat until stopped or defeated. They use the current area enemy pool, secure every reward immediately, and offer reliable but lower rewards.'],
+                ['Operations', 'Operations are finite, more rewarding runs. Occasional events alter the remaining route, and one Core may be consumed at launch for an Operation-wide effect.'],
+                ['Operation Bag', 'Operation drops remain at risk until the run succeeds. Materials, Cores, Caches, and Feed are then stored automatically; ordinary items use the Operation Claim Cache when they cannot be claimed safely.'],
+                ['Saving', 'Loading an active deployment restarts the current encounter with a fresh enemy group while preserving completed encounters, run modifiers, and secured or staged rewards.']
             ]
         },
         'fabrication': {
             title: 'Fabrication',
             sections: [
-                ['Crafting', 'The fabricator runs exactly one job at a time. Every fabrication takes five seconds. Ingredients are reserved when fabrication begins, and cancelling returns all reserved ingredients.'],
+                ['Crafting', 'The fabricator runs exactly one job at a time. Every fabrication takes five seconds and consumes Feed plus its listed materials. Cancelling returns every reserved cost.'],
                 ['Recipe Economy', 'Most recipes use a bulk foundation of fasteners, wiring, and one slot-appropriate construction material. Higher-level recipes require larger stockpiles rather than wider lists of unrelated parts.'],
                 ['Thematic Components', 'Each damage family has a common, advanced, and apex material. Later matching enemies continue dropping earlier components in larger stacks. Exceptional technology appears only in equipment with unusual identities.'],
                 ['Requirements', 'A learned recipe may be fabricated at any level. Items whose level requirement is not met can be crafted and stored, but cannot yet be equipped. Each listed ingredient includes its earliest documented acquisition source.'],
                 ['Saving', 'Active fabrications preserve their remaining time when saved and do not advance while the game is closed.']
+            ]
+        },
+        'modification': {
+            title: 'Flux Modification',
+            sections: [
+                ['Binding', 'An item may permanently bind exactly one generated modifier as its Flux target. Other modifiers can never be rerolled on that item.'],
+                ['Rerolling', 'Flux of the modifier’s grade rerolls only its value within the same grade range. Item modification is unavailable during Patrols and Operations.'],
+                ['Caches and Cores', 'Caches can be opened for uncertain themed rewards or sold unopened for guaranteed Feed. Cores drop from enemies, stack in dedicated storage, and are consumed when an Operation begins.']
             ]
         },
         'mining': {
@@ -68,7 +76,8 @@
         ['damage-types', 'Damage Types'],
         ['passives', 'Passives'],
         ['debuffs', 'Debuffs'],
-        ['delve', 'Delves'],
+        ['delve', 'Deployments'],
+        ['modification', 'Flux Modification'],
         ['fabrication', 'Fabrication'],
         ['mining', 'Mining'],
         ['enemies', 'Enemies']
@@ -439,7 +448,7 @@
             [
                 [`${Math.round((config.baseDropChance || 0) * 100)}%`, 'Base loot chance'],
                 [`${config.minItems || 0}–${config.maxItems || 0}`, 'Items on success'],
-                [currency.max > 0 ? `${currency.min || 0}–${currency.max}` : '—', 'Credits per kill']
+                [currency.max > 0 ? `${currency.min || 0}–${currency.max}` : '—', 'Feed per kill']
             ].forEach(([value, label]) => {
                 const fact = document.createElement('div');
                 fact.innerHTML = `<strong>${value}</strong><span>${label}</span>`;

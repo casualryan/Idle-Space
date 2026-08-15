@@ -77,12 +77,12 @@ facts in UI copy.
 
 ## Current gameplay contracts
 
-- New characters receive a Broken Phase Sword and 1,000 credits.
+- New characters receive a Broken Phase Sword and 1,000 Feed.
 - Balanced, Heavy, Twin, and Counter Styles are available. Each changes the
   automatic attack pattern and has one exclusive choice in each mastery tier,
   unlocked at levels 11, 26, and 41.
-- Fabrication reserves materials immediately, takes five seconds, allows one
-  active job, and refunds the reservation when cancelled. Every ingredient has a
+- Fabrication reserves Feed and materials immediately, takes five seconds,
+  allows one active job, and refunds the reservation when cancelled. Every ingredient has a
   documented source available no later than the level of the recipe using it.
 - Materials use categorized, fixed-position storage below the ordinary
   inventory. They do not consume ordinary slots, stack to 50,000 each, and old
@@ -91,13 +91,18 @@ facts in UI copy.
   common/advanced/apex damage-family ladders, and exceptional neutral parts.
   Standard recipes use at most six ingredient types, while enemy stack sizes
   and recipe quantities both rise across progression. Matching enemies remain
-  the best targeted source, but later delves retain earlier materials.
-- Health persists between encounters inside a delve. Energy Shield is restored
+  the best targeted source, but later deployment areas retain earlier materials.
+- Health persists between encounters inside a deployment. Energy Shield is restored
   to its current maximum after each victory before the next enemy appears.
-- Successful delves automatically collect materials and credits. Ordinary items
-  enter the persistent claim cache unless Auto-claim all items is enabled and
-  the complete item batch fits. Starting another delve destroys anything left
-  there; auto re-deploy waits for the cache to be claimed or sold.
+- Patrols run indefinitely, secure loot immediately, and trade peak rewards for
+  low-attention reliability. Operations are finite, stage rewards at risk, use
+  occasional choices, and allow one consumed Core per run.
+- Successful Operations automatically collect resources and Feed. Ordinary
+  items enter the persistent claim cache unless Auto-claim all items is enabled
+  and the complete item batch fits. Starting another Operation destroys anything
+  left there; auto re-deploy waits for the cache to be claimed or sold.
+- Cores and Caches use dedicated stack storage. Flux I–V uses material storage
+  and rerolls one permanently bound generated modifier within its existing grade.
 - Recipes are all available during the current baseline. A future blueprint
   progression system will permanently teach a recipe when its blueprint is
   read; learned recipes will remain reusable without consuming the blueprint.

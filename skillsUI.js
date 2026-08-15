@@ -8,7 +8,7 @@ function getCombatStylesUiData() {
 
 function getSkillsGatingMessage() {
     return typeof canChangeSkills === 'function' && !canChangeSkills()
-        ? 'Combat Styles cannot be changed during combat or an active delve.'
+        ? 'Combat Styles cannot be changed during combat or an active deployment.'
         : null;
 }
 

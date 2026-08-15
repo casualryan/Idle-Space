@@ -211,7 +211,8 @@ function spawnEnemyEncounter(encounterEntries) {
     const entries = Array.isArray(encounterEntries) ? encounterEntries : [];
     if (entries.length === 0) return false;
     encounterSerial++;
-    const rewardScale = 1 / entries.length;
+    const runRewardScale = currentRunMode === 'operation' ? 1.15 : currentRunMode === 'patrol' ? 0.75 : 1;
+    const rewardScale = runRewardScale / entries.length;
     encounterEnemies = entries.map((entry, slotIndex) => createEnemyInstance(
         entry.name,
         Boolean(entry.isEmpowered),
@@ -406,31 +407,41 @@ function stopCombat(reason) {
             isDelveInProgress = false;
             currentDelveLocation = null;
             currentMonsterIndex = 0;
+            clearActiveRunState();
             stopHealthRegen();
             startHealthRegen();
         } else if (reason === 'enemyDefeated') {
             currentMonsterIndex++;
             clearBuffs(player);
-            if (currentDelveLocation && currentMonsterIndex < currentDelveLocation.numFights) {
+            if (currentRunMode === 'operation') completeOperationEncounter();
+            const hasAnotherEncounter = currentRunMode === 'patrol'
+                || (currentDelveLocation && currentMonsterIndex < getOperationEncounterTarget());
+            if (hasAnotherEncounter) {
                 refreshEnergyShieldBetweenDelveEncounters();
             }
             resetEncounterState();
             updateEnemyStatsDisplay();
+            if (shouldTriggerOperationEvent()) {
+                showOperationEvent();
+                return;
+            }
             interFightPauseTimer = setTimeout(beginNextMonsterInSequence, 3000);
             return;
         }
     }
 
     if (reason === 'delveCompleted') {
+        const finishedMode = currentRunMode;
         isDelveInProgress = false;
         currentDelveLocation = null;
         currentMonsterIndex = 0;
+        clearActiveRunState();
         try {
             const auto = localStorage.getItem('autoRedeploy') === 'true';
-            if (auto && window.lastDelveLocation && !hasDelveClaimCacheRewards()) {
+            if (auto && finishedMode === 'operation' && window.lastDelveLocation && !hasDelveClaimCacheRewards()) {
                 setTimeout(() => startAdventure(window.lastDelveLocation), 500);
             } else if (auto && hasDelveClaimCacheRewards()) {
-                logMessage('Auto re-deploy paused until the Delve Claim Cache is cleared.');
+                logMessage('Auto re-deploy paused until the Operation Claim Cache is cleared.');
             }
         } catch (error) { /* local storage is optional */ }
         stopHealthRegen();

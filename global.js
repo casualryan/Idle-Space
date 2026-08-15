@@ -3,8 +3,19 @@ window.currentScreen = '';
 console.log('global.js loaded');
 console.log('window.inventory at the start:', window.inventory);
 
-const STARTING_CREDITS = 1000;
-let playerCurrency = STARTING_CREDITS;
+const STARTING_FEED = 1000;
+let playerFeed = STARTING_FEED;
+
+function updateFeed(amount) {
+    playerFeed = Math.max(0, playerFeed + Math.floor(Number(amount) || 0));
+    renderGlobalStatusBanner();
+    return playerFeed;
+}
+
+// Compatibility for legacy extensions that still call the old reward helper.
+function updateCurrency(amount) {
+    return updateFeed(amount);
+}
 
 // Add this near the top of the file with other constants
 const MAX_PLAYER_LEVEL = 51;
@@ -384,7 +395,7 @@ function takeSaveControlAndReload() {
     return { ok: true };
 }
 
-function formatCreditsValue(value) {
+function formatFeedValue(value) {
     try {
         return Number(value || 0).toLocaleString();
     } catch (_) {
@@ -446,7 +457,7 @@ function formatSnapshotPreview(preview) {
     if (preview.state === 'corrupt') return 'Unreadable snapshot';
     if (preview.state === 'empty') return 'No snapshot';
     const dateLabel = preview.savedAt ? new Date(preview.savedAt).toLocaleString() : 'Unknown time';
-    return `Level ${preview.level} · ${formatCreditsValue(preview.credits)} credits · ${dateLabel}`;
+    return `Level ${preview.level} · ${formatFeedValue(preview.feed)} Feed · ${dateLabel}`;
 }
 
 function setMainMenuStatus(message = '', tone = '') {
@@ -576,7 +587,7 @@ function buildGameStateSnapshot() {
             gatheringSkills: player.gatheringSkills,
             activeBuffs: player.activeBuffs,
             equipment: player.equipment,
-            currency: playerCurrency,
+            feed: playerFeed,
             maxInventorySlots: player.maxInventorySlots,
             passives: {
                 allocations: player.passiveAllocations,
@@ -592,12 +603,17 @@ function buildGameStateSnapshot() {
         },
         inventory: window.inventory,
         materialInventory: normalizeMaterialStorage(window.materialInventory),
+        coreInventory: normalizeCoreInventory(window.coreInventory),
+        cacheInventory: normalizeCacheInventory(window.cacheInventory),
+        pendingCacheResolution: window.pendingCacheResolution,
         componentDropCounts: window.componentDropCounts || {},
         isDelveInProgress: (typeof isDelveInProgress !== 'undefined') ? isDelveInProgress : false,
         currentDelveLocation: (typeof currentDelveLocation !== 'undefined') ? currentDelveLocation : null,
         currentMonsterIndex: (typeof currentMonsterIndex !== 'undefined') ? currentMonsterIndex : 0,
-        delveBag: (typeof delveBag !== 'undefined') ? delveBag : { items: [], credits: 0 },
-        delveClaimCache: (typeof delveClaimCache !== 'undefined') ? delveClaimCache : { items: [], credits: 0 },
+        delveBag: (typeof delveBag !== 'undefined') ? delveBag : { items: [], feed: 0 },
+        delveClaimCache: (typeof delveClaimCache !== 'undefined') ? delveClaimCache : { items: [], feed: 0 },
+        currentRunMode: (typeof currentRunMode !== 'undefined') ? currentRunMode : null,
+        operationState: (typeof operationState !== 'undefined') ? operationState : null,
         completedDelveLocations: (typeof completedDelveLocations !== 'undefined') ? completedDelveLocations : {},
         activityState: {
             active: Boolean(managerState.active),
@@ -741,7 +757,7 @@ function loadGame(slotIndex = null, saveKind = 'autosave') {
         }
         player.activeBuffs = savedPlayer.activeBuffs || [];
         player.equipment = restoredEquipment;
-        playerCurrency = (typeof savedPlayer.currency === 'number') ? savedPlayer.currency : playerCurrency;
+        playerFeed = (typeof savedPlayer.feed === 'number') ? savedPlayer.feed : playerFeed;
         player.maxInventorySlots = savedPlayer.maxInventorySlots || 30;
 
         if (savedPlayer.passives) {
@@ -765,6 +781,11 @@ function loadGame(slotIndex = null, saveKind = 'autosave') {
         }
 
         window.materialInventory = normalizeMaterialStorage(gameState.materialInventory);
+        window.coreInventory = normalizeCoreInventory(gameState.coreInventory);
+        window.cacheInventory = normalizeCacheInventory(gameState.cacheInventory);
+        window.pendingCacheResolution = gameState.pendingCacheResolution && typeof gameState.pendingCacheResolution === 'object'
+            ? gameState.pendingCacheResolution
+            : null;
         window.inventory = migrateLooseMaterialsToStorage(restoredInventory);
         window.componentDropCounts = gameState.componentDropCounts && typeof gameState.componentDropCounts === 'object'
             ? { ...gameState.componentDropCounts }
@@ -780,16 +801,20 @@ function loadGame(slotIndex = null, saveKind = 'autosave') {
             currentMonsterIndex = Number(gameState.currentMonsterIndex || 0);
         }
         if (typeof delveBag !== 'undefined') {
-            delveBag = gameState.delveBag || { items: [], credits: 0 };
+            delveBag = gameState.delveBag || { items: [], feed: 0 };
         }
         if (typeof delveClaimCache !== 'undefined') {
-            const savedCache = gameState.delveClaimCache || { items: [], credits: 0 };
+            const savedCache = gameState.delveClaimCache || { items: [], feed: 0 };
             delveClaimCache = {
                 items: Array.isArray(savedCache.items)
                     ? savedCache.items.map(savedItem => restoreItem(savedItem))
                     : [],
-                credits: Math.max(0, Number(savedCache.credits) || 0)
+                feed: Math.max(0, Number(savedCache.feed) || 0)
             };
+        }
+        if (typeof currentRunMode !== 'undefined') currentRunMode = gameState.currentRunMode || (isDelveInProgress ? 'operation' : null);
+        if (typeof operationState !== 'undefined') {
+            operationState = currentRunMode === 'operation' ? normalizeOperationState(gameState.operationState) : null;
         }
         if (typeof completedDelveLocations !== 'undefined') {
             completedDelveLocations = gameState.completedDelveLocations && typeof gameState.completedDelveLocations === 'object'
@@ -990,13 +1015,18 @@ function initializeNewCharacterState() {
 
     window.inventory = [];
     window.materialInventory = {};
+    window.coreInventory = {};
+    window.cacheInventory = {};
+    window.pendingCacheResolution = null;
     window.componentDropCounts = {};
-    if (typeof delveClaimCache !== 'undefined') delveClaimCache = { items: [], credits: 0 };
+    if (typeof delveClaimCache !== 'undefined') delveClaimCache = { items: [], feed: 0 };
     if (typeof completedDelveLocations !== 'undefined') completedDelveLocations = {};
     if (typeof isDelveInProgress !== 'undefined') isDelveInProgress = false;
     if (typeof currentDelveLocation !== 'undefined') currentDelveLocation = null;
     if (typeof currentMonsterIndex !== 'undefined') currentMonsterIndex = 0;
-    if (typeof delveBag !== 'undefined') delveBag = { items: [], credits: 0 };
+    if (typeof delveBag !== 'undefined') delveBag = { items: [], feed: 0 };
+    if (typeof currentRunMode !== 'undefined') currentRunMode = null;
+    if (typeof operationState !== 'undefined') operationState = null;
     if (typeof currentLocation !== 'undefined') currentLocation = null;
     if (typeof closeDelveClaimCachePopup === 'function') closeDelveClaimCachePopup();
 
@@ -1004,7 +1034,7 @@ function initializeNewCharacterState() {
     if (startingItemTemplate) window.inventory.push(generateItemInstance(startingItemTemplate));
     else console.warn('Starting item template not found.');
 
-    playerCurrency = STARTING_CREDITS;
+    playerFeed = STARTING_FEED;
     player.calculateStats();
     player.currentHealth = player.totalStats.health;
     player.currentShield = player.totalStats.energyShield;
@@ -1241,7 +1271,7 @@ window.registerCoreboundInitializer(() => {
             logMessage('Keybinds reset to defaults.');
         };
 
-        // Dev tools: add +1 level and +1,000,000 credits
+        // Dev tools: add +1 level and +1,000,000 Feed
         const addLvlBtn = document.getElementById('dev-add-level');
         if (addLvlBtn) {
             addLvlBtn.onclick = () => {
@@ -1258,8 +1288,8 @@ window.registerCoreboundInitializer(() => {
         const addCredBtn = document.getElementById('dev-add-credits');
         if (addCredBtn) {
             addCredBtn.onclick = () => {
-                playerCurrency = (playerCurrency || 0) + 1000000;
-                logMessage('Added 1,000,000 credits.');
+                playerFeed = (playerFeed || 0) + 1000000;
+                logMessage('Added 1,000,000 Feed.');
                 updateInventoryDisplay();
             };
         }
@@ -1459,8 +1489,8 @@ function renderGlobalStatusBanner() {
     const level = Number(player?.level || 1);
     const xp = Math.max(0, Math.floor(Number(player?.experience || 0)));
     const xpNext = Math.max(1, Math.floor(getXPForNextLevel(level) || 1));
-    const credits = Math.max(0, Math.floor(Number(playerCurrency || 0))).toLocaleString();
-    const leftText = `Level ${level} · XP ${xp}/${xpNext} · Credits ${credits}`;
+    const feed = Math.max(0, Math.floor(Number(playerFeed || 0))).toLocaleString();
+    const leftText = `Level ${level} · XP ${xp}/${xpNext} · Feed ${feed}`;
 
     let activityText = 'Activity: Idle';
     let activityPercent = 0;
@@ -1480,9 +1510,10 @@ function renderGlobalStatusBanner() {
     } else if (typeof isDelveInProgress !== 'undefined' && isDelveInProgress) {
         const locationName = (typeof currentDelveLocation !== 'undefined' && currentDelveLocation?.name)
             ? currentDelveLocation.name
-            : 'Delve';
+            : 'Deployment';
         const fightNumber = (typeof currentMonsterIndex !== 'undefined' ? currentMonsterIndex + 1 : 1);
-        activityText = `Activity: Delve · ${locationName} · Fight ${fightNumber}`;
+        const runLabel = typeof currentRunMode !== 'undefined' && currentRunMode === 'patrol' ? 'Patrol' : 'Operation';
+        activityText = `Activity: ${runLabel} · ${locationName} · Encounter ${fightNumber}`;
     }
     if (activityState?.alert?.message) {
         activityAlert = activityState.alert;
@@ -1525,9 +1556,10 @@ function renderGlobalStatusBanner() {
     } else if (typeof isDelveInProgress !== 'undefined' && isDelveInProgress) {
         const locationName = (typeof currentDelveLocation !== 'undefined' && currentDelveLocation?.name)
             ? currentDelveLocation.name
-            : 'Delve';
+            : 'Deployment';
         const fightNumber = (typeof currentMonsterIndex !== 'undefined' ? currentMonsterIndex + 1 : 1);
-        combatText = `${locationName} · Fight ${fightNumber}`;
+        const runLabel = typeof currentRunMode !== 'undefined' && currentRunMode === 'patrol' ? 'Patrol' : 'Operation';
+        combatText = `${runLabel} · ${locationName} · Encounter ${fightNumber}`;
     }
 
     const rightText = activityAlert

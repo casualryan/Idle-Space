@@ -25,8 +25,10 @@ const combatState = {
     currentDelveLocation: null,
     currentMonsterIndex: 0,
     interFightPauseTimer: null,
-    delveBag: { items: [], credits: 0 },
-    delveClaimCache: { items: [], credits: 0 },
+    delveBag: { items: [], feed: 0 },
+    delveClaimCache: { items: [], feed: 0 },
+    currentRunMode: null,
+    operationState: null,
     completedDelveLocations: {}
 };
 

@@ -383,7 +383,8 @@ function getFabricationState() {
         remainingMs: Math.max(0, fabrication.durationMs - (Date.now() - fabrication.startTime)),
         craftingOptions: fabrication.recipe.craftingOptions
             ? { ...fabrication.recipe.craftingOptions }
-            : undefined
+            : undefined,
+        feedCostPaid: fabrication.recipe.feedCostPaid === true
     }));
 }
 
@@ -398,11 +399,18 @@ function restoreFabricationState(savedFabrications) {
     const [activeJob, ...legacyExtraJobs] = savedFabrications;
     if (activeJob) {
         const recipe = findRestorableRecipe(activeJob.recipeName);
-        if (recipe) scheduleFabrication(resolveRecipeForFabrication(recipe, activeJob.craftingOptions), activeJob.remainingMs);
+        if (recipe) scheduleFabrication({
+            ...resolveRecipeForFabrication(recipe, activeJob.craftingOptions),
+            feedCostPaid: activeJob.feedCostPaid === true
+        }, activeJob.remainingMs);
     }
     legacyExtraJobs.forEach(saved => {
         const recipe = findRestorableRecipe(saved.recipeName);
-        if (recipe) refundMaterials(resolveRecipeForFabrication(recipe, saved.craftingOptions).ingredients);
+        if (recipe) {
+            const resolved = resolveRecipeForFabrication(recipe, saved.craftingOptions);
+            refundMaterials(resolved.ingredients);
+            if (saved.feedCostPaid === true) playerFeed += Math.max(0, Number(resolved.feedCost) || 0);
+        }
     });
     if (legacyExtraJobs.length > 0) {
         logMessage('Older concurrent fabrication jobs were cancelled and their materials refunded.');
@@ -536,6 +544,10 @@ function startFabrication(recipe) {
         logMessage('You do not have the required materials to fabricate this item.');
         return;
     }
+    if (playerFeed < fabricationRecipe.feedCost) {
+        logMessage(`Requires ${fabricationRecipe.feedCost} Feed to fabricate ${recipe.name}.`);
+        return;
+    }
 
     const outputTemplate = getRecipeItemTemplate(recipe);
     if (!isMaterialItem(outputTemplate) && !hasInventorySpace(1)) {
@@ -548,8 +560,9 @@ function startFabrication(recipe) {
     }
 
     removeMaterialsFromInventory(fabricationRecipe.ingredients);
+    playerFeed -= fabricationRecipe.feedCost;
     updateInventoryDisplay();
-    scheduleFabrication(fabricationRecipe);
+    scheduleFabrication({ ...fabricationRecipe, feedCostPaid: true });
 
     renderFabricationActivePanel();
     displayFabricationRecipes();
@@ -564,12 +577,13 @@ function stopFabrication(recipe) {
     delete ongoingFabrications[recipe.name];
 
     refundMaterials(fabrication.recipe.ingredients);
+    if (fabrication.recipe.feedCostPaid === true) updateFeed(Math.max(0, Number(fabrication.recipe.feedCost) || 0));
 
     renderFabricationActivePanel();
     syncAllFabricationUI();
     displayFabricationRecipes();
 
-    logMessage(`Fabrication of ${getFabricationOutputLabel(fabrication.recipe)} has been stopped. Materials refunded.`);
+    logMessage(`Fabrication of ${getFabricationOutputLabel(fabrication.recipe)} has been stopped. Reserved resources refunded.`);
 }
 
 function completeFabrication(recipe) {
@@ -596,6 +610,7 @@ function completeFabrication(recipe) {
                     showWarningPopup('Your inventory is full. Crafted item cannot be added. Materials have been refunded.');
                 }
                 refundMaterials(completedRecipe.ingredients);
+                if (completedRecipe.feedCostPaid === true) playerFeed += Math.max(0, Number(completedRecipe.feedCost) || 0);
             } else {
                 addItemToInventory(craftedItem);
                 logMessage(`You have fabricated: ${craftedItem.name}`);
@@ -608,11 +623,13 @@ function completeFabrication(recipe) {
             console.error('Error generating item:', error);
             logMessage(`Error fabricating ${completedRecipe.name}. Please try again.`);
             refundMaterials(completedRecipe.ingredients);
+            if (completedRecipe.feedCostPaid === true) playerFeed += Math.max(0, Number(completedRecipe.feedCost) || 0);
         }
     } else {
         console.error(`Item template not found for ${completedRecipe.name}`);
         logMessage(`Fabrication completed, but item template for ${completedRecipe.name} was not found.`);
         refundMaterials(completedRecipe.ingredients);
+        if (completedRecipe.feedCostPaid === true) playerFeed += Math.max(0, Number(completedRecipe.feedCost) || 0);
     }
 
     renderFabricationActivePanel();
@@ -815,7 +832,7 @@ function createRecipeCard(recipe) {
     // Ingredients section
     const ingredients = document.createElement('div');
     ingredients.className = 'recipe-ingredients';
-    ingredients.innerHTML = `<div class="recipe-ingredients-title">Required Materials:</div>`;
+    ingredients.innerHTML = `<div class="recipe-ingredients-title">Required Resources:</div>`;
     
     const ingredientsList = document.createElement('ul');
     ingredientsList.className = 'ingredients-list';
@@ -838,6 +855,10 @@ function createRecipeCard(recipe) {
     }
     
     ingredients.appendChild(ingredientsList);
+    const feedLine = document.createElement('div');
+    feedLine.className = `recipe-feed-cost ${playerFeed >= selectedRecipe.feedCost ? '' : 'missing'}`;
+    feedLine.innerHTML = `<span>Feed × ${selectedRecipe.feedCost.toLocaleString()}</span><span>${playerFeed >= selectedRecipe.feedCost ? '✓' : '✗'}</span>`;
+    ingredients.appendChild(feedLine);
     body.appendChild(ingredients);
     
     // Crafting time
@@ -865,7 +886,7 @@ function createRecipeCard(recipe) {
     button.className = 'fab-button';
     button.textContent = inProgress ? 'Cancel Fabrication' : (fabricatorBusy ? 'Fabricator Busy' : 'Fabricate');
 
-    const canCraft = hasRequiredMaterials(selectedRecipe.ingredients);
+    const canCraft = hasRequiredMaterials(selectedRecipe.ingredients) && playerFeed >= selectedRecipe.feedCost;
     button.disabled = inProgress ? false : (!canCraft || fabricatorBusy);
 
     if (inProgress) {

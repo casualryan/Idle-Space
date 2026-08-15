@@ -61,13 +61,13 @@ function createCoreboundSaveProfileStore(options = {}) {
         try {
             const parsed = JSON.parse(snapshot.raw);
             const level = Math.max(1, Math.floor(Number(parsed?.player?.level) || 1));
-            const credits = Math.max(0, Number(parsed?.player?.currency) || 0);
+            const feed = Math.max(0, Number(parsed?.player?.feed ?? parsed?.player?.currency) || 0);
             const savedAt = Number(parsed?.meta?.savedAt || 0);
             return {
                 ...snapshot,
                 state: 'ok',
                 level,
-                credits,
+                feed,
                 savedAt: Number.isFinite(savedAt) && savedAt > 0 ? savedAt : null
             };
         } catch (_) {

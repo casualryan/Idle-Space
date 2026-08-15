@@ -639,15 +639,15 @@ function asModifierRange(value) {
     return null;
 }
 
-function rollValueFromModifierRange(range) {
+function rollValueFromModifierRange(range, random = Math.random) {
     const min = Number(range.min);
     const max = Number(range.max);
     if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
     const hasDecimals = min % 1 !== 0 || max % 1 !== 0;
     if (hasDecimals) {
-        return Number(getRandomFloat(min, max).toFixed(2));
+        return Number((min + (Math.min(0.999999, Math.max(0, random())) * (max - min))).toFixed(2));
     }
-    return getRandomInt(Math.round(min), Math.round(max));
+    return Math.floor(Math.min(0.999999, Math.max(0, random())) * (Math.round(max) - Math.round(min) + 1)) + Math.round(min);
 }
 
 function addValueAtPath(target, path, value) {
@@ -663,6 +663,95 @@ function addValueAtPath(target, path, value) {
     const last = parts[parts.length - 1];
     const current = typeof node[last] === 'number' ? node[last] : 0;
     node[last] = current + value;
+}
+
+function subtractValueAtPath(target, path, value) {
+    const parts = path.split('.');
+    let node = target;
+    for (let index = 0; index < parts.length - 1; index++) {
+        node = node?.[parts[index]];
+        if (!node || typeof node !== 'object') return;
+    }
+    const key = parts[parts.length - 1];
+    const current = Number(node?.[key]);
+    if (!Number.isFinite(current)) return;
+    const next = Number((current - Number(value || 0)).toFixed(6));
+    if (Math.abs(next) < 0.000001) delete node[key];
+    else node[key] = next;
+}
+
+function getRandomModifierStoragePath(item, definition) {
+    const ctx = getModifierContext(item);
+    if (ctx.isWeapon && definition.statPath.startsWith('damageTypes.')) {
+        return `weaponLocalFlatDamage.${definition.statPath.split('.')[1]}`;
+    }
+    if (ctx.isWeapon && definition.statPath.startsWith('statModifiers.damageTypes.')) {
+        return `weaponLocalTypeIncrease.${definition.statPath.split('.')[2]}`;
+    }
+    if (ctx.isWeapon && definition.statPath.startsWith('statModifiers.damageGroups.')) {
+        return `weaponLocalGroupIncrease.${definition.statPath.split('.')[2]}`;
+    }
+    if (ctx.isWeapon && definition.statPath === 'attackSpeedModifier') return 'weaponLocalAttackSpeedPercent';
+    return definition.statPath;
+}
+
+function removeRandomModifierValue(item, definition, appliedValue) {
+    const value = Number(appliedValue);
+    if (!Number.isFinite(value)) return false;
+    if (definition.applyType === 'allResistances') {
+        ['physicalResistance', 'elementalResistance', 'chemicalResistance']
+            .forEach(type => subtractValueAtPath(item, `defenseTypes.${type}`, value));
+        return true;
+    }
+    subtractValueAtPath(item, getRandomModifierStoragePath(item, definition), value);
+    if (definition.statPath === 'healthBonusPercent') {
+        item.healthBonusPercentDisplay = Number(((item.healthBonusPercent || 0) * 100).toFixed(2));
+    } else if (definition.statPath === 'energyShieldBonusPercent') {
+        item.energyShieldBonusPercentDisplay = Number(((item.energyShieldBonusPercent || 0) * 100).toFixed(2));
+    } else if (definition.statPath === 'attackSpeedModifier' && !getModifierContext(item).isWeapon) {
+        item.attackSpeedModifierPercent = Number(((item.attackSpeedModifier || 0) * 100).toFixed(2));
+    }
+    return true;
+}
+
+function getModifierRollRange(item, modifierOrId) {
+    const modifier = typeof modifierOrId === 'string'
+        ? item?.rolledModifiers?.find(candidate => candidate.id === modifierOrId)
+        : modifierOrId;
+    const definition = RANDOM_MODIFIER_DEFINITIONS.find(candidate => candidate.id === modifier?.id);
+    const grade = Math.max(1, Math.min(5, Math.floor(Number(modifier?.grade) || 1)));
+    const baseRange = definition ? asModifierRange(definition.grades[grade]) : null;
+    if (!definition || !baseRange) return null;
+    const multiplier = typeof definition.valueMultiplier === 'function'
+        ? Math.max(0, Number(definition.valueMultiplier(getModifierContext(item))) || 1)
+        : 1;
+    const integerRange = Number.isInteger(baseRange.min) && Number.isInteger(baseRange.max);
+    const normalize = value => integerRange ? Math.max(1, Math.round(value * multiplier)) : Number((value * multiplier).toFixed(2));
+    return {
+        min: normalize(baseRange.min),
+        max: normalize(baseRange.max),
+        grade,
+        gradeLabel: getModifierGradeLabel(grade),
+        isPercent: Boolean(definition.isPercent)
+    };
+}
+
+function rerollBoundItemModifier(item, random = Math.random) {
+    if (!item?.fluxTargetModifierId || !Array.isArray(item.rolledModifiers)) return null;
+    const modifier = item.rolledModifiers.find(candidate => candidate.id === item.fluxTargetModifierId);
+    const definition = RANDOM_MODIFIER_DEFINITIONS.find(candidate => candidate.id === modifier?.id);
+    const range = getModifierRollRange(item, modifier);
+    if (!modifier || !definition || !range) return null;
+
+    const previousDisplayValue = Number(modifier.displayValue);
+    const nextDisplayValue = rollValueFromModifierRange({ min: range.min, max: range.max }, random);
+    if (nextDisplayValue === null) return null;
+    removeRandomModifierValue(item, definition, modifier.value);
+    const nextAppliedValue = applyRandomModifierValue(item, definition, nextDisplayValue);
+    modifier.value = nextAppliedValue;
+    modifier.displayValue = nextDisplayValue;
+    modifier.gradeLabel = getModifierGradeLabel(modifier.grade);
+    return { modifier, range, previousDisplayValue, nextDisplayValue };
 }
 
 function applyRandomModifierValue(item, definition, rolledValue) {
@@ -809,6 +898,8 @@ function getRandomModifierPreviewInfo(template) {
 
 window.getRandomModifierPreviewInfo = getRandomModifierPreviewInfo;
 window.getModifierGradeLabel = getModifierGradeLabel;
+window.getModifierRollRange = getModifierRollRange;
+window.rerollBoundItemModifier = rerollBoundItemModifier;
 
 function generateItemInstance(template) {
     const item = JSON.parse(JSON.stringify(template));

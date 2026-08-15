@@ -1,5 +1,8 @@
 // Delve deployment, claim-cache, and temporary reward rendering.
 
+let selectedDeploymentMode = 'operation';
+let selectedOperationCoreId = '';
+
 function closeDelveClaimCachePopup() {
     document.getElementById('delve-claim-cache-overlay')?.remove();
 }
@@ -39,14 +42,14 @@ function showDelveClaimCachePopup(warningMessage = '') {
     `).join('');
 
     popup.innerHTML = `
-        <h2 id="delve-claim-cache-title">Delve Claim Cache</h2>
+        <h2 id="delve-claim-cache-title">Operation Claim Cache</h2>
         ${visibleWarning ? `<p class="delve-claim-cache-full-warning">${visibleWarning}</p>` : ''}
-        <p class="delve-claim-cache-warning">Unclaimed rewards disappear when you start another delve.</p>
-        <div class="delve-claim-cache-credits">Credits waiting: ${delveClaimCache.credits}</div>
+        <p class="delve-claim-cache-warning">Unclaimed rewards disappear when you start another Operation.</p>
+        <div class="delve-claim-cache-credits">Feed waiting: ${delveClaimCache.feed}</div>
         <ul class="delve-claim-cache-list">${rows || '<li class="delve-claim-cache-empty">No items waiting.</li>'}</ul>
         <div class="delve-claim-cache-actions">
             <button type="button" data-claim-cache-action="all">Claim All That Fits</button>
-            <button type="button" data-claim-cache-action="sell">Sell/Discard Remaining (${getDelveClaimCacheSaleValue()} item credits)</button>
+            <button type="button" data-claim-cache-action="sell">Sell/Discard Remaining (${getDelveClaimCacheSaleValue()} Feed)</button>
             <button type="button" data-claim-cache-action="close">Close</button>
         </div>
     `;
@@ -67,9 +70,9 @@ function appendDelveClaimCacheAccess(container) {
     const panel = document.createElement('div');
     panel.className = 'delve-claim-cache-access';
     panel.innerHTML = `
-        <strong>Unclaimed Delve Rewards</strong>
-        <span>${delveClaimCache.items.length} item${delveClaimCache.items.length === 1 ? '' : 's'} · ${delveClaimCache.credits} credits</span>
-        <span class="delve-claim-cache-warning">Starting another delve destroys them.</span>
+        <strong>Unclaimed Operation Rewards</strong>
+        <span>${delveClaimCache.items.length} item${delveClaimCache.items.length === 1 ? '' : 's'} · ${delveClaimCache.feed} Feed</span>
+        <span class="delve-claim-cache-warning">Starting another Operation destroys them.</span>
         <button type="button">Open Claim Cache</button>
     `;
     panel.querySelector('button').addEventListener('click', () => showDelveClaimCachePopup());
@@ -90,14 +93,14 @@ function updateDelveBagUI() {
 
         // Create header
         const header = document.createElement('h3');
-        header.textContent = 'Delve Bag';
+        header.textContent = 'Operation Bag';
         delveBagContainer.appendChild(header);
 
-        // Create credits display
-        const creditsDiv = document.createElement('div');
-        creditsDiv.id = 'delve-bag-credits';
-        creditsDiv.className = 'delve-bag-credits';
-        delveBagContainer.appendChild(creditsDiv);
+        // Create Feed display
+        const feedDiv = document.createElement('div');
+        feedDiv.id = 'delve-bag-credits';
+        feedDiv.className = 'delve-bag-credits';
+        delveBagContainer.appendChild(feedDiv);
 
         // Create items list
         const itemsList = document.createElement('ul');
@@ -109,10 +112,10 @@ function updateDelveBagUI() {
         if (drawer) drawer.appendChild(delveBagContainer);
     }
 
-    // Update credits display
-    const creditsDiv = document.getElementById('delve-bag-credits');
-    if (creditsDiv) {
-        creditsDiv.textContent = `Credits: ${delveBag.credits}`;
+    // Update Feed display
+    const feedDiv = document.getElementById('delve-bag-credits');
+    if (feedDiv) {
+        feedDiv.textContent = `Feed: ${delveBag.feed}`;
     }
 
     // Update items list
@@ -186,9 +189,11 @@ function displayAdventureLocations() {
 
     // If a delve is currently in progress, show a "Flee" button and hide location buttons
     if (isDelveInProgress) {
+        const bagToggle = document.getElementById('delve-bag-toggle');
+        if (bagToggle) bagToggle.hidden = currentRunMode === 'patrol';
         // Create a stylish Flee button
         const fleeButton = document.createElement('button');
-        fleeButton.textContent = "Flee Delve";
+        fleeButton.textContent = currentRunMode === 'patrol' ? 'Stop Patrol' : 'Abort Operation';
         fleeButton.className = 'delve-button danger';
         fleeButton.style.fontSize = '16px';
         fleeButton.style.padding = '12px 24px';
@@ -222,7 +227,9 @@ function displayAdventureLocations() {
 
         // Stylish warning note
         const note = document.createElement('p');
-        note.innerHTML = '<span style="color: #ff6b6b; font-weight: bold; text-shadow: 0 0 5px rgba(255, 107, 107, 0.3);">⚠️ You are currently delving.</span> <span style="color: #e0f2ff;">Fleeing will forfeit your Delve Bag loot!</span>';
+        note.innerHTML = currentRunMode === 'patrol'
+            ? '<span style="color:#61e9bd;font-weight:bold;">PATROL ACTIVE</span> <span style="color:#e0f2ff;">Recovered loot is already secured.</span>'
+            : '<span style="color:#ff6b6b;font-weight:bold;">OPERATION ACTIVE</span> <span style="color:#e0f2ff;">Aborting forfeits Operation Bag loot.</span>';
         note.style.padding = '10px';
         note.style.background = 'rgba(0, 15, 40, 0.7)';
         note.style.borderRadius = '4px';
@@ -230,11 +237,13 @@ function displayAdventureLocations() {
         delveControlsDiv.appendChild(note);
 
     } else {
+        const bagToggle = document.getElementById('delve-bag-toggle');
+        if (bagToggle) bagToggle.hidden = false;
         // Create a sci-fi themed holographic location selection interface
 
         // Main section title with futuristic styling
         const mainTitle = document.createElement('h3');
-        mainTitle.textContent = 'NEXUS DEPLOYMENT TERMINAL';
+        mainTitle.textContent = 'DEPLOYMENT TERMINAL';
         mainTitle.className = 'locations-main-title';
         mainTitle.style.color = '#00ffcc';
         mainTitle.style.textShadow = '0 0 8px rgba(0, 255, 204, 0.7)';
@@ -285,9 +294,53 @@ function displayAdventureLocations() {
         interfaceContainer.style.overflow = 'hidden'; // For the scanner effect
         adventureDiv.appendChild(interfaceContainer);
 
-        // Delve automation toggles
+        const modeStrip = document.createElement('div');
+        modeStrip.className = 'deployment-mode-strip';
+        [
+            { id: 'operation', name: 'Operation', detail: 'Finite run · events · higher rewards · Operation Bag risk' },
+            { id: 'patrol', name: 'Patrol', detail: 'Infinite combat · direct loot · reliable lower rewards' }
+        ].forEach(mode => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.dataset.mode = mode.id;
+            button.className = `deployment-mode-card${selectedDeploymentMode === mode.id ? ' is-selected' : ''}`;
+            button.innerHTML = `<strong>${mode.name}</strong><span>${mode.detail}</span>`;
+            button.addEventListener('click', () => {
+                selectedDeploymentMode = mode.id;
+                displayAdventureLocations();
+            });
+            modeStrip.appendChild(button);
+        });
+        interfaceContainer.appendChild(modeStrip);
+
+        if (selectedDeploymentMode === 'operation') {
+            const coreSelector = document.createElement('label');
+            coreSelector.className = 'operation-core-selector';
+            const label = document.createElement('strong');
+            label.textContent = 'Operation Core';
+            const select = document.createElement('select');
+            select.innerHTML = '<option value="">No Core</option>';
+            CORE_DEFINITIONS.forEach(core => {
+                const quantity = getCoreQuantity(core.id);
+                const option = document.createElement('option');
+                option.value = core.id;
+                option.disabled = quantity <= 0;
+                option.selected = selectedOperationCoreId === core.id;
+                option.textContent = `${core.name} ×${quantity} — ${core.effect}`;
+                select.appendChild(option);
+            });
+            if (selectedOperationCoreId && getCoreQuantity(selectedOperationCoreId) <= 0) selectedOperationCoreId = '';
+            select.value = selectedOperationCoreId;
+            select.addEventListener('change', () => { selectedOperationCoreId = select.value; });
+            coreSelector.appendChild(label);
+            coreSelector.appendChild(select);
+            interfaceContainer.appendChild(coreSelector);
+        }
+
+        // Operation automation toggles
         const autoRow = document.createElement('div');
         autoRow.className = 'delve-automation-options';
+        autoRow.hidden = selectedDeploymentMode === 'patrol';
 
         const redeployOption = document.createElement('label');
         redeployOption.className = 'delve-automation-option';
@@ -296,14 +349,14 @@ function displayAdventureLocations() {
         autoChk.checked = localStorage.getItem('autoRedeploy') === 'true';
         autoChk.addEventListener('change', ()=> localStorage.setItem('autoRedeploy', autoChk.checked ? 'true' : 'false'));
         const autoLbl = document.createElement('span');
-        autoLbl.textContent = 'Auto re-deploy after delve completion';
+        autoLbl.textContent = 'Auto re-deploy after Operation completion';
         redeployOption.appendChild(autoChk);
         redeployOption.appendChild(autoLbl);
         autoRow.appendChild(redeployOption);
 
         const claimOption = document.createElement('label');
         claimOption.className = 'delve-automation-option';
-        claimOption.title = 'Materials and credits are always claimed. This also claims every item when the ordinary inventory has enough room.';
+        claimOption.title = 'Resources and Feed are always claimed. This also claims every item when the ordinary inventory has enough room.';
         const claimChk = document.createElement('input');
         claimChk.type = 'checkbox';
         claimChk.checked = localStorage.getItem('autoClaimAllItems') === 'true';
@@ -639,14 +692,14 @@ function displayAdventureLocations() {
             enemyInfo.appendChild(enemyCount);
 
             const fightCount = document.createElement('span');
-            fightCount.textContent = `${loc.numFights} Fights`;
+            fightCount.textContent = selectedDeploymentMode === 'patrol' ? 'Infinite Encounters' : `${loc.numFights} Encounters`;
             fightCount.style.color = '#7fdbff';
             fightCount.style.fontSize = '11px';
             enemyInfo.appendChild(fightCount);
 
             // Action button
             const actionButton = document.createElement('button');
-            actionButton.textContent = "DEPLOY";
+            actionButton.textContent = selectedDeploymentMode === 'patrol' ? 'START PATROL' : 'START OPERATION';
             actionButton.className = 'location-action-button';
             actionButton.style.marginTop = '15px';
             actionButton.style.padding = '8px';
@@ -679,13 +732,15 @@ function displayAdventureLocations() {
 
             // Click event to start adventure
             locationCard.addEventListener('click', () => {
-                startAdventure(loc);
+                if (selectedDeploymentMode === 'patrol') startPatrol(loc);
+                else startAdventure(loc, selectedOperationCoreId || null);
             });
 
             // Also add click event to button
             actionButton.addEventListener('click', (e) => {
                 e.stopPropagation(); // Prevent triggering the card's click event
-                startAdventure(loc);
+                if (selectedDeploymentMode === 'patrol') startPatrol(loc);
+                else startAdventure(loc, selectedOperationCoreId || null);
             });
 
             locationGrid.appendChild(locationCard);

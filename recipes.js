@@ -404,6 +404,24 @@ function createProgressionRecipe({ name, level, category, family }) {
     };
 }
 
+function getFabricationFeedCost(level, category, ingredientCount = 0) {
+    const band = getLevelBand(Math.max(1, Number(level) || 1));
+    const baseByBand = { 1: 45, 2: 95, 3: 210, 4: 430, 5: 790, 6: 1380 };
+    const categoryMultiplier = {
+        Weapons: 1.3,
+        Shields: 1.12,
+        Armor: 1.05,
+        Boots: 0.82,
+        Gloves: 0.82,
+        Helmets: 0.9,
+        Bionics: 1.08,
+        Chips: 0.68,
+        Materials: 0.45
+    }[category] || 1;
+    const complexity = 1 + Math.max(0, Number(ingredientCount) - 3) * 0.06;
+    return Math.max(20, Math.round((baseByBand[band] * categoryMultiplier * complexity) / 5) * 5);
+}
+
 const baselineRecipes = [
     ...baselineArmorItems.map(item => createProgressionRecipe(item)),
     ...baselineOffHandItems.map(item => createProgressionRecipe({ ...item, category: "Shields" }))
@@ -478,6 +496,10 @@ for (const recipe of [...recipes, ...baselineRecipes, ...weaponChassisRecipes]) 
     if (!mergedRecipe.weaponChassis) {
         mergedRecipe.ingredients = buildEconomyIngredients(mergedRecipe.name, level, authoredFamily, mergedRecipe.category);
     }
+    const ingredientCount = mergedRecipe.weaponChassis
+        ? Math.max(...Object.values(mergedRecipe.ingredientsByDamage || {}).map(ingredients => Object.keys(ingredients).length), 0)
+        : Object.keys(mergedRecipe.ingredients || {}).length;
+    mergedRecipe.feedCost = getFabricationFeedCost(level, mergedRecipe.category, ingredientCount);
     recipeByName.set(mergedRecipe.name, mergedRecipe);
 }
 

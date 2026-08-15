@@ -12,26 +12,37 @@ function refreshEnergyShieldBetweenDelveEncounters() {
     return maximum - previous;
 }
 
-function startAdventure(location) {
+function startDeployment(location, mode = 'operation', coreId = null) {
     if (window.activityManager && typeof window.activityManager.isActivityActive === 'function' && window.activityManager.isActivityActive()) {
         window.activityManager.cancelActivity('delveStart', { silent: true });
         if (typeof syncGatheringStateFromManager === 'function') {
             syncGatheringStateFromManager();
         }
-        logMessage('Non-combat activity paused for delve.');
+        logMessage('Non-combat activity paused for deployment.');
     } else if (isGathering) {
         stopGatheringActivity();
     }
 
     if (isCombatActive || isDelveInProgress) {
-        logMessage("You are already on an adventure!");
+        logMessage('A deployment is already active.');
         return;
     }
 
-    // Reset and prepare for adventure
+    if (mode === 'operation') {
+        if (!beginOperationState(location, coreId)) {
+            if (coreId) showWarningPopup('That Core is no longer available.');
+            return;
+        }
+        discardDelveClaimCacheForNewDelve();
+    } else {
+        beginPatrolState();
+    }
+
+    // Reset and prepare for deployment
     clearLog();
-    discardDelveClaimCacheForNewDelve();
-    logMessage(`You begin your delve into ${location.name}.`);
+    logMessage(mode === 'patrol'
+        ? `Patrol started in ${location.name}. Loot is secured immediately.`
+        : `Operation started in ${location.name}.`);
     currentLocation = location;
     // Remember for auto re-deploy preference
     window.lastDelveLocation = location;
@@ -45,7 +56,7 @@ function startAdventure(location) {
     currentDelveLocation = location;
     currentMonsterIndex = 0;
     isDelveInProgress = true;
-    delveBag = { items: [], credits: 0 };
+    delveBag = { items: [], feed: 0 };
     updateDelveBagUI(); // Update UI when adventure starts
     if (typeof setDelveCombatUIActive === 'function') setDelveCombatUIActive(true);
 
@@ -55,6 +66,14 @@ function startAdventure(location) {
 
     // Begin with the first monster
     beginNextMonsterInSequence();
+}
+
+function startAdventure(location, coreId = null) {
+    return startDeployment(location, 'operation', coreId);
+}
+
+function startPatrol(location) {
+    return startDeployment(location, 'patrol', null);
 }
 
 function getVisibleDelveLocations() {
@@ -85,12 +104,19 @@ function recordDelveCompletion(location) {
 }
 
 function beginNextMonsterInSequence() {
-    // If we've completed all fights for this location, the delve is complete
-    if (currentMonsterIndex >= currentDelveLocation.numFights) {
+    // A save made while an event is waiting resumes at that decision instead
+    // of silently skipping it and spawning the next encounter.
+    if (typeof shouldTriggerOperationEvent === 'function' && shouldTriggerOperationEvent()) {
+        if (typeof isOperationEventVisible !== 'function' || !isOperationEventVisible()) showOperationEvent();
+        return;
+    }
+
+    // Patrols repeat forever. Operations end at their authored or event-modified length.
+    if (currentRunMode === 'operation' && currentMonsterIndex >= getOperationEncounterTarget()) {
         console.log("Delve complete - before finalizeDelveLoot - isDelveInProgress:", isDelveInProgress);
         recordDelveCompletion(currentDelveLocation);
         finalizeDelveLoot();
-        logMessage(`You have cleared all monsters in ${currentDelveLocation.name}!`);
+        logMessage(`Operation complete: ${currentDelveLocation.name}.`);
 
         // Make sure the isDelveInProgress flag is set to false before stopping combat
         isDelveInProgress = false;
@@ -129,5 +155,11 @@ function beginNextMonsterInSequence() {
         name: selectedEnemy.name,
         isEmpowered: Boolean(selectedEnemy.empoweredChance && Math.random() < selectedEnemy.empoweredChance)
     }));
+    if (currentRunMode === 'operation' && operationState?.forceEliteNext && encounterEntries.length > 0) {
+        encounterEntries[0].isEmpowered = true;
+        operationState.forceEliteNext = false;
+    }
     spawnEnemyEncounter(encounterEntries);
 }
+
+window.startPatrol = startPatrol;

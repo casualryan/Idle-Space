@@ -277,7 +277,7 @@ function startGatheringActivity(skillName, activity) {
         return;
     }
     if (isCombatActive || isDelveInProgress) {
-        logMessage('Cannot start mining during combat or an active delve.');
+        logMessage('Cannot start mining during combat or an active deployment.');
         return;
     }
 

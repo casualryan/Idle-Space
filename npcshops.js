@@ -174,12 +174,12 @@ function displayNPCShop(npc) {
 
     shopContainer.classList.add('shop-container');
 
-    // Header (show only credits on the left; NPC name removed to avoid redundancy)
+    // Header (show only Feed on the left; NPC name removed to avoid redundancy)
     const headerDiv = document.createElement('div');
     headerDiv.className = 'shop-header';
     const currencyP = document.createElement('div');
     currencyP.className = 'shop-currency';
-    currencyP.textContent = `Credits: ${playerCurrency}`;
+    currencyP.textContent = `Feed: ${playerFeed}`;
     headerDiv.appendChild(currencyP);
     shopContainer.appendChild(headerDiv);
 
@@ -212,7 +212,7 @@ function displayNPCShop(npc) {
         // Price
         const priceP = document.createElement('p');
         priceP.className = 'shop-item-price';
-        priceP.textContent = `${itemPrice} credits`;
+        priceP.textContent = `${itemPrice} Feed`;
 
         // Service info
         const serviceInfo = document.createElement('p');
@@ -239,12 +239,12 @@ function displayNPCShop(npc) {
         }
 
         let needP = null;
-        const missingCredits = Math.max(0, itemPrice - playerCurrency);
-        if (player.level >= itemLevelReq && missingCredits > 0) {
+        const missingFeed = Math.max(0, itemPrice - playerFeed);
+        if (player.level >= itemLevelReq && missingFeed > 0) {
             itemDiv.classList.add('unaffordable');
             needP = document.createElement('p');
             needP.className = 'shop-item-need';
-            needP.textContent = `Need +${missingCredits} credits`;
+            needP.textContent = `Need +${missingFeed} Feed`;
         }
 
         const purchaseControls = document.createElement('div');
@@ -268,9 +268,9 @@ function displayNPCShop(npc) {
                 buyButton.title = `Requires level ${itemLevelReq}`;
             } else {
                 const cost = itemPrice * quantity;
-                if (cost > playerCurrency) {
+                if (cost > playerFeed) {
                     buyButton.disabled = true;
-                    buyButton.title = `Need +${cost - playerCurrency} credits`;
+                    buyButton.title = `Need +${cost - playerFeed} Feed`;
                 }
 
                 buyButton.addEventListener('click', () => {
@@ -283,9 +283,9 @@ function displayNPCShop(npc) {
                         return;
                     }
                     if (cost >= threshold && typeof showConfirmationPopup === 'function') {
-                        showConfirmationPopup(`Confirm purchase of ${quantity} x ${itemName} for ${cost} credits?`, doBuy);
+                        showConfirmationPopup(`Confirm purchase of ${quantity} x ${itemName} for ${cost} Feed?`, doBuy);
                     } else if (cost >= threshold && window.confirm) {
-                        if (confirm(`Purchase ${quantity} x ${itemName} for ${cost} credits?`)) doBuy();
+                        if (confirm(`Purchase ${quantity} x ${itemName} for ${cost} Feed?`)) doBuy();
                     } else {
                         doBuy();
                     }
@@ -334,13 +334,13 @@ function buyItemFromNPC(npc, itemOrIndex, quantity) {
     }
     const cost = invItem.price * quantity;
 
-    // Check if player has enough currency
-    if (playerCurrency < cost) {
-        logMessage(`You don't have enough credits to buy ${quantity} of ${invItem.itemName}!`);
+    // Check if player has enough Feed
+    if (playerFeed < cost) {
+        logMessage(`You don't have enough Feed to buy ${quantity} of ${invItem.itemName}!`);
         return;
     }
-    // Deduct currency
-    playerCurrency -= cost;
+    // Deduct Feed
+    playerFeed -= cost;
 
     // Handle services vs regular items
     if (invItem.isService) {
@@ -350,7 +350,7 @@ function buyItemFromNPC(npc, itemOrIndex, quantity) {
             if (player.maxInventorySlots >= 500) {
                 logMessage("You already have the maximum number of inventory slots (500)!");
                 // Refund the purchase
-                playerCurrency += cost;
+                playerFeed += cost;
                 return;
             }
             
@@ -360,20 +360,20 @@ function buyItemFromNPC(npc, itemOrIndex, quantity) {
                 const maxPurchasable = 500 - player.maxInventorySlots;
                 logMessage(`You can only buy ${maxPurchasable} more inventory slots to reach the maximum of 500.`);
                 // Refund the purchase
-                playerCurrency += cost;
+                playerFeed += cost;
                 return;
             }
             
             // Apply the expansion
             player.maxInventorySlots += quantity;
-            logMessage(`Inventory expanded! You now have ${player.maxInventorySlots} slots (purchased ${quantity} slot${quantity > 1 ? 's' : ''} for ${cost} credits).`);
+            logMessage(`Inventory expanded! You now have ${player.maxInventorySlots} slots (purchased ${quantity} slot${quantity > 1 ? 's' : ''} for ${cost} Feed).`);
             
             // Update inventory display to show new slot count
             updateInventoryDisplay();
         } else {
             logMessage(`Unknown service: ${invItem.itemName}`);
             // Refund unknown services
-            playerCurrency += cost;
+            playerFeed += cost;
             invItem.stock += quantity;
             return;
         }
@@ -389,21 +389,21 @@ function buyItemFromNPC(npc, itemOrIndex, quantity) {
                     showWarningPopup('Your inventory is full. Purchase cancelled.');
                 }
                 // Refund the purchase
-                playerCurrency += cost;
+                playerFeed += cost;
                 return;
             }
             const success = addItemToInventory(purchasedItem);
             if (success) {
-                logMessage(`You bought ${quantity}x ${invItem.itemName} for ${cost} credits.`);
+                logMessage(`You bought ${quantity}x ${invItem.itemName} for ${cost} Feed.`);
             } else {
                 // Inventory was full, refund the purchase
-                playerCurrency += cost;
+                playerFeed += cost;
                 return;
             }
         } else {
             logMessage(`Error: item template for ${invItem.itemName} not found in items.js.`);
             // Refund on error
-            playerCurrency += cost;
+            playerFeed += cost;
             return;
         }
     }

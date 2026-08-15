@@ -1,6 +1,6 @@
 // Ordered, non-destructive migrations and validation for persisted game snapshots.
 
-const COREBOUND_SAVE_VERSION = 16;
+const COREBOUND_SAVE_VERSION = 17;
 const SAVE_MATERIAL_STACK_CAP = 50000;
 const SAVE_PASSIVE_TREE_VERSION = 6;
 const SAVE_COMBAT_STYLE_VERSION = 2;
@@ -17,6 +17,8 @@ const SAVE_DEFENSE_TYPE_ALIASES = Object.freeze({
     immunity: ['chemicalResistance', 1]
 });
 const SAVE_EQUIPMENT_SLOTS = Object.freeze(['mainHand', 'offHand', 'head', 'chest', 'legs', 'feet', 'gloves']);
+const SAVE_CORE_IDS = Object.freeze(['reclamation', 'accelerator', 'targeting', 'aegis', 'salvager', 'flux-seeker', 'escalation', 'overload']);
+const SAVE_CACHE_IDS = Object.freeze(['kinetic', 'slashing', 'pyro', 'cryo', 'electric', 'corrosive', 'radiation', 'flux', 'core']);
 const SAVE_RETIRED_MATERIAL_CONVERSIONS = Object.freeze({
     'Partical Fuser': ['Advanced Electronic Circuit', 1],
     'Spider Leg Segment': ['Titanium Thorn', 1],
@@ -123,7 +125,22 @@ function normalizeSavedItemData(savedItem) {
             return { ...wire, chip: wire.chip ? normalizeSavedItemData(wire.chip) : wire.chip };
         });
     }
+    if (item.fluxTargetModifierId != null) {
+        const validTarget = typeof item.fluxTargetModifierId === 'string'
+            && Array.isArray(item.rolledModifiers)
+            && item.rolledModifiers.some(modifier => modifier?.id === item.fluxTargetModifierId);
+        if (!validTarget) delete item.fluxTargetModifierId;
+    }
     return item;
+}
+
+function normalizeSavedResourceMap(source, ids, cap = 9999) {
+    const allowed = new Set(ids);
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+    return Object.fromEntries(Object.entries(source)
+        .filter(([id]) => allowed.has(id))
+        .map(([id, quantity]) => [id, Math.min(cap, Math.max(0, Math.floor(Number(quantity) || 0)))])
+        .filter(([, quantity]) => quantity > 0));
 }
 
 function normalizeSavedMaterialInventory(source) {
@@ -435,6 +452,44 @@ const SAVE_MIGRATIONS = Object.freeze([
     },
     function migrateToVersion16(state) {
         mapPersistedItems(state, item => convertRetiredBionicBooster(item));
+    },
+    function migrateToVersion17(state) {
+        const legacyCurrency = Number(state.player.currency);
+        const currentFeed = Number(state.player.feed);
+        state.player.feed = Math.max(0, Number.isFinite(currentFeed)
+            ? currentFeed
+            : (Number.isFinite(legacyCurrency) ? legacyCurrency : 1000));
+        delete state.player.currency;
+
+        for (const containerKey of ['delveBag', 'delveClaimCache']) {
+            const container = state[containerKey] && typeof state[containerKey] === 'object'
+                ? state[containerKey]
+                : { items: [], feed: 0 };
+            container.items = Array.isArray(container.items)
+                ? container.items.map(item => normalizeSavedItemData(item)).filter(Boolean)
+                : [];
+            container.feed = Math.max(0, Number(container.feed ?? container.credits) || 0);
+            delete container.credits;
+            state[containerKey] = container;
+        }
+
+        mapPersistedItems(state, item => normalizeSavedItemData(item));
+        // mapPersistedItems is retained for old migrations and may recreate the
+        // retired container key. Normalize it back to Feed after item mapping.
+        for (const containerKey of ['delveBag', 'delveClaimCache']) {
+            state[containerKey].feed = Math.max(0, Number(state[containerKey].feed ?? state[containerKey].credits) || 0);
+            delete state[containerKey].credits;
+        }
+        state.coreInventory = normalizeSavedResourceMap(state.coreInventory, SAVE_CORE_IDS);
+        state.cacheInventory = normalizeSavedResourceMap(state.cacheInventory, SAVE_CACHE_IDS);
+        state.pendingCacheResolution = state.pendingCacheResolution && typeof state.pendingCacheResolution === 'object'
+            && Array.isArray(state.pendingCacheResolution.rewards)
+            ? state.pendingCacheResolution
+            : null;
+        state.currentRunMode = state.currentRunMode === 'patrol' ? 'patrol' : (state.isDelveInProgress ? 'operation' : null);
+        state.operationState = state.operationState && typeof state.operationState === 'object'
+            ? state.operationState
+            : null;
     }
 ]);
 
@@ -494,7 +549,21 @@ function validateGameStateSnapshot(state, options = {}) {
         errors.push('player equipment must contain exactly four bionic slots');
     }
     if (!Number.isFinite(Number(state.player?.level)) || Number(state.player.level) < 1) errors.push('player level is invalid');
-    if (!Number.isFinite(Number(state.player?.currency)) || Number(state.player.currency) < 0) errors.push('player currency is invalid');
+    if (!Number.isFinite(Number(state.player?.feed)) || Number(state.player.feed) < 0) errors.push('player Feed is invalid');
+    for (const [label, source, ids] of [
+        ['Core', state.coreInventory, SAVE_CORE_IDS],
+        ['Cache', state.cacheInventory, SAVE_CACHE_IDS]
+    ]) {
+        if (!source || typeof source !== 'object' || Array.isArray(source)) {
+            errors.push(`${label} inventory must be an object`);
+            continue;
+        }
+        for (const [id, quantity] of Object.entries(source)) {
+            if (!ids.includes(id) || !Number.isInteger(Number(quantity)) || Number(quantity) <= 0 || Number(quantity) > 9999) {
+                errors.push(`${label} inventory quantity is invalid: ${id}`);
+            }
+        }
+    }
     const passives = state.player?.passives;
     if (!passives || typeof passives !== 'object') errors.push('player passives are required');
     else {
