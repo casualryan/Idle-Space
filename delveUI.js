@@ -3,6 +3,70 @@
 let selectedDeploymentMode = 'operation';
 let selectedOperationCoreId = '';
 
+function closeDeepSectorIntelShop() {
+    document.getElementById('deep-sector-intel-shop-overlay')?.remove();
+}
+
+function showDeepSectorIntelShop() {
+    if (Math.max(1, Number(player?.level) || 1) < 50) return;
+    closeDeepSectorIntelShop();
+    const progress = ensureDeepSectorProgress();
+    const overlay = document.createElement('div');
+    overlay.id = 'deep-sector-intel-shop-overlay';
+    overlay.className = 'deep-sector-shop-overlay';
+    const shop = document.createElement('section');
+    shop.className = 'deep-sector-shop';
+    shop.setAttribute('role', 'dialog');
+    shop.setAttribute('aria-modal', 'true');
+    shop.innerHTML = `
+        <header>
+            <span>DEEP SECTOR NETWORK</span>
+            <h2>Intel Shop</h2>
+            <p>Permanent loot-analysis upgrades for every Operation.</p>
+            <b>${progress.intel.toLocaleString()} Intel Available</b>
+        </header>
+        <div class="deep-sector-shop-grid"></div>
+        <footer><button type="button" data-intel-shop-close>Close</button></footer>`;
+    const grid = shop.querySelector('.deep-sector-shop-grid');
+    DEEP_SECTOR_SHOP_DEFINITIONS.forEach(definition => {
+        const rank = progress.shop[definition.id];
+        const cost = getDeepSectorShopUpgradeCost(definition.id, progress);
+        const card = document.createElement('article');
+        card.className = 'deep-sector-shop-card';
+        const pips = Array.from({ length: DEEP_SECTOR_SHOP_MAX_RANK }, (_, index) => `<i class="${index < rank ? 'is-filled' : ''}"></i>`).join('');
+        card.innerHTML = `
+            <div><span>${definition.name}</span><b>Rank ${rank}/${DEEP_SECTOR_SHOP_MAX_RANK}</b></div>
+            <p>${definition.detail}</p>
+            <div class="deep-sector-shop-ranks">${pips}</div>
+            <button type="button" ${rank >= DEEP_SECTOR_SHOP_MAX_RANK || progress.intel < cost ? 'disabled' : ''}>
+                ${rank >= DEEP_SECTOR_SHOP_MAX_RANK ? 'Maximum Rank' : `Upgrade · ${cost} Intel`}
+            </button>`;
+        card.querySelector('button').addEventListener('click', () => {
+            if (!purchaseDeepSectorShopUpgrade(definition.id)) return;
+            const balance = document.getElementById('deep-sector-intel-balance');
+            if (balance) balance.textContent = `${ensureDeepSectorProgress().intel.toLocaleString()} Intel`;
+            document.querySelectorAll('.location-card[data-operation-band="deep"]').forEach(operationCard => {
+                const operationCost = Math.max(1, Number(operationCard.dataset.intelCost) || 1);
+                const cannotAfford = ensureDeepSectorProgress().intel < operationCost;
+                operationCard.classList.toggle('is-unaffordable', cannotAfford);
+                const operationButton = operationCard.querySelector('.location-action-button');
+                if (operationButton) {
+                    operationButton.disabled = cannotAfford;
+                    operationButton.textContent = cannotAfford ? `REQUIRES ${operationCost} INTEL` : 'START OPERATION';
+                }
+            });
+            showDeepSectorIntelShop();
+        });
+        grid.appendChild(card);
+    });
+    shop.querySelector('[data-intel-shop-close]').addEventListener('click', closeDeepSectorIntelShop);
+    overlay.addEventListener('click', event => {
+        if (event.target === overlay) closeDeepSectorIntelShop();
+    });
+    overlay.appendChild(shop);
+    document.body.appendChild(overlay);
+}
+
 function closeDelveClaimCachePopup() {
     document.getElementById('delve-claim-cache-overlay')?.remove();
 }
@@ -458,7 +522,9 @@ function displayAdventureLocations() {
         const progressionNotice = document.createElement('div');
         progressionNotice.className = 'location-progression-notice';
         if (selectedDeploymentMode === 'operation') {
-            progressionNotice.textContent = '2 CURRENT · 2 CATCH-UP · 2 HIGHER-RISK SIGNALS';
+            progressionNotice.textContent = playerLevel >= 50
+                ? 'DEEP SECTOR NETWORK ONLINE · STANDARD SIGNALS AVAILABLE BELOW'
+                : '2 CURRENT · 2 CATCH-UP SIGNALS';
         } else if (nextLevelLocation) {
             progressionNotice.textContent = `NEXT SECTOR SIGNAL · LEVEL ${Math.max(1, nextLevelLocation.recommendedLevel - 2)}`;
         } else if (nextEndgameLocation) {
@@ -529,6 +595,55 @@ function displayAdventureLocations() {
 
         interfaceContainer.appendChild(locationScrollContainer);
 
+        let deepSectorGrid = null;
+        if (selectedDeploymentMode === 'operation' && playerLevel >= 50) {
+            const progress = ensureDeepSectorProgress();
+            const deepSection = document.createElement('section');
+            deepSection.className = 'operation-board-section deep-sector-section';
+            const deepHeader = document.createElement('header');
+            deepHeader.className = 'operation-board-section-header';
+            const deepCopy = document.createElement('div');
+            deepCopy.innerHTML = `<span>PRIMARY ENDGAME NETWORK</span><h3>Deep Sector Operations</h3><p>Clear a Threat Level to unlock the next. Failed or aborted deployments consume their committed Intel.</p>`;
+            const deepControls = document.createElement('div');
+            deepControls.className = 'deep-sector-controls';
+            const intelBalance = document.createElement('b');
+            intelBalance.id = 'deep-sector-intel-balance';
+            intelBalance.textContent = `${progress.intel.toLocaleString()} Intel`;
+            const threatLabel = document.createElement('label');
+            threatLabel.append('Threat Level ');
+            const threatSelect = document.createElement('select');
+            for (let level = DEEP_SECTOR_MIN_LEVEL; level <= progress.highestUnlockedLevel; level += DEEP_SECTOR_LEVEL_STEP) {
+                const option = document.createElement('option');
+                option.value = String(level);
+                option.textContent = `Level ${level} · ${getDeepSectorIntelCost(level)} Intel`;
+                option.selected = level === progress.selectedLevel;
+                threatSelect.appendChild(option);
+            }
+            threatSelect.addEventListener('change', () => {
+                selectDeepSectorLevel(Number(threatSelect.value));
+                displayAdventureLocations();
+            });
+            threatLabel.appendChild(threatSelect);
+            const shopButton = document.createElement('button');
+            shopButton.type = 'button';
+            shopButton.textContent = 'Intel Shop';
+            shopButton.addEventListener('click', showDeepSectorIntelShop);
+            deepControls.append(intelBalance, threatLabel, shopButton);
+            deepHeader.append(deepCopy, deepControls);
+            deepSection.appendChild(deepHeader);
+            deepSectorGrid = document.createElement('div');
+            deepSectorGrid.className = 'locations-grid deep-sector-grid';
+            deepSection.appendChild(deepSectorGrid);
+            locationScrollContainer.appendChild(deepSection);
+        }
+
+        if (selectedDeploymentMode === 'operation') {
+            const standardHeader = document.createElement('header');
+            standardHeader.className = 'operation-board-section-header standard-operation-header';
+            standardHeader.innerHTML = `<div><span>STANDARD NETWORK</span><h3>Standard Operations</h3><p>Two current-level signals and two catch-up signals${playerLevel >= 50 ? ' · Each successful deployment recovers 1 Intel.' : '.'}</p></div>`;
+            locationScrollContainer.appendChild(standardHeader);
+        }
+
         // Create the actual grid for locations
         const locationGrid = document.createElement('div');
         locationGrid.className = 'locations-grid';
@@ -546,6 +661,8 @@ function displayAdventureLocations() {
             // Create location card
             const locationCard = document.createElement('div');
             locationCard.className = 'location-card';
+            locationCard.dataset.operationBand = loc.difficultyBand || '';
+            if (loc.deepSector) locationCard.dataset.intelCost = String(loc.intelCost);
             locationCard.setAttribute('data-name', loc.name);
             locationCard.setAttribute('data-category', category);
             locationCard.style.display = 'flex';
@@ -565,7 +682,7 @@ function displayAdventureLocations() {
             categoryTag.textContent = category === 'endgame'
                 ? `ENDGAME T${loc.endgameTier || 1}`
                 : (category === 'operation'
-                    ? ({ lower: 'CATCH-UP', current: 'CURRENT', higher: 'HIGHER RISK' }[loc.difficultyBand] || 'OPERATION')
+                    ? ({ lower: 'CATCH-UP', current: 'CURRENT', deep: 'DEEP SECTOR' }[loc.difficultyBand] || 'OPERATION')
                     : category.toUpperCase());
             categoryTag.style.position = 'absolute';
             categoryTag.style.top = '8px';
@@ -611,7 +728,12 @@ function displayAdventureLocations() {
                     locationCard.style.borderColor = '#8f3dcc';
                     break;
                 case 'operation':
-                    if (loc.difficultyBand === 'higher') {
+                    if (loc.difficultyBand === 'deep') {
+                        categoryTag.style.background = 'rgba(255, 104, 84, 0.22)';
+                        categoryTag.style.border = '1px solid #ff715b';
+                        categoryTag.style.color = '#ffc0b5';
+                        locationCard.style.borderColor = '#c94d52';
+                    } else if (loc.difficultyBand === 'higher') {
                         categoryTag.style.background = 'rgba(255, 93, 93, 0.2)';
                         categoryTag.style.border = '1px solid #ff6868';
                         categoryTag.style.color = '#ffaaaa';
@@ -710,6 +832,17 @@ function displayAdventureLocations() {
                 reward.style.fontWeight = 'bold';
                 reward.style.marginTop = '5px';
                 enemyInfo.appendChild(reward);
+                if (loc.deepSector) {
+                    const intel = document.createElement('span');
+                    intel.className = 'operation-intel-stakes';
+                    intel.textContent = `Commit ${loc.intelCost} Intel · Recover ${loc.intelReward} Intel on success`;
+                    enemyInfo.appendChild(intel);
+                } else if (playerLevel >= 50) {
+                    const intel = document.createElement('span');
+                    intel.className = 'operation-intel-stakes operation-intel-stakes--standard';
+                    intel.textContent = 'Recover 1 Intel on success';
+                    enemyInfo.appendChild(intel);
+                }
             }
 
             // Action button
@@ -727,6 +860,12 @@ function displayAdventureLocations() {
             actionButton.style.cursor = 'pointer';
             actionButton.style.fontFamily = '"Rajdhani", sans-serif';
             actionButton.style.transition = 'all 0.2s ease';
+            const lacksIntel = Boolean(loc.deepSector && ensureDeepSectorProgress().intel < loc.intelCost);
+            if (lacksIntel) {
+                actionButton.disabled = true;
+                actionButton.textContent = `REQUIRES ${loc.intelCost} INTEL`;
+                locationCard.classList.add('is-unaffordable');
+            }
             locationCard.appendChild(actionButton);
 
             // Hover effects
@@ -747,6 +886,7 @@ function displayAdventureLocations() {
 
             // Click event to start adventure
             locationCard.addEventListener('click', () => {
+                if (loc.deepSector && ensureDeepSectorProgress().intel < loc.intelCost) return;
                 if (selectedDeploymentMode === 'patrol') startPatrol(loc);
                 else startAdventure(loc, selectedOperationCoreId || null);
             });
@@ -754,11 +894,12 @@ function displayAdventureLocations() {
             // Also add click event to button
             actionButton.addEventListener('click', (e) => {
                 e.stopPropagation(); // Prevent triggering the card's click event
+                if (loc.deepSector && ensureDeepSectorProgress().intel < loc.intelCost) return;
                 if (selectedDeploymentMode === 'patrol') startPatrol(loc);
                 else startAdventure(loc, selectedOperationCoreId || null);
             });
 
-            locationGrid.appendChild(locationCard);
+            (loc.deepSector && deepSectorGrid ? deepSectorGrid : locationGrid).appendChild(locationCard);
         });
 
         // Add "Connecting to network..." animation effect during load

@@ -1,6 +1,6 @@
 // Human-readable character snapshots for balance analysis and build comparison.
 
-const CHARACTER_EXPORT_SCHEMA_VERSION = 2;
+const CHARACTER_EXPORT_SCHEMA_VERSION = 3;
 const CHARACTER_EXPORT_STANDARD_SLOTS = Object.freeze([
     ['mainHand', 'Main Hand'],
     ['offHand', 'Off Hand'],
@@ -182,6 +182,11 @@ function buildCharacterDetailsExport(playerObject, context = {}) {
         context.completedOperationCount
         ?? (typeof completedOperationCount !== 'undefined' ? completedOperationCount : 0)
     ) || 0));
+    const deepSectorSource = context.deepSectorProgress
+        ?? (typeof deepSectorProgress !== 'undefined' ? deepSectorProgress : null);
+    const deepSector = typeof normalizeDeepSectorProgress === 'function'
+        ? normalizeDeepSectorProgress(deepSectorSource)
+        : (deepSectorSource || { intel: 0, highestUnlockedLevel: 55, selectedLevel: 55, shop: {} });
     const locationDefinitions = context.locationDefinitions
         ?? (typeof allLocations !== 'undefined' ? allLocations : []);
     const progressRows = getCharacterExportProgressRows(completedLocations, locationDefinitions);
@@ -213,10 +218,21 @@ function buildCharacterDetailsExport(playerObject, context = {}) {
         `Passive Points Spent: ${formatCharacterExportScalar(passivePointTotal)}`,
         `Passive Points Unspent: ${formatCharacterExportScalar(playerObject.passivePoints)}`,
         `Highest Endgame Tier Cleared: ${highestEndgameTier || 'None'}`,
-        `Total Operation Clears: ${operationClearCount}`
+        `Total Operation Clears: ${operationClearCount}`,
+        `Deep Sector Intel: ${formatCharacterExportScalar(deepSector.intel)}`,
+        `Highest Deep Sector Threat: ${formatCharacterExportScalar(deepSector.highestUnlockedLevel)}`
     );
     lines.push('Gathering Skills:');
     lines.push(formatCharacterExportJson(playerObject.gatheringSkills || {}));
+
+    pushCharacterExportSection(lines, 'DEEP SECTOR');
+    lines.push(
+        `Selected Threat Level: ${formatCharacterExportScalar(deepSector.selectedLevel)}`,
+        `Cache Triangulation: ${formatCharacterExportScalar(deepSector.shop?.cache || 0)}/10`,
+        `Flux Resonance: ${formatCharacterExportScalar(deepSector.shop?.flux || 0)}/10`,
+        `Material Surveying: ${formatCharacterExportScalar(deepSector.shop?.material || 0)}/10`,
+        `Feed Reclamation: ${formatCharacterExportScalar(deepSector.shop?.feed || 0)}/10`
+    );
 
     pushCharacterExportSection(lines, 'COMBAT STYLE');
     lines.push(

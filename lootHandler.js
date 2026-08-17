@@ -34,6 +34,9 @@ function shouldDropLoot(enemy, player) {
     let dropChance = enemy.lootConfig.baseDropChance || 0.5; // Default to 50% if not specified
     dropChance *= Math.max(0, Number(enemy._rewardScale ?? 1));
     dropChance *= Math.max(0, Number(enemy._operationLootChanceMultiplier ?? 1));
+    if (typeof getDeepSectorIntelShopMultipliers === 'function') {
+        dropChance *= Math.max(0, Number(getDeepSectorIntelShopMultipliers().material) || 1);
+    }
     
     // Apply player loot luck modifier if it exists
     const lootLuck = Number(player?.totalStats?.lootLuck ?? player?.stats?.lootLuck ?? 0);

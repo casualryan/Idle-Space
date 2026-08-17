@@ -29,7 +29,8 @@ const combatState = {
     delveClaimCache: { items: [], feed: 0 },
     currentRunMode: null,
     operationState: null,
-    operationBoard: { version: 2, generation: 0, playerLevel: 1, offers: [] },
+    operationBoard: { version: 3, generation: 0, playerLevel: 1, offers: [] },
+    deepSectorProgress: { intel: 0, highestUnlockedLevel: 55, selectedLevel: 55, shop: { cache: 0, flux: 0, material: 0, feed: 0 } },
     completedOperationSeeds: [],
     completedOperationCount: 0,
     completedDelveLocations: {}

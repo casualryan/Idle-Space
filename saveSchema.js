@@ -1,6 +1,6 @@
 // Ordered, non-destructive migrations and validation for persisted game snapshots.
 
-const COREBOUND_SAVE_VERSION = 19;
+const COREBOUND_SAVE_VERSION = 20;
 const SAVE_MATERIAL_STACK_CAP = 50000;
 const SAVE_MAX_PLAYER_LEVEL = 50;
 const SAVE_PASSIVE_TREE_VERSION = 6;
@@ -532,6 +532,25 @@ const SAVE_MIGRATIONS = Object.freeze([
         // Version 2 boards contain six level-banded offers. Rebuild legacy
         // three-offer boards the next time the deployment terminal opens.
         state.operationBoard = { version: 2, generation: 0, playerLevel: state.player.level, offers: [] };
+    },
+    function migrateToVersion20(state) {
+        const source = state.deepSectorProgress && typeof state.deepSectorProgress === 'object' && !Array.isArray(state.deepSectorProgress)
+            ? state.deepSectorProgress
+            : {};
+        const rawShop = source.shop && typeof source.shop === 'object' && !Array.isArray(source.shop) ? source.shop : {};
+        const highestUnlockedLevel = Math.max(55, Math.min(100, Math.floor(Number(source.highestUnlockedLevel) || 55)));
+        state.deepSectorProgress = {
+            intel: Math.max(0, Math.floor(Number(source.intel) || 0)),
+            highestUnlockedLevel: 55 + Math.floor((highestUnlockedLevel - 55) / 5) * 5,
+            selectedLevel: 55,
+            shop: Object.fromEntries(['cache', 'flux', 'material', 'feed'].map(id => [
+                id,
+                Math.max(0, Math.min(10, Math.floor(Number(rawShop[id]) || 0)))
+            ]))
+        };
+        const selectedLevel = Math.max(55, Math.min(state.deepSectorProgress.highestUnlockedLevel, Math.floor(Number(source.selectedLevel) || state.deepSectorProgress.highestUnlockedLevel)));
+        state.deepSectorProgress.selectedLevel = 55 + Math.floor((selectedLevel - 55) / 5) * 5;
+        state.operationBoard = { version: 3, generation: Math.max(0, Math.floor(Number(state.operationBoard?.generation) || 0)), playerLevel: state.player.level, offers: [] };
     }
 ]);
 
@@ -578,6 +597,22 @@ function validateGameStateSnapshot(state, options = {}) {
         errors.push('operation board must be an object');
     } else if (!Array.isArray(state.operationBoard.offers)) {
         errors.push('operation board offers must be an array');
+    }
+    const deepSector = state.deepSectorProgress;
+    if (!deepSector || typeof deepSector !== 'object' || Array.isArray(deepSector)) {
+        errors.push('Deep Sector progress must be an object');
+    } else {
+        if (!Number.isInteger(Number(deepSector.intel)) || Number(deepSector.intel) < 0) errors.push('Deep Sector Intel is invalid');
+        if (!Number.isInteger(Number(deepSector.highestUnlockedLevel)) || Number(deepSector.highestUnlockedLevel) < 55 || Number(deepSector.highestUnlockedLevel) > 100 || (Number(deepSector.highestUnlockedLevel) - 55) % 5 !== 0) {
+            errors.push('Deep Sector highest unlocked level is invalid');
+        }
+        if (!Number.isInteger(Number(deepSector.selectedLevel)) || Number(deepSector.selectedLevel) < 55 || Number(deepSector.selectedLevel) > Number(deepSector.highestUnlockedLevel) || (Number(deepSector.selectedLevel) - 55) % 5 !== 0) {
+            errors.push('Deep Sector selected level is invalid');
+        }
+        if (!deepSector.shop || typeof deepSector.shop !== 'object' || Array.isArray(deepSector.shop)
+            || ['cache', 'flux', 'material', 'feed'].some(id => !Number.isInteger(Number(deepSector.shop[id])) || Number(deepSector.shop[id]) < 0 || Number(deepSector.shop[id]) > 10)) {
+            errors.push('Deep Sector Intel Shop ranks are invalid');
+        }
     }
     if (!Array.isArray(state.completedOperationSeeds) || state.completedOperationSeeds.length > 10
         || state.completedOperationSeeds.some(seed => typeof seed !== 'string' || !seed)) {

@@ -151,7 +151,7 @@ function beginNextMonsterInSequence() {
         ? operationState.encounterModifiers.shift()
         : null;
     const encounterModifier = { ...(queuedModifier || {}), ...(queuedEncounter || {}) };
-    const operationLevel = Math.max(1, Math.min(50, Math.floor(Number(currentDelveLocation?.recommendedLevel) || 1)));
+    const operationLevel = Math.max(1, Math.min(100, Math.floor(Number(currentDelveLocation?.recommendedLevel) || 1)));
     let encounterEntries;
 
     if (encounterModifier.kind === 'security') {
@@ -186,6 +186,7 @@ function beginNextMonsterInSequence() {
         encounterEntries = selectedEnemies.map(selectedEnemy => ({
             name: selectedEnemy.name,
             isEmpowered: Boolean(selectedEnemy.empoweredChance && Math.random() < selectedEnemy.empoweredChance),
+            levelOverride: currentDelveLocation?.deepSector ? operationLevel : null,
             lootChanceMultiplier: Number(encounterModifier.lootChanceMultiplier) || 1
         }));
         for (let index = 0; index < extraEmpowered && encounterEntries.length < 6; index++) {
@@ -193,6 +194,7 @@ function beginNextMonsterInSequence() {
             if (extra) encounterEntries.push({
                 name: extra.name,
                 isEmpowered: true,
+                levelOverride: currentDelveLocation?.deepSector ? operationLevel : null,
                 lootChanceMultiplier: Number(encounterModifier.lootChanceMultiplier) || 1
             });
         }

@@ -140,8 +140,17 @@ function getEnemyTheme(enemy) {
 }
 
 function getSpecialDropMultipliers() {
-    if (typeof getActiveOperationRewardModifiers === 'function') return getActiveOperationRewardModifiers();
-    return { core: 1, cache: 1, flux: 1, material: 1 };
+    const active = typeof getActiveOperationRewardModifiers === 'function'
+        ? getActiveOperationRewardModifiers()
+        : { core: 1, cache: 1, flux: 1, material: 1 };
+    const shop = typeof getDeepSectorIntelShopMultipliers === 'function'
+        ? getDeepSectorIntelShopMultipliers()
+        : { cache: 1, flux: 1 };
+    return {
+        ...active,
+        cache: Math.max(0, Number(active.cache) || 1) * Math.max(0, Number(shop.cache) || 1),
+        flux: Math.max(0, Number(active.flux) || 1) * Math.max(0, Number(shop.flux) || 1)
+    };
 }
 
 function rollEnemySpecialDrops(enemy, random = Math.random) {

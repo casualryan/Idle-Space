@@ -1,9 +1,20 @@
 // Operation-only Core effects, randomized between-encounter events, and run modifiers.
 
-const OPERATION_BOARD_VERSION = 2;
+const OPERATION_BOARD_VERSION = 3;
 const OPERATION_BOARD_SIZE = 6;
-const OPERATION_DIFFICULTY_BANDS = Object.freeze([
-    'current', 'current', 'lower', 'lower', 'higher', 'higher'
+const OPERATION_STANDARD_BOARD_SIZE = 4;
+const OPERATION_STANDARD_DIFFICULTY_BANDS = Object.freeze(['current', 'current', 'lower', 'lower']);
+const OPERATION_DEEP_SECTOR_BAND = 'deep';
+const DEEP_SECTOR_MIN_LEVEL = 55;
+const DEEP_SECTOR_MAX_LEVEL = 100;
+const DEEP_SECTOR_LEVEL_STEP = 5;
+const DEEP_SECTOR_SHOP_MAX_RANK = 10;
+const DEEP_SECTOR_SHOP_BONUS_PER_RANK = 0.05;
+const DEEP_SECTOR_SHOP_DEFINITIONS = Object.freeze([
+    Object.freeze({ id: 'cache', name: 'Cache Triangulation', detail: '+5% Cache drop chance in Operations per rank.' }),
+    Object.freeze({ id: 'flux', name: 'Flux Resonance', detail: '+5% Flux drop chance in Operations per rank.' }),
+    Object.freeze({ id: 'material', name: 'Material Surveying', detail: '+5% material drops in Operations per rank.' }),
+    Object.freeze({ id: 'feed', name: 'Feed Reclamation', detail: '+5% Feed from enemies in Operations per rank.' })
 ]);
 const OPERATION_SEED_HISTORY_LIMIT = 10;
 const OPERATION_NAME_PREFIXES = Object.freeze([
@@ -58,7 +69,7 @@ function createOperationSeed(random = Math.random, now = Date.now) {
 }
 
 function getOperationEnemyPool(recommendedLevel, enemyRegistry = window.enemies || []) {
-    const level = Math.max(1, Math.min(50, Math.floor(Number(recommendedLevel) || 1)));
+    const level = Math.max(1, Math.min(DEEP_SECTOR_MAX_LEVEL, Math.floor(Number(recommendedLevel) || 1)));
     const eligible = enemyRegistry.filter(enemy => enemy?.name && !enemy.developerOnly && !enemy.isTrainingDummy && !enemy.dynamicOperationSecurity);
     const nearby = eligible.filter(enemy => Math.abs(Math.max(1, Number(enemy.level) || 1) - level) <= 5);
     const source = nearby.length >= 4
@@ -70,6 +81,7 @@ function getOperationEnemyPool(recommendedLevel, enemyRegistry = window.enemies 
 }
 
 function chooseOperationGuaranteedReward(level, random) {
+    level = Math.max(1, Math.min(DEEP_SECTOR_MAX_LEVEL, Math.floor(Number(level) || 1)));
     const rewardKind = Math.floor(random() * 5);
     if (rewardKind === 0) {
         // Per-level ranges never overlap, so a harder Feed Operation cannot
@@ -80,24 +92,24 @@ function chooseOperationGuaranteedReward(level, random) {
         const caches = (typeof CACHE_DEFINITIONS !== 'undefined' ? CACHE_DEFINITIONS : [])
             .filter(cache => !['flux', 'core'].includes(cache.id));
         const cache = caches[Math.floor(random() * caches.length)] || { id: 'kinetic', name: 'Kinetic Cache' };
-        return { kind: 'cache', id: cache.id, name: cache.name, quantity: level >= 41 ? 2 : 1 };
+        return { kind: 'cache', id: cache.id, name: cache.name, quantity: level >= 41 ? 2 + Math.floor(Math.max(0, level - 50) / 25) : 1 };
     }
     if (rewardKind === 2) {
         const cores = (typeof CORE_DEFINITIONS !== 'undefined' ? CORE_DEFINITIONS : [])
             .filter(core => Number(core.minLevel || 1) <= level);
         const core = cores[Math.floor(random() * cores.length)] || { id: 'reclamation', name: 'Reclamation Core' };
-        return { kind: 'core', id: core.id, name: core.name, quantity: 1 };
+        return { kind: 'core', id: core.id, name: core.name, quantity: 1 + Math.floor(Math.max(0, level - 50) / 50) };
     }
     if (rewardKind === 3) {
         const grade = Math.max(1, Math.min(5, Math.ceil(level / 10)));
-        return { kind: 'material', name: `Flux ${['I', 'II', 'III', 'IV', 'V'][grade - 1]}`, quantity: level >= 31 ? 2 : 1 };
+        return { kind: 'material', name: `Flux ${['I', 'II', 'III', 'IV', 'V'][grade - 1]}`, quantity: level >= 31 ? 2 + Math.floor(Math.max(0, level - 50) / 20) : 1 };
     }
     const band = Math.max(0, Math.min(OPERATION_MATERIAL_BANDS.length - 1, Math.floor((level - 1) / 10)));
     const pool = OPERATION_MATERIAL_BANDS[band];
     const first = pool[Math.floor(random() * pool.length)];
     let second = pool[Math.floor(random() * pool.length)];
     if (pool.length > 1 && second === first) second = pool[(pool.indexOf(first) + 1) % pool.length];
-    const baseQuantity = Math.max(1, 5 - band);
+    const baseQuantity = Math.max(1, 5 - band) + Math.floor(Math.max(0, level - 50) / 10);
     return {
         kind: 'materialBundle',
         items: [
@@ -123,18 +135,70 @@ function getOperationLevelForBand(playerLevel, difficultyBand, random) {
         const offset = 3 + Math.floor(random() * 4);
         return Math.max(1, baseLevel - offset);
     }
-    if (difficultyBand === 'higher') {
-        const offset = 3 + Math.floor(random() * 4);
-        return Math.min(50, baseLevel + offset);
-    }
     return baseLevel;
 }
 
-function generateOperationOffer(seed, playerLevel = Number(window.player?.level) || 1, enemyRegistry = window.enemies || [], difficultyBand = 'current') {
+function normalizeDeepSectorProgress(source) {
+    const progress = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
+    const highestUnlockedLevel = Math.max(
+        DEEP_SECTOR_MIN_LEVEL,
+        Math.min(DEEP_SECTOR_MAX_LEVEL, Math.floor(Number(progress.highestUnlockedLevel) || DEEP_SECTOR_MIN_LEVEL))
+    );
+    const selectedLevel = Math.max(
+        DEEP_SECTOR_MIN_LEVEL,
+        Math.min(highestUnlockedLevel, Math.floor(Number(progress.selectedLevel) || highestUnlockedLevel))
+    );
+    const rawShop = progress.shop && typeof progress.shop === 'object' && !Array.isArray(progress.shop) ? progress.shop : {};
+    return {
+        intel: Math.max(0, Math.floor(Number(progress.intel) || 0)),
+        highestUnlockedLevel: DEEP_SECTOR_MIN_LEVEL + Math.floor((highestUnlockedLevel - DEEP_SECTOR_MIN_LEVEL) / DEEP_SECTOR_LEVEL_STEP) * DEEP_SECTOR_LEVEL_STEP,
+        selectedLevel: DEEP_SECTOR_MIN_LEVEL + Math.floor((selectedLevel - DEEP_SECTOR_MIN_LEVEL) / DEEP_SECTOR_LEVEL_STEP) * DEEP_SECTOR_LEVEL_STEP,
+        shop: Object.fromEntries(DEEP_SECTOR_SHOP_DEFINITIONS.map(definition => [
+            definition.id,
+            Math.max(0, Math.min(DEEP_SECTOR_SHOP_MAX_RANK, Math.floor(Number(rawShop[definition.id]) || 0)))
+        ]))
+    };
+}
+
+function ensureDeepSectorProgress() {
+    window.deepSectorProgress = normalizeDeepSectorProgress(window.deepSectorProgress);
+    return window.deepSectorProgress;
+}
+
+function getDeepSectorIntelCost(level) {
+    const normalizedLevel = Math.max(DEEP_SECTOR_MIN_LEVEL, Math.min(DEEP_SECTOR_MAX_LEVEL, Math.floor(Number(level) || DEEP_SECTOR_MIN_LEVEL)));
+    return Math.max(1, Math.ceil((normalizedLevel - 50) / DEEP_SECTOR_LEVEL_STEP));
+}
+
+function getDeepSectorIntelReward(level) {
+    return getDeepSectorIntelCost(level) + 2;
+}
+
+function getDeepSectorShopUpgradeCost(id, progress = ensureDeepSectorProgress()) {
+    const definition = DEEP_SECTOR_SHOP_DEFINITIONS.find(entry => entry.id === id);
+    if (!definition) return Number.POSITIVE_INFINITY;
+    const rank = Math.max(0, Math.min(DEEP_SECTOR_SHOP_MAX_RANK, Math.floor(Number(progress.shop?.[id]) || 0)));
+    return rank >= DEEP_SECTOR_SHOP_MAX_RANK ? Number.POSITIVE_INFINITY : (rank + 1) * 2;
+}
+
+function purchaseDeepSectorShopUpgrade(id) {
+    const progress = ensureDeepSectorProgress();
+    const definition = DEEP_SECTOR_SHOP_DEFINITIONS.find(entry => entry.id === id);
+    const cost = getDeepSectorShopUpgradeCost(id, progress);
+    if (!definition || !Number.isFinite(cost) || progress.intel < cost) return false;
+    progress.intel -= cost;
+    progress.shop[id]++;
+    if (typeof logMessage === 'function') logMessage(`${definition.name} upgraded to rank ${progress.shop[id]}.`);
+    return true;
+}
+
+function generateOperationOffer(seed, playerLevel = Number(window.player?.level) || 1, enemyRegistry = window.enemies || [], difficultyBand = 'current', options = {}) {
     const stableSeed = String(seed || createOperationSeed());
     const random = createOperationRandom(stableSeed);
-    const normalizedBand = OPERATION_DIFFICULTY_BANDS.includes(difficultyBand) ? difficultyBand : 'current';
-    const recommendedLevel = getOperationLevelForBand(playerLevel, normalizedBand, random);
+    const normalizedBand = [...OPERATION_STANDARD_DIFFICULTY_BANDS, OPERATION_DEEP_SECTOR_BAND].includes(difficultyBand) ? difficultyBand : 'current';
+    const recommendedLevel = normalizedBand === OPERATION_DEEP_SECTOR_BAND
+        ? Math.max(DEEP_SECTOR_MIN_LEVEL, Math.min(DEEP_SECTOR_MAX_LEVEL, Math.floor(Number(options.deepSectorLevel) || DEEP_SECTOR_MIN_LEVEL)))
+        : getOperationLevelForBand(playerLevel, normalizedBand, random);
     const availableEnemies = getOperationEnemyPool(recommendedLevel, enemyRegistry);
     const shuffledEnemies = availableEnemies
         .map(enemy => ({ enemy, order: random() }))
@@ -156,6 +220,9 @@ function generateOperationOffer(seed, playerLevel = Number(window.player?.level)
         seed: stableSeed,
         generatedOperation: true,
         difficultyBand: normalizedBand,
+        deepSector: normalizedBand === OPERATION_DEEP_SECTOR_BAND,
+        intelCost: normalizedBand === OPERATION_DEEP_SECTOR_BAND ? getDeepSectorIntelCost(recommendedLevel) : 0,
+        intelReward: normalizedBand === OPERATION_DEEP_SECTOR_BAND ? getDeepSectorIntelReward(recommendedLevel) : 0,
         name: `${prefix} ${target}`,
         recommendedLevel,
         enemies,
@@ -172,8 +239,12 @@ function normalizeOperationBoard(source, options = {}) {
     const enemyRegistry = options.enemies || window.enemies || [];
     const random = options.random || Math.random;
     const now = options.now || Date.now;
-    const canPreserveOffers = Number(board.version) === OPERATION_BOARD_VERSION
-        && Number(board.playerLevel) === playerLevel;
+    const progress = normalizeDeepSectorProgress(options.deepSectorProgress ?? window.deepSectorProgress);
+    const boardSize = playerLevel >= 50 ? OPERATION_BOARD_SIZE : OPERATION_STANDARD_BOARD_SIZE;
+    const difficultyBands = playerLevel >= 50
+        ? [...OPERATION_STANDARD_DIFFICULTY_BANDS, OPERATION_DEEP_SECTOR_BAND, OPERATION_DEEP_SECTOR_BAND]
+        : [...OPERATION_STANDARD_DIFFICULTY_BANDS];
+    const canPreserveOffers = Number(board.version) === OPERATION_BOARD_VERSION && Number(board.playerLevel) === playerLevel;
     const savedOffers = canPreserveOffers && Array.isArray(board.offers)
         ? board.offers.filter(offer => (
             offer?.generatedOperation
@@ -182,46 +253,68 @@ function normalizeOperationBoard(source, options = {}) {
             && Array.isArray(offer.enemies)
             && offer.enemies.length > 0
             && offer.guaranteedReward
-        )).slice(0, OPERATION_BOARD_SIZE)
+        )).slice(0, boardSize)
         : [];
     const offers = [];
     let generation = Math.max(0, Math.floor(Number(board.generation) || 0));
-    for (let index = 0; index < OPERATION_BOARD_SIZE; index++) {
-        const difficultyBand = OPERATION_DIFFICULTY_BANDS[index];
+    for (let index = 0; index < boardSize; index++) {
+        const difficultyBand = difficultyBands[index];
         const savedOffer = savedOffers[index];
-        if (savedOffer?.difficultyBand === difficultyBand) {
+        const deepLevelMatches = difficultyBand !== OPERATION_DEEP_SECTOR_BAND
+            || Number(savedOffer?.recommendedLevel) === progress.selectedLevel;
+        if (savedOffer?.difficultyBand === difficultyBand && deepLevelMatches) {
             offers.push(savedOffer);
             continue;
         }
         const seed = `${createOperationSeed(random, now)}-${generation.toString(36)}-${index}`;
-        offers.push(generateOperationOffer(seed, playerLevel, enemyRegistry, difficultyBand));
+        offers.push(generateOperationOffer(seed, playerLevel, enemyRegistry, difficultyBand, { deepSectorLevel: progress.selectedLevel }));
         generation++;
     }
     return { version: OPERATION_BOARD_VERSION, generation, playerLevel, offers };
 }
 
 function ensureOperationBoard(options = {}) {
-    operationBoard = normalizeOperationBoard(operationBoard, options);
-    return operationBoard;
+    window.operationBoard = normalizeOperationBoard(window.operationBoard, options);
+    return window.operationBoard;
 }
 
-function replaceCompletedOperationOffer(operationId, options = {}) {
+function rerollOperationBoard(options = {}) {
     const board = ensureOperationBoard(options);
-    const index = board.offers.findIndex(offer => offer.operationId === operationId);
-    if (index < 0) return null;
     const random = options.random || Math.random;
     const now = options.now || Date.now;
-    const seed = `${createOperationSeed(random, now)}-${board.generation.toString(36)}-${index}`;
-    const difficultyBand = board.offers[index]?.difficultyBand || OPERATION_DIFFICULTY_BANDS[index] || 'current';
-    const replacement = generateOperationOffer(
-        seed,
-        options.playerLevel ?? window.player?.level,
-        options.enemies || window.enemies || [],
-        difficultyBand
-    );
-    board.offers[index] = replacement;
-    board.generation++;
-    return replacement;
+    const playerLevel = Math.max(1, Math.min(50, Math.floor(Number(options.playerLevel ?? window.player?.level) || 1)));
+    const progress = ensureDeepSectorProgress();
+    const difficultyBands = playerLevel >= 50
+        ? [...OPERATION_STANDARD_DIFFICULTY_BANDS, OPERATION_DEEP_SECTOR_BAND, OPERATION_DEEP_SECTOR_BAND]
+        : [...OPERATION_STANDARD_DIFFICULTY_BANDS];
+    board.offers = difficultyBands.map((difficultyBand, index) => {
+        const seed = `${createOperationSeed(random, now)}-${board.generation.toString(36)}-${index}`;
+        board.generation++;
+        return generateOperationOffer(seed, playerLevel, options.enemies || window.enemies || [], difficultyBand, {
+            deepSectorLevel: progress.selectedLevel
+        });
+    });
+    board.version = OPERATION_BOARD_VERSION;
+    board.playerLevel = playerLevel;
+    return board;
+}
+
+function selectDeepSectorLevel(level, options = {}) {
+    const progress = ensureDeepSectorProgress();
+    const requested = Math.floor(Number(level) || DEEP_SECTOR_MIN_LEVEL);
+    const selected = Math.max(DEEP_SECTOR_MIN_LEVEL, Math.min(progress.highestUnlockedLevel, requested));
+    progress.selectedLevel = DEEP_SECTOR_MIN_LEVEL + Math.floor((selected - DEEP_SECTOR_MIN_LEVEL) / DEEP_SECTOR_LEVEL_STEP) * DEEP_SECTOR_LEVEL_STEP;
+    const board = ensureOperationBoard(options);
+    board.offers = board.offers.slice(0, OPERATION_STANDARD_BOARD_SIZE);
+    for (let index = 0; index < 2; index++) {
+        const offerIndex = OPERATION_STANDARD_BOARD_SIZE + index;
+        const seed = `${createOperationSeed(options.random || Math.random, options.now || Date.now)}-${board.generation.toString(36)}-${offerIndex}`;
+        board.offers.push(generateOperationOffer(seed, 50, options.enemies || window.enemies || [], OPERATION_DEEP_SECTOR_BAND, {
+            deepSectorLevel: progress.selectedLevel
+        }));
+        board.generation++;
+    }
+    return progress.selectedLevel;
 }
 
 function stageOperationGuaranteedReward(reward) {
@@ -284,7 +377,22 @@ function completeGeneratedOperation(location = currentDelveLocation) {
     operationState.completionRewards = [];
     operationState.guaranteedRewardClaimed = true;
     recordCompletedOperationSeed(location.seed || operationState.operationSeed);
-    replaceCompletedOperationOffer(location.operationId || operationState.operationId);
+    const progress = ensureDeepSectorProgress();
+    const operationLevel = Math.max(1, Math.floor(Number(location.recommendedLevel) || 1));
+    const intelEarned = location.deepSector
+        ? Math.max(1, Math.floor(Number(location.intelReward) || getDeepSectorIntelReward(operationLevel)))
+        : (Number(window.player?.level) >= 50 ? 1 : 0);
+    if (intelEarned > 0) {
+        progress.intel += intelEarned;
+        operationState.intelEarned = intelEarned;
+        if (typeof logMessage === 'function') logMessage(`Recovered ${intelEarned} Deep Sector Intel.`);
+    }
+    if (location.deepSector && operationLevel >= progress.highestUnlockedLevel && operationLevel < DEEP_SECTOR_MAX_LEVEL) {
+        progress.highestUnlockedLevel = Math.min(DEEP_SECTOR_MAX_LEVEL, operationLevel + DEEP_SECTOR_LEVEL_STEP);
+        progress.selectedLevel = progress.highestUnlockedLevel;
+        operationState.deepSectorLevelUnlocked = progress.highestUnlockedLevel;
+        if (typeof logMessage === 'function') logMessage(`Deep Sector Threat Level ${progress.highestUnlockedLevel} unlocked.`);
+    }
     return reward;
 }
 
@@ -978,6 +1086,11 @@ function normalizeOperationState(source) {
             ? state.guaranteedReward
             : null,
         guaranteedRewardClaimed: Boolean(state.guaranteedRewardClaimed),
+        deepSector: Boolean(state.deepSector),
+        deepSectorLevel: Math.max(0, Math.floor(Number(state.deepSectorLevel) || 0)),
+        intelCost: Math.max(0, Math.floor(Number(state.intelCost) || 0)),
+        intelEarned: Math.max(0, Math.floor(Number(state.intelEarned) || 0)),
+        deepSectorLevelUnlocked: Math.max(0, Math.floor(Number(state.deepSectorLevelUnlocked) || 0)),
         encounterTarget: Math.max(1, Math.floor(Number(state.encounterTarget) || fallbackEncounterCount || 1)),
         encountersCompleted: Math.max(0, Math.floor(Number(state.encountersCompleted) || 0)),
         nextEventAt: state.nextEventAt != null && Number.isFinite(Number(state.nextEventAt))
@@ -1051,10 +1164,25 @@ function applyCoreToOperationState(coreId, state) {
 }
 
 function beginOperationState(location, coreId = null) {
+    const progress = ensureDeepSectorProgress();
+    const intelCost = location?.deepSector
+        ? Math.max(1, Math.floor(Number(location.intelCost) || getDeepSectorIntelCost(location?.recommendedLevel)))
+        : 0;
+    if (intelCost > progress.intel) {
+        if (typeof showWarningPopup === 'function') showWarningPopup(`This Deep Sector requires ${intelCost} Intel.`);
+        return null;
+    }
+    if (coreId) {
+        const core = getCoreDefinition(coreId);
+        if (!core || getCoreQuantity(core.id) <= 0) return null;
+    }
     const state = normalizeOperationState({
         operationId: location?.operationId || null,
         operationSeed: location?.seed || null,
         guaranteedReward: location?.guaranteedReward || null,
+        deepSector: Boolean(location?.deepSector),
+        deepSectorLevel: location?.deepSector ? location?.recommendedLevel : 0,
+        intelCost,
         encounterTarget: location?.numFights || 1,
         nextEventAt: 1
     });
@@ -1065,9 +1193,14 @@ function beginOperationState(location, coreId = null) {
         applyCoreToOperationState(core.id, state);
         logMessage(`${core.name} consumed for this Operation.`);
     }
+    if (intelCost > 0) {
+        progress.intel -= intelCost;
+        logMessage(`${intelCost} Deep Sector Intel committed to the deployment.`);
+    }
     operationState = state;
     currentRunMode = 'operation';
     currentMonsterIndex = 0;
+    rerollOperationBoard();
     scheduleNextOperationEvent();
     refreshResourceStorageUI();
     refreshOperationEventHistoryUI();
@@ -1092,6 +1225,15 @@ function getActiveOperationRewardModifiers() {
         core: 1.15 + modifiers.coreFind,
         cache: 1.25 + modifiers.cacheFind
     };
+}
+
+function getDeepSectorIntelShopMultipliers() {
+    if (currentRunMode !== 'operation') return { cache: 1, flux: 1, material: 1, feed: 1 };
+    const shop = ensureDeepSectorProgress().shop;
+    return Object.fromEntries(['cache', 'flux', 'material', 'feed'].map(id => [
+        id,
+        1 + Math.max(0, Number(shop[id]) || 0) * DEEP_SECTOR_SHOP_BONUS_PER_RANK
+    ]));
 }
 
 function getActiveOperationTemporaryModifiers(scope) {
@@ -1338,12 +1480,26 @@ function clearActiveRunState() {
 window.OPERATION_EVENT_DEFINITIONS = OPERATION_EVENT_DEFINITIONS;
 window.OPERATION_BOARD_SIZE = OPERATION_BOARD_SIZE;
 window.OPERATION_BOARD_VERSION = OPERATION_BOARD_VERSION;
+window.OPERATION_STANDARD_BOARD_SIZE = OPERATION_STANDARD_BOARD_SIZE;
+window.DEEP_SECTOR_MIN_LEVEL = DEEP_SECTOR_MIN_LEVEL;
+window.DEEP_SECTOR_MAX_LEVEL = DEEP_SECTOR_MAX_LEVEL;
+window.DEEP_SECTOR_LEVEL_STEP = DEEP_SECTOR_LEVEL_STEP;
+window.DEEP_SECTOR_SHOP_MAX_RANK = DEEP_SECTOR_SHOP_MAX_RANK;
+window.DEEP_SECTOR_SHOP_BONUS_PER_RANK = DEEP_SECTOR_SHOP_BONUS_PER_RANK;
+window.DEEP_SECTOR_SHOP_DEFINITIONS = DEEP_SECTOR_SHOP_DEFINITIONS;
 window.OPERATION_SEED_HISTORY_LIMIT = OPERATION_SEED_HISTORY_LIMIT;
 window.createOperationRandom = createOperationRandom;
 window.generateOperationOffer = generateOperationOffer;
 window.normalizeOperationBoard = normalizeOperationBoard;
 window.ensureOperationBoard = ensureOperationBoard;
-window.replaceCompletedOperationOffer = replaceCompletedOperationOffer;
+window.rerollOperationBoard = rerollOperationBoard;
+window.normalizeDeepSectorProgress = normalizeDeepSectorProgress;
+window.ensureDeepSectorProgress = ensureDeepSectorProgress;
+window.getDeepSectorIntelCost = getDeepSectorIntelCost;
+window.getDeepSectorIntelReward = getDeepSectorIntelReward;
+window.getDeepSectorShopUpgradeCost = getDeepSectorShopUpgradeCost;
+window.purchaseDeepSectorShopUpgrade = purchaseDeepSectorShopUpgrade;
+window.selectDeepSectorLevel = selectDeepSectorLevel;
 window.formatOperationReward = formatOperationReward;
 window.recordCompletedOperationSeed = recordCompletedOperationSeed;
 window.completeGeneratedOperation = completeGeneratedOperation;
@@ -1351,6 +1507,7 @@ window.normalizeOperationState = normalizeOperationState;
 window.beginOperationState = beginOperationState;
 window.beginPatrolState = beginPatrolState;
 window.getActiveOperationRewardModifiers = getActiveOperationRewardModifiers;
+window.getDeepSectorIntelShopMultipliers = getDeepSectorIntelShopMultipliers;
 window.applyActiveRunPlayerModifiers = applyActiveRunPlayerModifiers;
 window.applyActiveRunEnemyModifiers = applyActiveRunEnemyModifiers;
 window.completeOperationEncounter = completeOperationEncounter;

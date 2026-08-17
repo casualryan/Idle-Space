@@ -1148,8 +1148,8 @@ test('ordered save migrations preserve rolls and produce a valid current snapsho
   );
 
   assert.equal(result.beforeUnchanged, true, 'migration mutated the parsed legacy payload');
-  assert.equal(result.migrated.toVersion, 19);
-  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
+  assert.equal(result.migrated.toVersion, 20);
+  assert.deepEqual([...result.migrated.appliedVersions], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
   assert.equal(result.migrated.state.inventory.length, 0, 'legacy material stacks still occupy ordinary slots');
   assert.equal(result.migrated.state.materialInventory['Scrap Metal'], 20);
   assert.equal(result.migrated.state.materialInventory['Wire Bundle'], 7);
@@ -1202,7 +1202,7 @@ test('v2 passive saves are refunded and caught up to two points per level', () =
     })()`
   );
 
-  assert.deepEqual([...result.appliedVersions], [13, 14, 15, 16, 17, 18, 19]);
+  assert.deepEqual([...result.appliedVersions], [13, 14, 15, 16, 17, 18, 19, 20]);
   assert.equal(result.state.player.passives.treeVersion, 6);
   assert.deepEqual(Object.keys(result.state.player.passives.allocations), []);
   assert.equal(result.state.player.passives.points, 38);
@@ -1227,8 +1227,8 @@ test('v14 saves with stale passive treeVersion are refunded to tree version 6', 
     })()`
   );
 
-  assert.deepEqual([...result.appliedVersions], [15, 16, 17, 18, 19]);
-  assert.equal(result.toVersion, 19);
+  assert.deepEqual([...result.appliedVersions], [15, 16, 17, 18, 19, 20]);
+  assert.equal(result.toVersion, 20);
   assert.equal(result.state.player.passives.treeVersion, 6);
   assert.deepEqual(Object.keys(result.state.player.passives.allocations), []);
   assert.equal(result.state.player.passives.points, 20);
@@ -1257,7 +1257,7 @@ test('v16 migration converts retired single-type bionic boosters into grouped bo
       meta: { version: 15 }
     })`
   );
-  assert.deepEqual([...result.appliedVersions], [16, 17, 18, 19]);
+  assert.deepEqual([...result.appliedVersions], [16, 17, 18, 19, 20]);
   assert.equal(result.state.player.equipment.bionicSlots[0].name, 'Elemental Booster');
   assert.equal(result.state.player.equipment.bionicSlots[0].statModifiers.damageGroups.elemental, 17);
   assert.equal(result.state.inventory[0].name, 'Physical Booster');
@@ -1281,7 +1281,7 @@ test('v17 migrates Credits to Feed and initializes new resource stores safely', 
     })`
   );
 
-  assert.deepEqual([...result.appliedVersions], [17, 18, 19]);
+  assert.deepEqual([...result.appliedVersions], [17, 18, 19, 20]);
   assert.equal(result.state.player.feed, 4321);
   assert.equal(result.state.player.currency, undefined);
   assert.equal(result.state.delveBag.feed, 77);
@@ -1307,13 +1307,19 @@ test('v19 clamps accidental level-51 saves without discarding allocated passives
     })`
   );
 
-  assert.deepEqual([...result.appliedVersions], [19]);
+  assert.deepEqual([...result.appliedVersions], [19, 20]);
   assert.equal(result.state.player.level, 50);
   assert.equal(result.state.player.experience, 0);
   assert.equal(result.state.player.passives.points, 2);
   assert.deepEqual(Object.keys(result.state.player.passives.allocations), ['kept-node']);
-  assert.equal(result.state.operationBoard.version, 2);
+  assert.equal(result.state.operationBoard.version, 3);
   assert.deepEqual([...result.state.operationBoard.offers], []);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.state.deepSectorProgress)), {
+    intel: 0,
+    highestUnlockedLevel: 55,
+    selectedLevel: 55,
+    shop: { cache: 0, flux: 0, material: 0, feed: 0 }
+  });
 });
 
 test('Core, Cache, and Flux registries use distinct dedicated 512px icons', () => {
@@ -1471,7 +1477,7 @@ test('Operation events expose the approved catalog and persist reusable effects'
   assert.match(read('style.css'), /\.operation-event-history\s*\{[\s\S]*position:\s*absolute/);
 });
 
-test('generated Operation offers are deterministic, persistent, and replaced only after success', () => {
+test('Operation boards gate Deep Sectors until level 50 and reroll every offer on deployment', () => {
   const result = evaluateClassic(
     ['resourceSystem.js', 'operationSystem.js'],
     `(() => {
@@ -1489,21 +1495,22 @@ test('generated Operation offers are deterministic, persistent, and replaced onl
         if (reward.kind === 'materialBundle') return reward.items.every(item => materialNames.has(item.name) && item.quantity > 0);
         return false;
       });
-      operationBoard = normalizeOperationBoard(null, {
+      const preEndgameBoard = normalizeOperationBoard(null, {
         playerLevel: 28,
         enemies: window.enemies,
         random: () => 0.25,
         now: () => 1000
       });
-      const boardBefore = JSON.parse(JSON.stringify(operationBoard));
-      const normalizedAgain = normalizeOperationBoard(JSON.parse(JSON.stringify(operationBoard)), {
+      const normalizedAgain = normalizeOperationBoard(JSON.parse(JSON.stringify(preEndgameBoard)), {
         playerLevel: 28,
         enemies: window.enemies,
         random: () => 0.99,
         now: () => 9999
       });
-      const refreshedForLevel = normalizeOperationBoard(JSON.parse(JSON.stringify(operationBoard)), {
-        playerLevel: 30,
+      window.deepSectorProgress = normalizeDeepSectorProgress({ intel: 1, highestUnlockedLevel: 55, selectedLevel: 55 });
+      window.player.level = 50;
+      window.operationBoard = normalizeOperationBoard(null, {
+        playerLevel: 50,
         enemies: window.enemies,
         random: () => 0.4,
         now: () => 2000
@@ -1511,27 +1518,26 @@ test('generated Operation offers are deterministic, persistent, and replaced onl
       let lowRewardRoll = 0;
       const level45Feed = chooseOperationGuaranteedReward(45, () => lowRewardRoll++ === 0 ? 0 : 0.999999);
       const level50Feed = chooseOperationGuaranteedReward(50, () => 0);
-      const completed = operationBoard.offers[0];
+      const completed = window.operationBoard.offers[0];
       completed.guaranteedReward = { kind: 'feed', quantity: 333 };
-      operationState = normalizeOperationState({
-        operationId: completed.operationId,
-        operationSeed: completed.seed,
-        guaranteedReward: completed.guaranteedReward,
-        encounterTarget: completed.numFights
-      });
       currentDelveLocation = completed;
-      const idsBeforeCompletion = operationBoard.offers.map(offer => offer.operationId);
+      const idsBeforeDeployment = window.operationBoard.offers.map(offer => offer.operationId);
+      const endgameBands = window.operationBoard.offers.map(offer => offer.difficultyBand);
+      const deepLevels = window.operationBoard.offers.filter(offer => offer.deepSector).map(offer => offer.recommendedLevel);
+      beginOperationState(completed);
+      const idsAfterDeployment = window.operationBoard.offers.map(offer => offer.operationId);
       const reward = completeGeneratedOperation(completed);
-      const idsAfterCompletion = operationBoard.offers.map(offer => offer.operationId);
+      const idsAfterCompletion = window.operationBoard.offers.map(offer => offer.operationId);
       return {
         deterministic: JSON.stringify(deterministicA) === JSON.stringify(deterministicB),
         rewardKinds: [...new Set(sampleRewards.map(reward => reward.kind))],
         validRewards,
-        boardSize: boardBefore.offers.length,
-        stableAcrossNormalization: JSON.stringify(boardBefore) === JSON.stringify(normalizedAgain),
-        bands: boardBefore.offers.map(offer => offer.difficultyBand),
-        levels: boardBefore.offers.map(offer => offer.recommendedLevel),
-        refreshedLevels: refreshedForLevel.offers.map(offer => offer.recommendedLevel),
+        preEndgameBoardSize: preEndgameBoard.offers.length,
+        preEndgameBands: preEndgameBoard.offers.map(offer => offer.difficultyBand),
+        stableAcrossNormalization: JSON.stringify(preEndgameBoard) === JSON.stringify(normalizedAgain),
+        endgameBoardSize: idsBeforeDeployment.length,
+        endgameBands,
+        deepLevels,
         level45Feed: level45Feed.quantity,
         level50Feed: level50Feed.quantity,
         enemyLevels: deterministicA.enemies.map(spawn => window.enemies.find(enemy => enemy.name === spawn.name).level),
@@ -1540,8 +1546,10 @@ test('generated Operation offers are deterministic, persistent, and replaced onl
         reward,
         completedSeed: completed.seed,
         stagedFeed: delveBag.feed,
-        idsBeforeCompletion,
+        idsBeforeDeployment,
+        idsAfterDeployment,
         idsAfterCompletion,
+        intelAfterClear: window.deepSectorProgress.intel,
         completedOperationSeeds,
         completedOperationCount
       };
@@ -1549,10 +1557,9 @@ test('generated Operation offers are deterministic, persistent, and replaced onl
     {
       window: {
         coreInventory: {}, cacheInventory: {}, materials, enemies,
-        player: { level: 28 }, registerCoreboundInitializer: () => {}
+        player: { level: 28 }, registerCoreboundInitializer: () => {}, operationBoard: null, deepSectorProgress: null
       },
       document: { getElementById: () => null },
-      operationBoard: { version: 2, generation: 0, playerLevel: 28, offers: [] },
       operationState: null,
       currentRunMode: 'operation',
       currentMonsterIndex: 0,
@@ -1568,24 +1575,103 @@ test('generated Operation offers are deterministic, persistent, and replaced onl
   assert.equal(result.deterministic, true);
   assert.equal(result.validRewards, true);
   assert.deepEqual(new Set(result.rewardKinds), new Set(['feed', 'cache', 'core', 'material', 'materialBundle']));
-  assert.equal(result.boardSize, 6);
+  assert.equal(result.preEndgameBoardSize, 4);
+  assert.deepEqual([...result.preEndgameBands], ['current', 'current', 'lower', 'lower']);
   assert.equal(result.stableAcrossNormalization, true, 'redrawing or loading rerolled the board');
-  assert.deepEqual([...result.bands], ['current', 'current', 'lower', 'lower', 'higher', 'higher']);
-  assert.deepEqual([...result.levels.slice(0, 2)], [28, 28]);
-  assert.equal(result.levels.slice(2, 4).every(level => level < 28), true);
-  assert.equal(result.levels.slice(4).every(level => level > 28), true);
-  assert.deepEqual([...result.refreshedLevels.slice(0, 2)], [30, 30]);
+  assert.equal(result.endgameBoardSize, 6);
+  assert.deepEqual([...result.endgameBands], ['current', 'current', 'lower', 'lower', 'deep', 'deep']);
+  assert.deepEqual([...result.deepLevels], [55, 55]);
   assert.ok(result.level50Feed > result.level45Feed, 'higher-level Feed rewards can roll below lower-level rewards');
   assert.ok(result.enemyLevels.every(level => Math.abs(level - result.recommendedLevel) <= 5));
   assert.ok(result.visibleReward.length > 0);
   assert.equal(result.reward.quantity, 333);
   assert.equal(result.stagedFeed, 333);
-  assert.notEqual(result.idsAfterCompletion[0], result.idsBeforeCompletion[0]);
-  assert.deepEqual([...result.idsAfterCompletion.slice(1)], [...result.idsBeforeCompletion.slice(1)]);
+  assert.equal(result.idsAfterDeployment.every(id => !result.idsBeforeDeployment.includes(id)), true);
+  assert.deepEqual([...result.idsAfterCompletion], [...result.idsAfterDeployment]);
+  assert.equal(result.intelAfterClear, 2, 'a level-50 Standard Operation did not award Intel');
   assert.equal(result.completedOperationSeeds.length, 10);
   assert.equal(result.completedOperationSeeds[0], 'old-1');
   assert.equal(result.completedOperationSeeds[9], result.completedSeed);
   assert.equal(result.completedOperationCount, 11);
+});
+
+test('Deep Sector Intel sustains escalation and funds permanent Operation loot upgrades', () => {
+  const result = evaluateClassic(
+    ['resourceSystem.js', 'operationSystem.js'],
+    `(() => {
+      window.deepSectorProgress = normalizeDeepSectorProgress({ intel: 1 });
+      window.operationBoard = normalizeOperationBoard(null, {
+        playerLevel: 50,
+        enemies: window.enemies,
+        random: () => 0.35,
+        now: () => 5000
+      });
+      const deepOffer = window.operationBoard.offers.find(offer => offer.deepSector);
+      deepOffer.guaranteedReward = { kind: 'feed', quantity: 500 };
+      const cost = deepOffer.intelCost;
+      const recovery = deepOffer.intelReward;
+      beginOperationState(deepOffer);
+      const intelAfterDeployment = window.deepSectorProgress.intel;
+      completeGeneratedOperation(deepOffer);
+      const intelAfterClear = window.deepSectorProgress.intel;
+      const unlockedLevel = window.deepSectorProgress.highestUnlockedLevel;
+      const selectedLevel = window.deepSectorProgress.selectedLevel;
+      const firstUpgradeCost = getDeepSectorShopUpgradeCost('flux');
+      const purchased = purchaseDeepSectorShopUpgrade('flux');
+      const shopMultipliers = getDeepSectorIntelShopMultipliers();
+      ensureOperationBoard();
+      return {
+        cost,
+        recovery,
+        intelAfterDeployment,
+        intelAfterClear,
+        unlockedLevel,
+        selectedLevel,
+        firstUpgradeCost,
+        purchased,
+        fluxRank: window.deepSectorProgress.shop.flux,
+        intelAfterPurchase: window.deepSectorProgress.intel,
+        shopMultipliers,
+        visibleDeepLevels: window.operationBoard.offers.filter(offer => offer.deepSector).map(offer => offer.recommendedLevel),
+        level100Cost: getDeepSectorIntelCost(100),
+        level100Recovery: getDeepSectorIntelReward(100)
+      };
+    })()`,
+    {
+      window: {
+        coreInventory: {}, cacheInventory: {}, materials, enemies,
+        player: { level: 50 }, registerCoreboundInitializer: () => {}, operationBoard: null, deepSectorProgress: null
+      },
+      document: { getElementById: () => null },
+      operationState: null,
+      currentRunMode: null,
+      currentMonsterIndex: 0,
+      currentDelveLocation: null,
+      delveBag: { items: [], feed: 0 },
+      completedOperationSeeds: [],
+      completedOperationCount: 0,
+      addItemToDelveBag: () => {},
+      logMessage: () => {}
+    }
+  );
+
+  assert.equal(result.cost, 1);
+  assert.equal(result.recovery, 3);
+  assert.equal(result.intelAfterDeployment, 0);
+  assert.equal(result.intelAfterClear, 3);
+  assert.equal(result.unlockedLevel, 60);
+  assert.equal(result.selectedLevel, 60);
+  assert.equal(result.firstUpgradeCost, 2);
+  assert.equal(result.purchased, true);
+  assert.equal(result.fluxRank, 1);
+  assert.equal(result.intelAfterPurchase, 1);
+  assert.equal(result.shopMultipliers.flux, 1.05);
+  assert.deepEqual([...result.visibleDeepLevels], [60, 60]);
+  assert.equal(result.level100Cost, 10);
+  assert.equal(result.level100Recovery, 12);
+  assert.match(read('combatController.js'), /excessLevels \* 0\.07/);
+  assert.match(read('combatController.js'), /excessLevels \* 0\.04/);
+  assert.match(read('delveUI.js'), /playerLevel >= 50[\s\S]*Deep Sector Operations/);
 });
 
 test('Caches retain themed outcomes and unopened guaranteed Feed value', () => {
@@ -2628,6 +2714,7 @@ test('character detail export captures the complete balance-facing build', () =>
       feed: 7654,
       completedOperationCount: 14,
       completedOperationSeeds: ['op-seed-five', 'op-seed-six'],
+      deepSectorProgress: { intel: 17, highestUnlockedLevel: 75, selectedLevel: 70, shop: { cache: 2, flux: 3, material: 1, feed: 4 } },
       completedLocations: { 'Corebound Terminus': 2 },
       locationDefinitions: [{ name: 'Corebound Terminus', locationCategory: 'endgame', endgameTier: 4, recommendedLevel: 50 }]
     })`,
@@ -2652,6 +2739,9 @@ test('character detail export captures the complete balance-facing build', () =>
   assert.match(exportText, /Level: 50/);
   assert.match(exportText, /Highest Endgame Tier Cleared: 4/);
   assert.match(exportText, /Total Operation Clears: 14/);
+  assert.match(exportText, /Deep Sector Intel: 17/);
+  assert.match(exportText, /Highest Deep Sector Threat: 75/);
+  assert.match(exportText, /Flux Resonance: 3\/10/);
   assert.match(exportText, /COMPLETED OPERATION SEEDS \(LAST 10\)/);
   assert.match(exportText, /1\. op-seed-five/);
   assert.match(exportText, /2\. op-seed-six/);

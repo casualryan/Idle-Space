@@ -6369,6 +6369,215 @@ hr {
     border-color: #d29aff !important;
 }
 
+.operation-board-section {
+    position: relative;
+    margin-bottom: 18px;
+    padding: 13px;
+    border: 1px solid rgba(255, 105, 82, 0.42);
+    border-radius: 8px;
+    background:
+        radial-gradient(circle at 92% 0, rgba(255, 81, 73, 0.14), transparent 38%),
+        linear-gradient(145deg, rgba(35, 13, 25, 0.88), rgba(7, 15, 30, 0.94));
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.035), 0 10px 26px rgba(0, 0, 0, 0.25);
+}
+
+.operation-board-section-header {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin: 0 0 12px;
+}
+
+.standard-operation-header {
+    margin: 3px 5px 10px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(75, 170, 211, 0.22);
+}
+
+.operation-board-section-header span {
+    color: #76a8c4;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 8px;
+    letter-spacing: 0.12em;
+}
+
+.operation-board-section-header h3 {
+    margin: 3px 0 2px;
+    color: #eaf8ff;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 15px;
+}
+
+.deep-sector-section .operation-board-section-header h3 { color: #ff9b8e; }
+
+.operation-board-section-header p {
+    margin: 0;
+    color: #88a7bb;
+    font-size: 10px;
+}
+
+.deep-sector-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 9px;
+    flex-wrap: wrap;
+}
+
+.deep-sector-controls > b {
+    padding: 7px 10px;
+    border: 1px solid rgba(255, 209, 102, 0.45);
+    border-radius: 4px;
+    color: #ffd166;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px;
+}
+
+.deep-sector-controls label {
+    color: #9fc5d8;
+    font-size: 10px;
+}
+
+.deep-sector-controls select,
+.deep-sector-controls button {
+    margin-left: 5px;
+    padding: 7px 9px;
+    border: 1px solid rgba(255, 113, 91, 0.58);
+    border-radius: 4px;
+    background: rgba(57, 20, 31, 0.88);
+    color: #ffd4cb;
+    font: 700 10px 'Rajdhani', sans-serif;
+}
+
+.deep-sector-controls button { cursor: pointer; }
+
+.deep-sector-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(250px, 1fr));
+    gap: 15px;
+}
+
+.location-card[data-operation-band="deep"] {
+    border-color: rgba(224, 79, 84, 0.68) !important;
+    background: linear-gradient(150deg, rgba(50, 18, 35, 0.97), rgba(12, 13, 29, 0.99)) !important;
+}
+
+.location-card[data-operation-band="deep"]:hover { border-color: #ff7f6e !important; }
+
+.location-card.is-unaffordable {
+    cursor: default !important;
+    filter: saturate(0.55);
+    opacity: 0.72;
+}
+
+.location-card.is-unaffordable:hover {
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+.location-card .location-action-button:disabled {
+    cursor: not-allowed !important;
+    opacity: 0.48;
+}
+
+.operation-intel-stakes {
+    margin-top: 3px;
+    color: #ffab9c;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.operation-intel-stakes--standard { color: #70d8c8; }
+
+.deep-sector-shop-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10030;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(0, 5, 14, 0.84);
+    backdrop-filter: blur(5px);
+}
+
+.deep-sector-shop {
+    width: min(920px, calc(100vw - 48px));
+    border: 1px solid rgba(255, 113, 91, 0.68);
+    border-radius: 10px;
+    background:
+        radial-gradient(circle at 90% 0, rgba(255, 70, 70, 0.16), transparent 35%),
+        linear-gradient(150deg, #10172a, #07101e 62%, #170c19);
+    box-shadow: 0 25px 80px rgba(0, 0, 0, 0.62), inset 0 1px rgba(255, 255, 255, 0.05);
+    color: #dff6ff;
+    overflow: hidden;
+}
+
+.deep-sector-shop > header {
+    position: relative;
+    padding: 20px 22px 17px;
+    border-bottom: 1px solid rgba(255, 113, 91, 0.22);
+}
+
+.deep-sector-shop > header span {
+    color: #ff8d7a;
+    font: 700 8px 'Orbitron', sans-serif;
+    letter-spacing: 0.14em;
+}
+
+.deep-sector-shop > header h2 { margin: 5px 0 3px; color: #fff3f0; }
+.deep-sector-shop > header p { margin: 0; color: #8faabd; font-size: 11px; }
+.deep-sector-shop > header b { position: absolute; top: 23px; right: 22px; color: #ffd166; font-family: 'Orbitron', sans-serif; font-size: 12px; }
+
+.deep-sector-shop-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 18px 22px;
+}
+
+.deep-sector-shop-card {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid rgba(80, 164, 200, 0.32);
+    border-radius: 6px;
+    background: rgba(4, 22, 38, 0.72);
+}
+
+.deep-sector-shop-card > div:first-child { display: flex; justify-content: space-between; gap: 10px; }
+.deep-sector-shop-card > div:first-child span { color: #dff7ff; font-weight: 700; }
+.deep-sector-shop-card > div:first-child b { color: #ff9c8d; font-size: 10px; }
+.deep-sector-shop-card p { min-height: 28px; margin: 0; color: #8eaabc; font-size: 10px; }
+
+.deep-sector-shop-ranks { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; }
+.deep-sector-shop-ranks i { height: 6px; border: 1px solid rgba(108, 157, 180, 0.28); border-radius: 2px; background: #071420; }
+.deep-sector-shop-ranks i.is-filled { border-color: #ff8978; background: #d65b53; box-shadow: 0 0 6px rgba(255, 91, 75, 0.45); }
+
+.deep-sector-shop-card button,
+.deep-sector-shop footer button {
+    padding: 8px 11px;
+    border: 1px solid rgba(255, 113, 91, 0.58);
+    border-radius: 4px;
+    background: linear-gradient(#5c2630, #311723);
+    color: #ffe6e1;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.deep-sector-shop-card button:disabled { cursor: not-allowed; opacity: 0.35; }
+.deep-sector-shop footer { display: flex; justify-content: flex-end; padding: 0 22px 18px; }
+
+@media (max-width: 760px) {
+    .operation-board-section-header { align-items: flex-start; flex-direction: column; }
+    .deep-sector-controls { justify-content: flex-start; }
+    .deep-sector-grid,
+    .deep-sector-shop-grid { grid-template-columns: 1fr; }
+    .deep-sector-shop > header b { position: static; display: block; margin-top: 10px; }
+}
+
 .location-cleared-tag {
     position: absolute;
     top: 29px;

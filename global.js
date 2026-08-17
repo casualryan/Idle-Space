@@ -622,7 +622,8 @@ function buildGameStateSnapshot() {
         delveClaimCache: (typeof delveClaimCache !== 'undefined') ? delveClaimCache : { items: [], feed: 0 },
         currentRunMode: (typeof currentRunMode !== 'undefined') ? currentRunMode : null,
         operationState: (typeof operationState !== 'undefined') ? operationState : null,
-        operationBoard: (typeof operationBoard !== 'undefined') ? operationBoard : { version: 2, generation: 0, playerLevel: player.level, offers: [] },
+        operationBoard: (typeof operationBoard !== 'undefined') ? operationBoard : { version: 3, generation: 0, playerLevel: player.level, offers: [] },
+        deepSectorProgress: (typeof deepSectorProgress !== 'undefined') ? deepSectorProgress : { intel: 0, highestUnlockedLevel: 55, selectedLevel: 55, shop: { cache: 0, flux: 0, material: 0, feed: 0 } },
         completedOperationSeeds: (typeof completedOperationSeeds !== 'undefined') ? completedOperationSeeds : [],
         completedOperationCount: (typeof completedOperationCount !== 'undefined') ? completedOperationCount : 0,
         completedDelveLocations: (typeof completedDelveLocations !== 'undefined') ? completedDelveLocations : {},
@@ -829,10 +830,15 @@ function loadGame(slotIndex = null, saveKind = 'autosave') {
         if (typeof operationState !== 'undefined') {
             operationState = currentRunMode === 'operation' ? normalizeOperationState(gameState.operationState) : null;
         }
+        if (typeof deepSectorProgress !== 'undefined') {
+            deepSectorProgress = typeof normalizeDeepSectorProgress === 'function'
+                ? normalizeDeepSectorProgress(gameState.deepSectorProgress)
+                : (gameState.deepSectorProgress || { intel: 0, highestUnlockedLevel: 55, selectedLevel: 55, shop: { cache: 0, flux: 0, material: 0, feed: 0 } });
+        }
         if (typeof operationBoard !== 'undefined') {
             operationBoard = typeof normalizeOperationBoard === 'function'
                 ? normalizeOperationBoard(gameState.operationBoard)
-                : (gameState.operationBoard || { version: 2, generation: 0, playerLevel: player.level, offers: [] });
+                : (gameState.operationBoard || { version: 3, generation: 0, playerLevel: player.level, offers: [] });
         }
         if (typeof completedOperationSeeds !== 'undefined') {
             completedOperationSeeds = Array.isArray(gameState.completedOperationSeeds)
@@ -1050,7 +1056,8 @@ function initializeNewCharacterState() {
     window.componentDropCounts = {};
     if (typeof delveClaimCache !== 'undefined') delveClaimCache = { items: [], feed: 0 };
     if (typeof completedDelveLocations !== 'undefined') completedDelveLocations = {};
-    if (typeof operationBoard !== 'undefined') operationBoard = { version: 2, generation: 0, playerLevel: 1, offers: [] };
+    if (typeof operationBoard !== 'undefined') operationBoard = { version: 3, generation: 0, playerLevel: 1, offers: [] };
+    if (typeof deepSectorProgress !== 'undefined') deepSectorProgress = { intel: 0, highestUnlockedLevel: 55, selectedLevel: 55, shop: { cache: 0, flux: 0, material: 0, feed: 0 } };
     if (typeof completedOperationSeeds !== 'undefined') completedOperationSeeds = [];
     if (typeof completedOperationCount !== 'undefined') completedOperationCount = 0;
     if (typeof isDelveInProgress !== 'undefined') isDelveInProgress = false;

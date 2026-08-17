@@ -169,8 +169,12 @@ function createEnemyInstance(monsterName, isEmpowered, slotIndex, rewardScale, o
     instance._defeatHandled = false;
     instance._operationLootChanceMultiplier = Math.max(0, Number(options.lootChanceMultiplier) || 1);
 
-    if (template.dynamicOperationSecurity && options.levelOverride) {
-        const targetLevel = Math.max(1, Math.min(50, Math.floor(Number(options.levelOverride) || 1)));
+    const levelOverride = options.levelOverride
+        ? Math.max(1, Math.min(100, Math.floor(Number(options.levelOverride) || 1)))
+        : null;
+
+    if (template.dynamicOperationSecurity && levelOverride) {
+        const targetLevel = levelOverride;
         const registry = (Array.isArray(window.enemies) ? window.enemies : [])
             .filter(candidate => !candidate.dynamicOperationSecurity && !candidate.developerOnly && !candidate.isTrainingDummy);
         const source = registry.slice().sort((left, right) => (
@@ -178,7 +182,7 @@ function createEnemyInstance(monsterName, isEmpowered, slotIndex, rewardScale, o
         ))[0];
         if (source) {
             instance.level = targetLevel;
-            instance.zone = Math.max(1, Math.min(10, Math.ceil(targetLevel / 5)));
+            instance.zone = Math.max(1, Math.min(20, Math.ceil(targetLevel / 5)));
             for (const key of ['health', 'energyShield', 'attackSpeed', 'criticalChance', 'criticalMultiplier', 'precision', 'deflection', 'experienceValue']) {
                 if (source[key] !== undefined) instance[key] = JSON.parse(JSON.stringify(source[key]));
             }
@@ -195,6 +199,31 @@ function createEnemyInstance(monsterName, isEmpowered, slotIndex, rewardScale, o
             instance.attackSpeed = Math.max(0.1, Number(instance.attackSpeed || 1) * roleTuning.speed);
             for (const type of Object.keys(instance.damageTypes || {})) {
                 instance.damageTypes[type] = Math.max(1, Math.round(Number(instance.damageTypes[type] || 1) * roleTuning.damage));
+            }
+        }
+    }
+
+    // Deep Sector scaling modifies the base enemy before empowerment. Keeping
+    // this here makes authored archetypes retain their identity while every
+    // level above 50 consistently adds durability, damage, and accuracy.
+    if (levelOverride) {
+        instance.level = levelOverride;
+        instance.zone = Math.max(1, Math.min(20, Math.ceil(levelOverride / 5)));
+        const excessLevels = Math.max(0, levelOverride - 50);
+        if (excessLevels > 0) {
+            const durabilityMultiplier = 1 + excessLevels * 0.07;
+            const damageMultiplier = 1 + excessLevels * 0.04;
+            instance.health = Math.max(1, Math.round(Number(instance.health || 1) * durabilityMultiplier));
+            instance.energyShield = Math.max(0, Math.round(Number(instance.energyShield || 0) * durabilityMultiplier));
+            for (const type of Object.keys(instance.damageTypes || {})) {
+                instance.damageTypes[type] = Math.max(1, Math.round(Number(instance.damageTypes[type] || 1) * damageMultiplier));
+            }
+            instance.precision = Number(instance.precision || 0) + excessLevels * 2;
+            instance.deflection = Number(instance.deflection || 0) + excessLevels * 2;
+            if (instance.currencyDrop) {
+                const feedMultiplier = 1 + excessLevels * 0.03;
+                instance.currencyDrop.min = Math.max(1, Math.round(Number(instance.currencyDrop.min || 1) * feedMultiplier));
+                instance.currencyDrop.max = Math.max(instance.currencyDrop.min, Math.round(Number(instance.currencyDrop.max || instance.currencyDrop.min) * feedMultiplier));
             }
         }
     }

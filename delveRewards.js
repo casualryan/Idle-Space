@@ -164,6 +164,9 @@ function addMonsterLootToDelveBag(monster) {
             if (monster.isEmpowered) finalAmount = Math.floor(finalAmount * 1.5);
             if (typeof currentRunMode !== 'undefined' && currentRunMode === 'operation' && typeof getActiveOperationRewardModifiers === 'function') {
                 finalAmount = Math.floor(finalAmount * Math.max(0, Number(getActiveOperationRewardModifiers().feed) || 1));
+                if (typeof getDeepSectorIntelShopMultipliers === 'function') {
+                    finalAmount = Math.floor(finalAmount * Math.max(0, Number(getDeepSectorIntelShopMultipliers().feed) || 1));
+                }
                 if (monster.isEmpowered) finalAmount = Math.floor(finalAmount * (1 + Math.max(0, Number(typeof operationState !== 'undefined' ? operationState?.modifiers?.empoweredLoot : 0) || 0)));
             }
 
@@ -198,6 +201,8 @@ function finalizeDelveLoot() {
         quantity: Math.max(1, Number(item?.quantity) || 1)
     }));
     if (completedFeed > 0) rewardSummary.push({ kind: 'feed', name: 'Feed', quantity: completedFeed });
+    const completedIntel = Math.max(0, Math.floor(Number(typeof operationState !== 'undefined' ? operationState?.intelEarned : 0) || 0));
+    if (completedIntel > 0) rewardSummary.push({ kind: 'intel', name: 'Deep Sector Intel', quantity: completedIntel });
     const ordinaryItems = [];
     const remainingItems = [];
     let storedResourceUnits = 0;
