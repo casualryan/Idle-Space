@@ -415,9 +415,10 @@ function loseOperationHealth(fraction, maximumBased = true) {
         ? Math.max(1, Number(player?.totalStats?.health) || 1)
         : Math.max(0, Number(player?.currentHealth) || 0);
     const amount = Math.max(0, Math.round(basis * Math.max(0, Number(fraction) || 0)));
-    player.currentHealth = Math.max(0, Number(player.currentHealth) - amount);
+    const before = Math.max(0, Number(player.currentHealth) || 0);
+    player.currentHealth = Math.max(0, before - amount);
     updatePlayerStatsDisplay();
-    return amount;
+    return before - player.currentHealth;
 }
 
 function addScaledFeedCompletionReward(state, multiplier = 1) {
@@ -450,13 +451,122 @@ function chooseOperationDamageType(onChoose) {
                 button.type = 'button';
                 button.innerHTML = `<strong>${type.charAt(0).toUpperCase()}${type.slice(1)}</strong><span>Claim the highest available ${type} material.</span>`;
                 button.addEventListener('click', () => {
-                    onChoose(type);
-                    finish();
+                    finish(onChoose(type));
                 }, { once: true });
                 container.appendChild(button);
             }
         }
     };
+}
+
+function operationEventOutcome(status, summary) {
+    return { status: ['success', 'failure', 'warning'].includes(status) ? status : 'resolved', summary: String(summary || 'Resolved.') };
+}
+
+function normalizeOperationEventOutcome(outcome, choice) {
+    if (outcome && typeof outcome === 'object' && typeof outcome.summary === 'string') {
+        return operationEventOutcome(outcome.status, outcome.summary);
+    }
+    return operationEventOutcome('resolved', choice?.detail || 'Resolved.');
+}
+
+function refreshOperationEventHistoryUI() {
+    const panel = document.getElementById('operation-event-history');
+    const list = document.getElementById('operation-event-history-list');
+    if (!panel || !list) return;
+    const visible = currentRunMode === 'operation' && Boolean(operationState);
+    panel.hidden = !visible;
+    if (!visible) return;
+    list.replaceChildren();
+    const history = Array.isArray(operationState.eventHistory) ? operationState.eventHistory : [];
+    if (history.length === 0) {
+        const empty = document.createElement('li');
+        empty.className = 'operation-event-history-empty';
+        empty.textContent = 'No events resolved';
+        list.appendChild(empty);
+        return;
+    }
+    for (const entry of history) {
+        const item = document.createElement('li');
+        item.dataset.status = entry.status;
+        const title = document.createElement('strong');
+        title.textContent = entry.title;
+        const summary = document.createElement('span');
+        summary.textContent = entry.summary;
+        item.append(title, summary);
+        list.appendChild(item);
+    }
+    list.scrollTop = list.scrollHeight;
+}
+
+function recordOperationEventOutcome(definition, choice, outcome) {
+    if (!operationState) return null;
+    const normalized = normalizeOperationEventOutcome(outcome, choice);
+    const entry = {
+        id: definition.id,
+        title: definition.title,
+        choice: choice.label,
+        summary: normalized.summary,
+        status: normalized.status,
+        encounter: Math.max(0, Number(currentMonsterIndex) || 0)
+    };
+    operationState.eventHistory = [...(operationState.eventHistory || []), entry].slice(-50);
+    refreshOperationEventHistoryUI();
+    return entry;
+}
+
+function showOperationEventResult(entry, onConfirm) {
+    closeOperationEvent();
+    const overlay = document.createElement('div');
+    overlay.id = 'operation-event-overlay';
+    overlay.className = 'operation-event-overlay';
+    const card = document.createElement('section');
+    card.className = `operation-event-card operation-event-result-card result-${entry.status}`;
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-modal', 'true');
+
+    const header = document.createElement('header');
+    const status = document.createElement('span');
+    status.textContent = entry.status === 'success'
+        ? 'SUCCESS'
+        : entry.status === 'failure'
+            ? 'FAILED'
+            : entry.status === 'warning'
+                ? 'CONSEQUENCE APPLIED'
+                : 'EVENT RESOLVED';
+    const title = document.createElement('h2');
+    title.textContent = entry.title;
+    header.append(status, title);
+
+    const choice = document.createElement('strong');
+    choice.className = 'operation-event-result-choice';
+    choice.textContent = entry.choice;
+    const summary = document.createElement('p');
+    summary.className = 'operation-event-result-summary';
+    summary.textContent = entry.summary;
+    const confirm = document.createElement('button');
+    confirm.type = 'button';
+    confirm.className = 'operation-event-result-confirm';
+    confirm.textContent = 'Continue';
+
+    let closed = false;
+    const finish = () => {
+        if (closed) return;
+        closed = true;
+        document.removeEventListener('keydown', onKeyDown);
+        closeOperationEvent();
+        onConfirm?.();
+    };
+    const onKeyDown = event => {
+        if (event.key === 'Enter' || event.key === 'Escape') finish();
+    };
+    confirm.addEventListener('click', finish, { once: true });
+    document.addEventListener('keydown', onKeyDown);
+    overlay._cleanupOperationEvent = () => document.removeEventListener('keydown', onKeyDown);
+    card.append(header, choice, summary, confirm);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    confirm.focus();
 }
 
 function eventChoice(label, detail, apply) {
@@ -470,13 +580,27 @@ function operationEvent(id, title, description, choices) {
 const OPERATION_EVENT_DEFINITIONS = Object.freeze([
     operationEvent('sealed-security-door', 'Sealed Security Door', 'A reinforced security door blocks a sealed recovery room.', [
         eventChoice('Break down the door', 'Fight an additional security encounter. Victory grants a random Core.', state => queueAdditionalOperationEncounter(state, { kind: 'security', reward: { kind: 'core' } })),
-        eventChoice('Attempt an override', '50% chance to gain a random Core. Failure costs 40% maximum Health.', (state, random) => random() < 0.5 ? grantOperationCore(random) : loseOperationHealth(0.4)),
+        eventChoice('Attempt an override', '50% chance to gain a random Core. Failure costs 40% maximum Health.', (state, random) => {
+            if (random() < 0.5) {
+                const core = grantOperationCore(random);
+                return operationEventOutcome('success', `${core?.name || 'A random Core'} was added to storage.`);
+            }
+            const lost = loseOperationHealth(0.4);
+            return operationEventOutcome('failure', `Override failed. Lost ${lost} Health.`);
+        }),
         eventChoice('Leave', 'Gain and risk nothing.')
     ]),
     operationEvent('mass-driver-wreckage', 'Mass-Driver Wreckage', 'A shattered kinetic weapons platform still contains usable components.', [
         eventChoice('Mark the heavy components', '+1 Kinetic material reward upon Operation completion.', (state, random) => queueOperationCompletionReward(state, { kind: 'material', name: pickOperationMaterial('kinetic', random), quantity: 1 })),
         eventChoice('Retune the salvage scanners', '+35% Kinetic material drops for the remainder of the Operation.', state => { state.modifiers.materialFindByType.kinetic += 0.35; }),
-        eventChoice('Pry open the feed tray', '60% chance to gain 6 Kinetic materials. Failure empowers enemy damage for the next encounter.', (state, random) => random() < 0.6 ? grantRandomOperationMaterials(6, 'kinetic', random) : addOperationTemporaryEffect(state, 1, {}, { damageMultiplier: 0.25 }))
+        eventChoice('Pry open the feed tray', '60% chance to gain 6 Kinetic materials. Failure empowers enemy damage for the next encounter.', (state, random) => {
+            if (random() < 0.6) {
+                grantRandomOperationMaterials(6, 'kinetic', random);
+                return operationEventOutcome('success', '6 Kinetic materials were added to storage.');
+            }
+            addOperationTemporaryEffect(state, 1, {}, { damageMultiplier: 0.25 });
+            return operationEventOutcome('failure', 'The tray locked down. Enemies deal +25% damage in the next encounter.');
+        })
     ]),
     operationEvent('autonomous-butcher-array', 'Autonomous Butcher Array', 'A dormant cutter line can be stripped or redirected.', [
         eventChoice('Strip the cutting heads', '+1 Slashing material reward upon Operation completion.', (state, random) => queueOperationCompletionReward(state, { kind: 'material', name: pickOperationMaterial('slashing', random), quantity: 1 })),
@@ -500,8 +624,13 @@ const OPERATION_EVENT_DEFINITIONS = Object.freeze([
         eventChoice('Salvage the relay', '+1 Electric material reward upon Operation completion.', (state, random) => queueOperationCompletionReward(state, { kind: 'material', name: pickOperationMaterial('electric', random), quantity: 1 })),
         eventChoice('Overclock your actuators', '+12% Attack Speed for the remainder of the Operation.', state => { state.modifiers.attackSpeedPercent += 0.12; }),
         eventChoice('Ground the main bus', '50% chance to gain 8 Electric materials. Failure removes Energy Shield and costs 15% maximum Health.', (state, random) => {
-            if (random() < 0.5) grantRandomOperationMaterials(8, 'electric', random);
-            else { player.currentShield = 0; loseOperationHealth(0.15); }
+            if (random() < 0.5) {
+                grantRandomOperationMaterials(8, 'electric', random);
+                return operationEventOutcome('success', '8 Electric materials were added to storage.');
+            }
+            player.currentShield = 0;
+            const lost = loseOperationHealth(0.15);
+            return operationEventOutcome('failure', `Grounding failed. Energy Shield was removed and ${lost} Health was lost.`);
         })
     ]),
     operationEvent('chemical-reclamation-vats', 'Chemical Reclamation Vats', 'A row of reclamation vats bubbles behind cracked safety glass.', [
@@ -520,7 +649,13 @@ const OPERATION_EVENT_DEFINITIONS = Object.freeze([
             queueOperationCompletionReward(state, { kind: 'material', name: pickOperationMaterial(null, random), quantity: 1 });
         }),
         eventChoice('Keep the sorter online', '+25% material drops for the remainder of the Operation.', state => { state.modifiers.materialFind += 0.25; }),
-        eventChoice('Force the output gate', '50% chance to gain 10 random materials.', (state, random) => { if (random() < 0.5) grantRandomOperationMaterials(10, null, random); })
+        eventChoice('Force the output gate', '50% chance to gain 10 random materials.', (state, random) => {
+            if (random() < 0.5) {
+                grantRandomOperationMaterials(10, null, random);
+                return operationEventOutcome('success', '10 random materials were added to storage.');
+            }
+            return operationEventOutcome('failure', 'The output gate remained sealed. Nothing was recovered.');
+        })
     ]),
     operationEvent('core-containment-vault', 'Core Containment Vault', 'A compact vault reports one unstable Core signature.', [
         eventChoice('Tag it for extraction', '+1 random Core reward upon Operation completion.', (state, random) => {
@@ -528,7 +663,14 @@ const OPERATION_EVENT_DEFINITIONS = Object.freeze([
             if (core) queueOperationCompletionReward(state, { kind: 'core', id: core.id, name: core.name, quantity: 1 });
         }),
         eventChoice('Search for more signatures', '+40% Core drop chance for the remainder of the Operation.', state => { state.modifiers.coreFind += 0.4; }),
-        eventChoice('Crack the seal', '40% chance to gain a random Core. Failure grants enemies +15% Attack Speed for the next 2 encounters.', (state, random) => random() < 0.4 ? grantOperationCore(random) : addOperationTemporaryEffect(state, 2, {}, { attackSpeedPercent: 0.15 }))
+        eventChoice('Crack the seal', '40% chance to gain a random Core. Failure grants enemies +15% Attack Speed for the next 2 encounters.', (state, random) => {
+            if (random() < 0.4) {
+                const core = grantOperationCore(random);
+                return operationEventOutcome('success', `${core?.name || 'A random Core'} was added to storage.`);
+            }
+            addOperationTemporaryEffect(state, 2, {}, { attackSpeedPercent: 0.15 });
+            return operationEventOutcome('failure', 'The seal alarm activated. Enemies gain +15% Attack Speed for the next 2 encounters.');
+        })
     ]),
     operationEvent('misrouted-cache-shipment', 'Misrouted Cache Shipment', 'A cargo system has routed an unclaimed Cache into the sector.', [
         eventChoice('Redirect it to extraction', '+1 random Cache reward upon Operation completion.', (state, random) => {
@@ -536,20 +678,38 @@ const OPERATION_EVENT_DEFINITIONS = Object.freeze([
             if (cache) queueOperationCompletionReward(state, { kind: 'cache', id: cache.id, name: cache.name, quantity: 1 });
         }),
         eventChoice('Trace the shipment network', '+35% Cache drop chance for the remainder of the Operation.', state => { state.modifiers.cacheFind += 0.35; }),
-        eventChoice('Force immediate delivery', '50% chance to gain a random Cache. Failure triggers an empowered security encounter; victory still grants the Cache.', (state, random) => random() < 0.5 ? grantOperationCache(random) : queueAdditionalOperationEncounter(state, { kind: 'security', empoweredLeader: true, reward: { kind: 'cache' } }))
+        eventChoice('Force immediate delivery', '50% chance to gain a random Cache. Failure triggers an empowered security encounter; victory still grants the Cache.', (state, random) => {
+            if (random() < 0.5) {
+                const cache = grantOperationCache(random);
+                return operationEventOutcome('success', `${cache?.name || 'A random Cache'} was added to storage.`);
+            }
+            queueAdditionalOperationEncounter(state, { kind: 'security', empoweredLeader: true, reward: { kind: 'cache' } });
+            return operationEventOutcome('failure', 'Immediate delivery failed. An empowered security encounter was added; victory grants the Cache.');
+        })
     ]),
     operationEvent('condensed-flux-growth', 'Condensed Flux Growth', 'A crystalline Flux growth pulses against the bulkhead.', [
         eventChoice('Mark it for extraction', '+1 Flux reward upon Operation completion.', state => queueOperationCompletionReward(state, { kind: 'flux', quantity: 1 })),
         eventChoice('Seed the route', '+40% Flux drop chance for the remainder of the Operation.', state => { state.modifiers.fluxFind += 0.4; }),
         eventChoice('Break it free', '50% chance to gain 2 Flux. Failure removes Energy Shield and costs 20% maximum Health.', (state, random) => {
-            if (random() < 0.5) grantOperationFlux(2, random);
-            else { player.currentShield = 0; loseOperationHealth(0.2); }
+            if (random() < 0.5) {
+                grantOperationFlux(2, random);
+                return operationEventOutcome('success', '2 Flux materials were added to storage.');
+            }
+            player.currentShield = 0;
+            const lost = loseOperationHealth(0.2);
+            return operationEventOutcome('failure', `The growth ruptured. Energy Shield was removed and ${lost} Health was lost.`);
         })
     ]),
     operationEvent('feed-compression-reservoir', 'Feed Compression Reservoir', 'A pressure reservoir contains concentrated Feed.', [
         eventChoice('Route it to extraction', 'Gain an additional Feed reward upon Operation completion.', state => addScaledFeedCompletionReward(state, 1)),
         eventChoice('Prime collection systems', '+30% Feed drops for the remainder of the Operation.', state => { state.modifiers.feedFind += 0.3; }),
-        eventChoice('Vent it now', '70% chance to gain a doubled Feed payout.', (state, random) => { if (random() < 0.7) grantOperationFeed(Math.round((80 + getOperationLevel() * 18) * 2)); })
+        eventChoice('Vent it now', '70% chance to gain a doubled Feed payout.', (state, random) => {
+            if (random() < 0.7) {
+                const amount = grantOperationFeed(Math.round((80 + getOperationLevel() * 18) * 2));
+                return operationEventOutcome('success', `${amount} Feed was added immediately.`);
+            }
+            return operationEventOutcome('failure', 'The reservoir depressurized before recovery. No Feed was gained.');
+        })
     ]),
     operationEvent('quartermasters-final-manifest', "Quartermaster's Final Manifest", 'A dead quartermaster left three recoverable manifests.', [
         eventChoice('Material manifest', 'Gain a large material bundle upon Operation completion.', (state, random) => addMaterialBundleCompletionReward(state, 10, null, random)),
@@ -609,38 +769,71 @@ const OPERATION_EVENT_DEFINITIONS = Object.freeze([
         eventChoice('Open season', 'Empowered enemies gain +50% loot for the remainder of the Operation.', state => { state.modifiers.empoweredLoot += 0.5; })
     ]),
     operationEvent('emergency-resource-dispenser', 'Emergency Resource Dispenser', 'A damaged dispenser still recognizes three emergency requests.', [
-        eventChoice('Request a Core', '40% chance to gain a random Core. Otherwise gain Feed.', (state, random) => random() < 0.4 ? grantOperationCore(random) : grantOperationFeed(60 + getOperationLevel() * 12)),
-        eventChoice('Request a Cache', '60% chance to gain a random Cache. Otherwise gain 4 random materials.', (state, random) => random() < 0.6 ? grantOperationCache(random) : grantRandomOperationMaterials(4, null, random)),
-        eventChoice('Request Flux', '50% chance to gain Flux. Otherwise gain 2 random materials.', (state, random) => random() < 0.5 ? grantOperationFlux(1, random) : grantRandomOperationMaterials(2, null, random))
+        eventChoice('Request a Core', '40% chance to gain a random Core. Otherwise gain Feed.', (state, random) => {
+            if (random() < 0.4) {
+                const core = grantOperationCore(random);
+                return operationEventOutcome('success', `${core?.name || 'A random Core'} was dispensed.`);
+            }
+            const amount = grantOperationFeed(60 + getOperationLevel() * 12);
+            return operationEventOutcome('resolved', `${amount} Feed was dispensed instead.`);
+        }),
+        eventChoice('Request a Cache', '60% chance to gain a random Cache. Otherwise gain 4 random materials.', (state, random) => {
+            if (random() < 0.6) {
+                const cache = grantOperationCache(random);
+                return operationEventOutcome('success', `${cache?.name || 'A random Cache'} was dispensed.`);
+            }
+            grantRandomOperationMaterials(4, null, random);
+            return operationEventOutcome('resolved', '4 random materials were dispensed instead.');
+        }),
+        eventChoice('Request Flux', '50% chance to gain Flux. Otherwise gain 2 random materials.', (state, random) => {
+            if (random() < 0.5) {
+                grantOperationFlux(1, random);
+                return operationEventOutcome('success', '1 Flux material was dispensed.');
+            }
+            grantRandomOperationMaterials(2, null, random);
+            return operationEventOutcome('resolved', '2 random materials were dispensed instead.');
+        })
     ]),
     operationEvent('sudden-decompression', 'Sudden Decompression', 'A hull rupture leaves no clean route forward.', [
         eventChoice('Brace through it', 'Lose 30% of current Health.', () => loseOperationHealth(0.3, false)),
         eventChoice('Seal the combat lane', 'Enemies deal +15% damage in the next encounter.', state => addOperationTemporaryEffect(state, 1, {}, { damageMultiplier: 0.15 })),
-        eventChoice('Risk the failing bulkhead', '60% chance to avoid the penalty. Failure costs 50% maximum Health.', (state, random) => { if (random() >= 0.6) loseOperationHealth(0.5); })
+        eventChoice('Risk the failing bulkhead', '60% chance to avoid the penalty. Failure costs 50% maximum Health.', (state, random) => {
+            if (random() < 0.6) return operationEventOutcome('success', 'The bulkhead held. No penalty was applied.');
+            const lost = loseOperationHealth(0.5);
+            return operationEventOutcome('failure', `The bulkhead failed. Lost ${lost} Health.`);
+        })
     ]),
     operationEvent('systemwide-quarantine', 'Systemwide Quarantine', 'A quarantine protocol locks down every nearby system.', [
         eventChoice('Divert weapon power', '-12% final damage for the next 2 encounters.', state => addOperationTemporaryEffect(state, 2, { damageMultiplier: -0.12 })),
         eventChoice('Release the containment locks', 'Enemies gain +20% maximum Health for the next 2 encounters.', state => addOperationTemporaryEffect(state, 2, {}, { healthPercent: 0.2 })),
         eventChoice('Spoof the protocol', '50% chance to clear it. Failure applies both penalties for the remainder of the Operation.', (state, random) => {
-            if (random() >= 0.5) { state.modifiers.damageMultiplier -= 0.12; state.modifiers.enemyHealthMultiplier += 0.2; }
+            if (random() < 0.5) return operationEventOutcome('success', 'The quarantine protocol was cleared. No penalty was applied.');
+            state.modifiers.damageMultiplier -= 0.12;
+            state.modifiers.enemyHealthMultiplier += 0.2;
+            return operationEventOutcome('failure', 'Spoof failed. You deal 12% less damage and enemies gain 20% Health for the remainder of the Operation.');
         })
     ]),
     operationEvent('reactor-instability', 'Reactor Instability', 'The sector reactor is shedding lethal waves into the route.', [
         eventChoice('Absorb the pulse', 'Lose 30% maximum Health.', () => loseOperationHealth(0.3)),
         eventChoice('Vent it into the grid', 'Enemies deal +10% final damage for the remainder of the Operation.', state => { state.modifiers.enemyDamageMultiplier += 0.1; }),
         eventChoice('Stabilize the core', '50% chance to gain 6 Radiation materials and restore 25% Health. Failure costs 60% maximum Health.', (state, random) => {
-            if (random() < 0.5) { grantRandomOperationMaterials(6, 'radiation', random); healOperationPlayer(0.25); }
-            else loseOperationHealth(0.6);
+            if (random() < 0.5) {
+                grantRandomOperationMaterials(6, 'radiation', random);
+                healOperationPlayer(0.25);
+                return operationEventOutcome('success', '6 Radiation materials were recovered and 25% Health was restored.');
+            }
+            const lost = loseOperationHealth(0.6);
+            return operationEventOutcome('failure', `Stabilization failed. Lost ${lost} Health.`);
         })
     ]),
     operationEvent('corrupted-navigation-core', 'Corrupted Navigation Core', 'A corrupted route map offers three unreliable paths.', [
         eventChoice('Take the long route', 'Add 1 encounter with no additional reward.', state => queueAdditionalOperationEncounter(state)),
         eventChoice('Take the hostile route', 'Enemies gain +15% Health and damage for the next 3 encounters.', state => addOperationTemporaryEffect(state, 3, {}, { healthPercent: 0.15, damageMultiplier: 0.15 })),
         eventChoice('Repair the route', '60% chance to clear it. Failure adds 2 encounters with an empowered leader in each.', (state, random) => {
-            if (random() >= 0.6) {
-                queueAdditionalOperationEncounter(state, { empoweredLeader: true });
-                queueAdditionalOperationEncounter(state, { empoweredLeader: true });
-            }
+            if (random() < 0.6) return operationEventOutcome('success', 'The route was repaired. No penalty was applied.');
+            queueAdditionalOperationEncounter(state, { empoweredLeader: true });
+            queueAdditionalOperationEncounter(state, { empoweredLeader: true });
+            return operationEventOutcome('failure', 'Route repair failed. 2 encounters with empowered leaders were added.');
         })
     ]),
     operationEvent('temporal-salvage-echo', 'Temporal Salvage Echo', 'A temporal echo can repeat one category of recovered matter.', [
@@ -658,7 +851,11 @@ const OPERATION_EVENT_DEFINITIONS = Object.freeze([
         eventChoice('Survey both routes', 'Keep the encounter count and guarantee one additional event.', (state, random) => queueOperationBonusEvent(state, random))
     ]),
     operationEvent('deep-sector-claim-beacon', 'Deep-Sector Claim Beacon', 'A claim beacon can reserve one recovery right.', [
-        eventChoice('Claim a damage material', 'Choose a damage type and add its highest available material to the completion reward.', (state, random) => chooseOperationDamageType(type => queueOperationCompletionReward(state, { kind: 'material', name: pickOperationMaterial(type, random, true), quantity: 1 }))),
+        eventChoice('Claim a damage material', 'Choose a damage type and add its highest available material to the completion reward.', (state, random) => chooseOperationDamageType(type => {
+            const name = pickOperationMaterial(type, random, true);
+            queueOperationCompletionReward(state, { kind: 'material', name, quantity: 1 });
+            return operationEventOutcome('success', `${name} was added to the Operation completion reward.`);
+        })),
         eventChoice('Claim rare resources', 'Add a random Core, a random Cache, and Flux to the completion reward.', (state, random) => {
             const core = getRandomOperationCore(random);
             const cache = getRandomOperationCache(random);
@@ -676,13 +873,21 @@ const OPERATION_EVENT_DEFINITIONS = Object.freeze([
     operationEvent('derelict-exchange-terminal', 'Derelict Exchange Terminal', 'A derelict exchange terminal still accepts Feed.', [
         eventChoice('Purchase a material shipment', 'Spend Feed to gain a large material bundle.', (state, random) => {
             const cost = 80 + getOperationLevel() * 8;
-            if (playerFeed >= cost) { updateFeed(-cost); grantRandomOperationMaterials(10, null, random); }
-            else logMessage('Insufficient Feed.');
+            if (playerFeed >= cost) {
+                updateFeed(-cost);
+                grantRandomOperationMaterials(10, null, random);
+                return operationEventOutcome('success', `Spent ${cost} Feed and gained 10 random materials.`);
+            }
+            return operationEventOutcome('failure', `Insufficient Feed. ${cost} Feed was required.`);
         }),
         eventChoice('Purchase a Core', 'Spend more Feed to gain a random Core.', (state, random) => {
             const cost = 160 + getOperationLevel() * 14;
-            if (playerFeed >= cost) { updateFeed(-cost); grantOperationCore(random); }
-            else logMessage('Insufficient Feed.');
+            if (playerFeed >= cost) {
+                updateFeed(-cost);
+                const core = grantOperationCore(random);
+                return operationEventOutcome('success', `Spent ${cost} Feed and gained ${core?.name || 'a random Core'}.`);
+            }
+            return operationEventOutcome('failure', `Insufficient Feed. ${cost} Feed was required.`);
         }),
         eventChoice('Authorize salvage payments', '+35% Feed from enemies for the remainder of the Operation.', state => { state.modifiers.feedFind += 0.35; })
     ]),
@@ -695,19 +900,22 @@ const OPERATION_EVENT_DEFINITIONS = Object.freeze([
         eventChoice('Expose it to materials', 'Double one random material stack in the Operation Bag.', (state, random) => {
             const materialsInBag = delveBag.items.filter(item => String(item.type || '').toLowerCase() === 'material');
             const selected = materialsInBag[Math.floor(random() * materialsInBag.length)];
-            if (selected) selected.quantity = Math.max(1, Number(selected.quantity) || 1) * 2;
+            if (!selected) return operationEventOutcome('failure', 'No material stack was available in the Operation Bag.');
+            selected.quantity = Math.max(1, Number(selected.quantity) || 1) * 2;
+            return operationEventOutcome('success', `${selected.name} in the Operation Bag was doubled.`);
         }),
         eventChoice('Stabilize it as Flux', 'Add 2 Flux rewards upon Operation completion.', state => {
             queueOperationCompletionReward(state, { kind: 'flux', quantity: 1 });
             queueOperationCompletionReward(state, { kind: 'flux', quantity: 1 });
         }),
         eventChoice('Force both reactions', '50% chance to double a material stack and add 2 Flux rewards.', (state, random) => {
-            if (random() >= 0.5) return;
+            if (random() >= 0.5) return operationEventOutcome('failure', 'The object destabilized. Nothing was gained or destroyed.');
             const materialsInBag = delveBag.items.filter(item => String(item.type || '').toLowerCase() === 'material');
             const selected = materialsInBag[Math.floor(random() * materialsInBag.length)];
             if (selected) selected.quantity = Math.max(1, Number(selected.quantity) || 1) * 2;
             queueOperationCompletionReward(state, { kind: 'flux', quantity: 1 });
             queueOperationCompletionReward(state, { kind: 'flux', quantity: 1 });
+            return operationEventOutcome('success', `${selected ? `${selected.name} was doubled and ` : ''}2 Flux rewards were added to Operation completion.`);
         })
     ]),
     operationEvent('emergency-survival-protocol', 'Emergency Survival Protocol', 'A one-use survival routine can be bound to your combat shell.', [
@@ -797,6 +1005,18 @@ function normalizeOperationState(source) {
             : null,
         survivalProtocol: ['health', 'shield'].includes(state.survivalProtocol) ? state.survivalProtocol : null,
         usedEventIds: Array.isArray(state.usedEventIds) ? state.usedEventIds.filter(id => typeof id === 'string') : [],
+        eventHistory: Array.isArray(state.eventHistory)
+            ? state.eventHistory.filter(entry => (
+                entry && typeof entry.title === 'string' && typeof entry.summary === 'string'
+            )).slice(-50).map(entry => ({
+                id: typeof entry.id === 'string' ? entry.id : '',
+                title: entry.title,
+                choice: typeof entry.choice === 'string' ? entry.choice : '',
+                summary: entry.summary,
+                status: ['success', 'failure', 'warning', 'resolved'].includes(entry.status) ? entry.status : 'resolved',
+                encounter: Math.max(0, Math.floor(Number(entry.encounter) || 0))
+            }))
+            : [],
         pendingHealthGainPercent: Math.max(0, Number(state.pendingHealthGainPercent) || 0),
         modifiers: {
             ...defaults,
@@ -850,6 +1070,7 @@ function beginOperationState(location, coreId = null) {
     currentMonsterIndex = 0;
     scheduleNextOperationEvent();
     refreshResourceStorageUI();
+    refreshOperationEventHistoryUI();
     return state;
 }
 
@@ -857,6 +1078,7 @@ function beginPatrolState() {
     operationState = null;
     currentRunMode = 'patrol';
     currentMonsterIndex = 0;
+    refreshOperationEventHistoryUI();
 }
 
 function getActiveOperationRewardModifiers() {
@@ -1017,7 +1239,10 @@ function shouldTriggerOperationEvent() {
 }
 
 function closeOperationEvent() {
-    document.getElementById('operation-event-overlay')?.remove();
+    const overlay = document.getElementById('operation-event-overlay');
+    if (!overlay) return;
+    overlay._cleanupOperationEvent?.();
+    overlay.remove();
 }
 
 function isOperationEventVisible() {
@@ -1053,7 +1278,7 @@ function showOperationEvent(random = Math.random) {
             const previousCurrentShield = Math.max(0, Number(player.currentShield) || 0);
             const previousMaximumHealth = Math.max(1, Number(player.totalStats?.health) || 1);
             let resolved = false;
-            const finishChoice = () => {
+            const finishChoice = rawOutcome => {
                 if (resolved) return;
                 resolved = true;
                 operationState.eventCount++;
@@ -1073,16 +1298,19 @@ function showOperationEvent(random = Math.random) {
                     previousCurrentShield + Math.max(0, nextMaximumShield - previousMaximumShield)
                 );
                 updatePlayerStatsDisplay();
-                logMessage(`${definition.title}: ${choice.label}.`);
-                if (player.currentHealth <= 0) {
-                    stopCombat('playerDefeated');
-                    return;
-                }
-                beginNextMonsterInSequence();
+                const entry = recordOperationEventOutcome(definition, choice, rawOutcome);
+                logMessage(`${definition.title}: ${entry.summary}`);
+                showOperationEventResult(entry, () => {
+                    if (player.currentHealth <= 0) {
+                        stopCombat('playerDefeated');
+                        return;
+                    }
+                    beginNextMonsterInSequence();
+                });
             };
             const outcome = choice.apply(operationState, random);
             if (outcome?.deferred && typeof outcome.mount === 'function') outcome.mount(options, finishChoice);
-            else finishChoice();
+            else finishChoice(outcome);
         });
         options.appendChild(button);
     });
@@ -1104,6 +1332,7 @@ function clearActiveRunState() {
     currentRunMode = null;
     operationState = null;
     closeOperationEvent();
+    refreshOperationEventHistoryUI();
 }
 
 window.OPERATION_EVENT_DEFINITIONS = OPERATION_EVENT_DEFINITIONS;
@@ -1132,5 +1361,6 @@ window.resolveOperationEncounterReward = resolveOperationEncounterReward;
 window.shouldTriggerOperationEvent = shouldTriggerOperationEvent;
 window.showOperationEvent = showOperationEvent;
 window.isOperationEventVisible = isOperationEventVisible;
+window.refreshOperationEventHistoryUI = refreshOperationEventHistoryUI;
 window.getOperationEncounterTarget = getOperationEncounterTarget;
 window.clearActiveRunState = clearActiveRunState;

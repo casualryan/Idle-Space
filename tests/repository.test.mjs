@@ -1393,9 +1393,18 @@ test('Operation events expose the approved catalog and persist reusable effects'
       state.completionRewards.push({ kind: 'flux', quantity: 1 });
       state.bonusEventsAt.push(3);
       state.temporaryEffects.push({ remainingEncounters: 3, playerModifiers: { damageMultiplier: 0.1 }, enemyModifiers: {} });
+      state.eventHistory.push({
+        id: 'sealed-security-door', title: 'Sealed Security Door', choice: 'Attempt an override',
+        summary: 'Override failed. Lost 400 Health.', status: 'failure', encounter: 2
+      });
       const restored = normalizeOperationState(JSON.parse(JSON.stringify(state)));
       operationState = restored;
       currentRunMode = 'operation';
+      const door = OPERATION_EVENT_DEFINITIONS.find(event => event.id === 'sealed-security-door');
+      player.currentHealth = 1000;
+      const failedOverride = door.choices[1].apply(restored, () => 0.99);
+      player.currentHealth = 1000;
+      const successfulOverride = door.choices[1].apply(restored, () => 0);
       player.currentHealth = 0;
       player.currentShield = 0;
       restored.survivalProtocol = 'shield';
@@ -1411,6 +1420,9 @@ test('Operation events expose the approved catalog and persist reusable effects'
         savedCompletionRewards: restored.completionRewards.length,
         savedBonusEvents: restored.bonusEventsAt.length,
         savedTemporaryEffects: restored.temporaryEffects.length,
+        savedEventHistory: restored.eventHistory,
+        failedOverride,
+        successfulOverride,
         survived,
         survivalHealth: player.currentHealth,
         survivalShield: player.currentShield,
@@ -1442,10 +1454,21 @@ test('Operation events expose the approved catalog and persist reusable effects'
   assert.equal(result.savedCompletionRewards, 1);
   assert.equal(result.savedBonusEvents, 1);
   assert.equal(result.savedTemporaryEffects, 1);
+  assert.equal(result.savedEventHistory.length, 1);
+  assert.equal(result.savedEventHistory[0].summary, 'Override failed. Lost 400 Health.');
+  assert.equal(result.savedEventHistory[0].status, 'failure');
+  assert.equal(result.failedOverride.status, 'failure');
+  assert.match(result.failedOverride.summary, /Lost 400 Health/);
+  assert.equal(result.successfulOverride.status, 'success');
+  assert.match(result.successfulOverride.summary, /Core.*added to storage/);
   assert.equal(result.survived, true);
   assert.equal(result.survivalHealth, 1);
   assert.equal(result.survivalShield, 200);
   assert.equal(result.protocolConsumed, true);
+  assert.match(read('index.html'), /id="operation-event-history"[\s\S]*id="operation-event-history-list"/);
+  assert.match(read('operationSystem.js'), /function recordOperationEventOutcome[\s\S]*function showOperationEventResult/);
+  assert.match(read('operationSystem.js'), /showOperationEventResult\(entry/);
+  assert.match(read('style.css'), /\.operation-event-history\s*\{[\s\S]*position:\s*absolute/);
 });
 
 test('generated Operation offers are deterministic, persistent, and replaced only after success', () => {

@@ -174,6 +174,7 @@ function displayAdventureLocations() {
 
     console.log("displayAdventureLocations - isDelveInProgress:", isDelveInProgress);
     if (typeof setDelveCombatUIActive === 'function') setDelveCombatUIActive(Boolean(isDelveInProgress));
+    if (typeof refreshOperationEventHistoryUI === 'function') refreshOperationEventHistoryUI();
 
     // Clear previous UI
     delveControlsDiv.innerHTML = '';
