@@ -14,6 +14,7 @@ import pyroBot from './pyroBot.js';
 import acidSpitter from './acidSpitter.js';
 import iceElemental from './iceElemental.js';
 import coreboundProgressionEnemies from './coreboundProgressionEnemies.js';
+import operationSecurityEnemies from './operationSecurity.js';
 
 const quarantinedLegacyEnemies = [
     bigBertha,
@@ -85,6 +86,7 @@ function normalizeEnemy(template, options = {}) {
 
 const enemies = [
     normalizeEnemy(knightOHare),
+    ...operationSecurityEnemies.map(enemy => normalizeEnemy(enemy)),
     ...quarantinedLegacyEnemies.map(enemy => normalizeEnemy(enemy, { developerOnly: true })),
     ...coreboundProgressionEnemies.map(enemy => normalizeEnemy(enemy))
 ];

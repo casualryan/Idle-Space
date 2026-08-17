@@ -1381,6 +1381,73 @@ test('Operations consume one Core, randomize event spacing, and out-reward Patro
   assert.match(read('operationSystem.js'), /function showOperationEvent[\s\S]*?stopHealthRegen\(\)/, 'Operation event choices do not pause regeneration');
 });
 
+test('Operation events expose the approved catalog and persist reusable effects', () => {
+  const result = evaluateClassic(
+    ['resourceSystem.js', 'operationSystem.js'],
+    `(() => {
+      const state = normalizeOperationState({ encounterTarget: 8 });
+      const echo = OPERATION_EVENT_DEFINITIONS.find(event => event.id === 'temporal-salvage-echo');
+      echo.choices[0].apply(state, () => 0);
+      echo.choices[1].apply(state, () => 0);
+      echo.choices[2].apply(state, () => 0);
+      state.completionRewards.push({ kind: 'flux', quantity: 1 });
+      state.bonusEventsAt.push(3);
+      state.temporaryEffects.push({ remainingEncounters: 3, playerModifiers: { damageMultiplier: 0.1 }, enemyModifiers: {} });
+      const restored = normalizeOperationState(JSON.parse(JSON.stringify(state)));
+      operationState = restored;
+      currentRunMode = 'operation';
+      player.currentHealth = 0;
+      player.currentShield = 0;
+      restored.survivalProtocol = 'shield';
+      const survived = tryConsumeOperationSurvivalProtocol(player);
+      return {
+        count: OPERATION_EVENT_DEFINITIONS.length,
+        unique: new Set(OPERATION_EVENT_DEFINITIONS.map(event => event.id)).size,
+        choiceCounts: OPERATION_EVENT_DEFINITIONS.map(event => event.choices.length),
+        hasDoor: OPERATION_EVENT_DEFINITIONS.some(event => event.id === 'sealed-security-door'),
+        hasShipment: OPERATION_EVENT_DEFINITIONS.some(event => event.id === 'misrouted-cache-shipment'),
+        descriptions: OPERATION_EVENT_DEFINITIONS.flatMap(event => event.choices.map(choice => choice.detail)),
+        duplication: restored.dropDuplication,
+        savedCompletionRewards: restored.completionRewards.length,
+        savedBonusEvents: restored.bonusEventsAt.length,
+        savedTemporaryEffects: restored.temporaryEffects.length,
+        survived,
+        survivalHealth: player.currentHealth,
+        survivalShield: player.currentShield,
+        protocolConsumed: restored.survivalProtocol === null
+      };
+    })()`,
+    {
+      window: { coreInventory: {}, cacheInventory: {}, materials, registerCoreboundInitializer: () => {} },
+      document: { getElementById: () => null },
+      currentRunMode: null,
+      operationState: null,
+      currentMonsterIndex: 0,
+      currentDelveLocation: { recommendedLevel: 50 },
+      player: { level: 50, currentHealth: 100, currentShield: 0, totalStats: { health: 1000, energyShield: 400 } },
+      updatePlayerStatsDisplay: () => {},
+      logMessage: () => {}
+    }
+  );
+
+  assert.equal(result.count, 35);
+  assert.equal(result.unique, 35);
+  assert.equal(result.choiceCounts.every(count => count >= 3), true);
+  assert.equal(result.hasDoor, true);
+  assert.equal(result.hasShipment, true);
+  assert.equal(result.descriptions.some(description => /level.?eligible/i.test(description)), false);
+  assert.equal(result.duplication.material, 3);
+  assert.equal(result.duplication.feed, 3);
+  assert.equal(result.duplication.core, 3);
+  assert.equal(result.savedCompletionRewards, 1);
+  assert.equal(result.savedBonusEvents, 1);
+  assert.equal(result.savedTemporaryEffects, 1);
+  assert.equal(result.survived, true);
+  assert.equal(result.survivalHealth, 1);
+  assert.equal(result.survivalShield, 200);
+  assert.equal(result.protocolConsumed, true);
+});
+
 test('generated Operation offers are deterministic, persistent, and replaced only after success', () => {
   const result = evaluateClassic(
     ['resourceSystem.js', 'operationSystem.js'],

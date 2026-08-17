@@ -154,7 +154,7 @@ function findEnemyTemplate(monsterName) {
     return registry.find(candidate => normalize(candidate?.name) === normalize(monsterName)) || null;
 }
 
-function createEnemyInstance(monsterName, isEmpowered, slotIndex, rewardScale) {
+function createEnemyInstance(monsterName, isEmpowered, slotIndex, rewardScale, options = {}) {
     const template = findEnemyTemplate(monsterName);
     if (!template) throw new Error(`Enemy template not found: ${monsterName}`);
     const instance = JSON.parse(JSON.stringify(template));
@@ -167,6 +167,37 @@ function createEnemyInstance(monsterName, isEmpowered, slotIndex, rewardScale) {
     instance._rewardScale = Math.max(0, Number(rewardScale) || 0);
     instance._tauntCooldownRemaining = Math.max(0, Number(instance.tauntAbility?.initialDelay ?? 0));
     instance._defeatHandled = false;
+    instance._operationLootChanceMultiplier = Math.max(0, Number(options.lootChanceMultiplier) || 1);
+
+    if (template.dynamicOperationSecurity && options.levelOverride) {
+        const targetLevel = Math.max(1, Math.min(50, Math.floor(Number(options.levelOverride) || 1)));
+        const registry = (Array.isArray(window.enemies) ? window.enemies : [])
+            .filter(candidate => !candidate.dynamicOperationSecurity && !candidate.developerOnly && !candidate.isTrainingDummy);
+        const source = registry.slice().sort((left, right) => (
+            Math.abs(Number(left.level || 1) - targetLevel) - Math.abs(Number(right.level || 1) - targetLevel)
+        ))[0];
+        if (source) {
+            instance.level = targetLevel;
+            instance.zone = Math.max(1, Math.min(10, Math.ceil(targetLevel / 5)));
+            for (const key of ['health', 'energyShield', 'attackSpeed', 'criticalChance', 'criticalMultiplier', 'precision', 'deflection', 'experienceValue']) {
+                if (source[key] !== undefined) instance[key] = JSON.parse(JSON.stringify(source[key]));
+            }
+            for (const key of ['damageTypes', 'defenseTypes', 'lootConfig', 'currencyDrop']) {
+                if (source[key] !== undefined) instance[key] = JSON.parse(JSON.stringify(source[key]));
+            }
+            const roleTuning = {
+                command: { health: 1.35, shield: 1.2, damage: 1.2, speed: 0.82 },
+                interceptor: { health: 0.72, shield: 0.75, damage: 0.72, speed: 1.25 },
+                suppression: { health: 0.78, shield: 0.9, damage: 1.35, speed: 0.78 }
+            }[template.operationSecurityRole] || { health: 1, shield: 1, damage: 1, speed: 1 };
+            instance.health = Math.max(1, Math.round(Number(instance.health || 1) * roleTuning.health));
+            instance.energyShield = Math.max(0, Math.round(Number(instance.energyShield || 0) * roleTuning.shield));
+            instance.attackSpeed = Math.max(0.1, Number(instance.attackSpeed || 1) * roleTuning.speed);
+            for (const type of Object.keys(instance.damageTypes || {})) {
+                instance.damageTypes[type] = Math.max(1, Math.round(Number(instance.damageTypes[type] || 1) * roleTuning.damage));
+            }
+        }
+    }
 
     if (isEmpowered) {
         instance.isEmpowered = true;
@@ -181,6 +212,8 @@ function createEnemyInstance(monsterName, isEmpowered, slotIndex, rewardScale) {
     instance.currentHealth = instance.health;
     instance.currentShield = instance.energyShield || 0;
     if (typeof calculateEnemyStats === 'function') calculateEnemyStats(instance);
+    instance.currentHealth = Math.max(1, Number(instance.totalStats?.health) || instance.health || 1);
+    instance.currentShield = Math.max(0, Number(instance.totalStats?.energyShield) || 0);
     ensureEntityInitialization(instance, false);
     return instance;
 }
@@ -217,7 +250,8 @@ function spawnEnemyEncounter(encounterEntries) {
         entry.name,
         Boolean(entry.isEmpowered),
         slotIndex,
-        rewardScale
+        rewardScale,
+        entry
     ));
     assignEncounterExperienceRewards(encounterEnemies);
     selectedEnemyId = null;

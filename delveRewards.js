@@ -122,12 +122,32 @@ function addMonsterLootToDelveBag(monster) {
         const lootItems = generateLoot(monster, player);
 
         lootItems.forEach(itemInstance => {
+            if (String(itemInstance?.type || '').toLowerCase() === 'material') {
+                const generalMultiplier = typeof getActiveOperationRewardModifiers === 'function'
+                    ? Number(getActiveOperationRewardModifiers().material || 1)
+                    : 1;
+                const themedMultiplier = typeof getOperationMaterialDropMultiplier === 'function'
+                    ? Number(getOperationMaterialDropMultiplier(monster, itemInstance) || 1)
+                    : 1;
+                const empoweredMultiplier = monster.isEmpowered && typeof currentRunMode !== 'undefined' && currentRunMode === 'operation'
+                    ? 1 + Math.max(0, Number(typeof operationState !== 'undefined' ? operationState?.modifiers?.empoweredLoot : 0) || 0)
+                    : 1;
+                const extraChance = Math.max(0, generalMultiplier * themedMultiplier * empoweredMultiplier - 1);
+                const guaranteedCopies = Math.floor(extraChance);
+                const fractionalCopy = Math.random() < extraChance - guaranteedCopies ? 1 : 0;
+                itemInstance.quantity = Math.max(1, Number(itemInstance.quantity) || 1) * (1 + guaranteedCopies + fractionalCopy);
+                if (typeof processOperationLootDrop === 'function') processOperationLootDrop('material', itemInstance);
+            }
             addItemToDelveBag(itemInstance);
         });
     }
 
     if (typeof rollEnemySpecialDrops === 'function') {
-        rollEnemySpecialDrops(monster).forEach(addItemToDelveBag);
+        rollEnemySpecialDrops(monster).forEach(item => {
+            if (item?.type === 'Core' && typeof processOperationLootDrop === 'function') processOperationLootDrop('core', item);
+            else if (String(item?.type || '').toLowerCase() === 'material' && typeof processOperationLootDrop === 'function') processOperationLootDrop('material', item);
+            addItemToDelveBag(item);
+        });
     }
 
     if (monster.currencyDrop) {
@@ -142,6 +162,14 @@ function addMonsterLootToDelveBag(monster) {
                 finalAmount = Math.floor(amt * (1 + currencyFind / 100));
             }
             if (monster.isEmpowered) finalAmount = Math.floor(finalAmount * 1.5);
+            if (typeof currentRunMode !== 'undefined' && currentRunMode === 'operation' && typeof getActiveOperationRewardModifiers === 'function') {
+                finalAmount = Math.floor(finalAmount * Math.max(0, Number(getActiveOperationRewardModifiers().feed) || 1));
+                if (monster.isEmpowered) finalAmount = Math.floor(finalAmount * (1 + Math.max(0, Number(typeof operationState !== 'undefined' ? operationState?.modifiers?.empoweredLoot : 0) || 0)));
+            }
+
+            const feedDrop = { kind: 'feed', name: 'Feed', quantity: finalAmount };
+            if (typeof processOperationLootDrop === 'function') processOperationLootDrop('feed', feedDrop);
+            finalAmount = feedDrop.quantity;
 
             delveBag.feed += finalAmount;
             logMessage(`Feed added to Operation Bag: ${finalAmount}`);

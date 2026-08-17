@@ -7981,9 +7981,11 @@ hr {
 .operation-event-card { width: min(620px, 92vw); padding: 22px; border: 1px solid #a66cff; border-radius: 10px; background: linear-gradient(150deg, #17142d, #07101d); box-shadow: 0 0 44px rgba(140, 75, 255, .2); }
 .operation-event-card header span { color: #c29aff; font-size: 9px; letter-spacing: .2em; }
 .operation-event-options { display: grid; gap: 9px; margin-top: 16px; }
+.operation-event-options.operation-damage-type-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .operation-event-options button { padding: 12px; border: 1px solid #654a8d; background: #171c37; color: #e9e3ff; text-align: left; cursor: pointer; }
 .operation-event-options button strong, .operation-event-options button span { display: block; }
 .operation-event-options button span { margin-top: 4px; color: #a8a1c5; font-size: 10px; }
+@media (max-width: 560px) { .operation-event-options.operation-damage-type-picker { grid-template-columns: 1fr; } }
 
 @media (max-width: 980px) {
     .item-modification-root, .modification-workspace { grid-template-columns: 1fr; }

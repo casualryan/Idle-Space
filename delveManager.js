@@ -144,20 +144,76 @@ function beginNextMonsterInSequence() {
     // Keep the flee control active during the inter-fight pause.
     setFleeControlState({ visible: true, enabled: true });
 
-    const enemyCount = getEncounterEnemyCount(currentDelveLocation);
-    const selectedEnemies = selectWeightedEncounterEnemies(currentDelveLocation, enemyCount);
+    const queuedEncounter = currentRunMode === 'operation' && operationState?.queuedEncounters?.length
+        ? operationState.queuedEncounters.shift()
+        : null;
+    const queuedModifier = currentRunMode === 'operation' && operationState?.encounterModifiers?.length
+        ? operationState.encounterModifiers.shift()
+        : null;
+    const encounterModifier = { ...(queuedModifier || {}), ...(queuedEncounter || {}) };
+    const operationLevel = Math.max(1, Math.min(50, Math.floor(Number(currentDelveLocation?.recommendedLevel) || 1)));
+    let encounterEntries;
+
+    if (encounterModifier.kind === 'security') {
+        const securityCount = Math.max(1, Math.min(6, 1 + Math.floor(operationLevel / 10)));
+        encounterEntries = Array.from({ length: securityCount }, (_, index) => ({
+            name: index === 0
+                ? 'Security Command Bot'
+                : index % 2
+                    ? 'Security Interceptor Drone'
+                    : 'Security Suppression Drone',
+            isEmpowered: index === 0 && Boolean(encounterModifier.empoweredLeader),
+            levelOverride: operationLevel,
+            lootChanceMultiplier: Number(encounterModifier.lootChanceMultiplier) || 1
+        }));
+    } else {
+        let encounterLocation = currentDelveLocation;
+        if (encounterModifier.enemyGroup) {
+            const groupTypes = encounterModifier.enemyGroup === 'physical'
+                ? ['kinetic', 'slashing']
+                : encounterModifier.enemyGroup === 'elemental'
+                    ? ['pyro', 'cryo', 'electric']
+                    : ['corrosive', 'radiation'];
+            const themedEnemies = currentDelveLocation.enemies.filter(entry => {
+                const template = (window.enemies || []).find(candidate => candidate.name === entry.name);
+                return groupTypes.includes(typeof getEnemyTheme === 'function' ? getEnemyTheme(template) : '');
+            });
+            if (themedEnemies.length > 0) encounterLocation = { ...currentDelveLocation, enemies: themedEnemies };
+        }
+        const extraEmpowered = Math.max(0, Math.floor(Number(encounterModifier.extraEmpowered) || 0));
+        const enemyCount = Math.max(1, getEncounterEnemyCount(encounterLocation) - extraEmpowered);
+        const selectedEnemies = selectWeightedEncounterEnemies(encounterLocation, enemyCount);
+        encounterEntries = selectedEnemies.map(selectedEnemy => ({
+            name: selectedEnemy.name,
+            isEmpowered: Boolean(selectedEnemy.empoweredChance && Math.random() < selectedEnemy.empoweredChance),
+            lootChanceMultiplier: Number(encounterModifier.lootChanceMultiplier) || 1
+        }));
+        for (let index = 0; index < extraEmpowered && encounterEntries.length < 6; index++) {
+            const extra = selectWeightedEncounterEnemies(encounterLocation, 1)[0];
+            if (extra) encounterEntries.push({
+                name: extra.name,
+                isEmpowered: true,
+                lootChanceMultiplier: Number(encounterModifier.lootChanceMultiplier) || 1
+            });
+        }
+    }
+    const selectedEnemies = encounterEntries;
     if (selectedEnemies.length === 0) {
         console.error("Enemy pool is empty.");
         stopCombat('enemyPoolEmpty');
         return;
     }
-    const encounterEntries = selectedEnemies.map(selectedEnemy => ({
-        name: selectedEnemy.name,
-        isEmpowered: Boolean(selectedEnemy.empoweredChance && Math.random() < selectedEnemy.empoweredChance)
-    }));
     if (currentRunMode === 'operation' && operationState?.forceEliteNext && encounterEntries.length > 0) {
         encounterEntries[0].isEmpowered = true;
         operationState.forceEliteNext = false;
+    }
+    if (encounterModifier.empoweredLeader && encounterEntries.length > 0) encounterEntries[0].isEmpowered = true;
+    if (currentRunMode === 'operation' && operationState) {
+        operationState.activeEncounterMeta = {
+            reward: encounterModifier.reward || null,
+            bountyId: encounterModifier.bountyId || null,
+            materialGroup: encounterModifier.materialGroup || null
+        };
     }
     spawnEnemyEncounter(encounterEntries);
 }

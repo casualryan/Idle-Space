@@ -272,6 +272,9 @@ function applyDamage(packetOrTarget, legacyDamage = 0, legacyTargetName = null, 
         }
     }
 
+    if (target.currentHealth <= 0 && typeof tryConsumeOperationSurvivalProtocol === 'function') {
+        tryConsumeOperationSurvivalProtocol(target);
+    }
     updateHPESBars(target, target.isPlayer);
 
     if (packet.flags.applyInherentDebuffs && window.tryApplyDebuffFromDamage && packet.total > 0) {
