@@ -130,7 +130,12 @@ function normalizeSavedItemData(savedItem) {
         const validTarget = typeof item.fluxTargetModifierId === 'string'
             && Array.isArray(item.rolledModifiers)
             && item.rolledModifiers.some(modifier => modifier?.id === item.fluxTargetModifierId);
-        if (!validTarget) delete item.fluxTargetModifierId;
+        if (!validTarget) {
+            delete item.fluxTargetModifierId;
+            delete item.fluxModificationLocked;
+        } else if (item.fluxModificationLocked != null) {
+            item.fluxModificationLocked = Boolean(item.fluxModificationLocked);
+        }
     }
     return item;
 }

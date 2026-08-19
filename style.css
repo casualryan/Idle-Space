@@ -8451,6 +8451,7 @@ hr {
 .flux-modifier-row:hover:not(:disabled) { border-color: #3fe7d0; transform: translateY(-1px); }
 .flux-modifier-row.is-bound { border-color: #f05ce8; background: linear-gradient(100deg, rgba(79, 15, 83, .44), #08243a); }
 .flux-modifier-row.is-unavailable { opacity: .28; filter: grayscale(.6); }
+.flux-modifier-row.is-locked { border-color: rgba(255, 105, 105, .48); background: linear-gradient(100deg, rgba(101, 18, 31, .4), #08243a); }
 .flux-bound-symbol { color: #f162eb; font-size: 18px; text-align: center; }
 .flux-modifier-name { display: flex; flex-direction: column; gap: 2px; }
 .flux-modifier-name small, .flux-modifier-range { color: #7fa8c2; font-size: 9px; }
@@ -8473,6 +8474,29 @@ hr {
 .flux-reroll-result { margin-top: 10px; padding: 10px 12px; border: 1px solid rgba(240, 92, 232, .4); border-radius: 6px; background: rgba(69, 17, 78, .32); }
 .flux-reroll-result span { color: #ef7fe8; font: 700 8px Orbitron, sans-serif; letter-spacing: .14em; }
 .flux-reroll-result p { margin: 5px 0 0; color: #f3e7ff; font-size: 11px; line-height: 1.45; }
+.flux-upgrade-action { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; padding: 12px; border: 1px solid rgba(255, 93, 105, .52); border-radius: 6px; background: linear-gradient(110deg, rgba(111, 17, 32, .38), rgba(44, 12, 29, .5)); }
+.flux-upgrade-action > div { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.flux-upgrade-action > div > span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.flux-upgrade-action strong { color: #ffd9dc; font-size: 11px; }
+.flux-upgrade-action small { color: #c98d96; font-size: 9px; }
+.flux-upgrade-mark { display: grid; flex: 0 0 30px; width: 30px; height: 30px; place-items: center; border: 2px solid #ff6975; border-radius: 50%; color: #ff9ca5; font: 900 18px Orbitron, sans-serif; box-shadow: 0 0 12px rgba(255, 70, 85, .24); }
+.flux-upgrade-action button { flex: 0 0 auto; padding: 9px 12px; border: 1px solid #ff6975; border-radius: 4px; background: linear-gradient(#6f1d2b, #3a111b); color: #fff1f2; cursor: pointer; font: 700 9px Orbitron, sans-serif; }
+.flux-upgrade-action button:hover:not(:disabled) { border-color: #ffc1c6; box-shadow: 0 0 12px rgba(255, 74, 89, .28); }
+.flux-upgrade-action button:disabled { opacity: .34; cursor: not-allowed; }
+.flux-item-locked-notice { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; padding: 12px; border: 1px solid rgba(255, 93, 105, .55); border-radius: 6px; background: rgba(105, 17, 31, .27); }
+.flux-item-locked-notice strong { color: #ff9ca5; font: 800 9px Orbitron, sans-serif; letter-spacing: .08em; }
+.flux-item-locked-notice span { color: #d6a6ad; font-size: 10px; line-height: 1.4; }
+.flux-upgrade-confirmation-overlay { position: fixed; inset: 0; z-index: 100000; display: grid; place-items: center; padding: 18px; background: rgba(9, 0, 3, .82); backdrop-filter: blur(4px); }
+.flux-upgrade-confirmation { width: min(500px, 94vw); padding: 24px; border: 2px solid #ff5363; border-radius: 10px; background: linear-gradient(155deg, #35101a, #110710 68%); color: #ffecef; text-align: center; box-shadow: 0 0 42px rgba(255, 49, 69, .32), inset 0 0 30px rgba(255, 61, 79, .07); }
+.flux-upgrade-danger-icon { display: grid; width: 56px; height: 50px; margin: 0 auto 10px; place-items: center; clip-path: polygon(50% 0, 100% 100%, 0 100%); background: #ff5363; color: #200309; font: 900 26px/1 Orbitron, sans-serif; padding-top: 9px; box-sizing: border-box; }
+.flux-upgrade-danger-label { color: #ff7f8b; font: 800 9px Orbitron, sans-serif; letter-spacing: .18em; }
+.flux-upgrade-confirmation h3 { margin: 7px 0 10px; color: #fff3f4; font: 800 20px Orbitron, sans-serif; }
+.flux-upgrade-confirmation > p { margin: 0; color: #e2bec4; font-size: 12px; line-height: 1.55; }
+.flux-upgrade-danger-copy { display: flex; flex-direction: column; gap: 5px; margin: 16px 0; padding: 12px; border: 1px solid rgba(255, 94, 108, .5); background: rgba(126, 20, 36, .28); }
+.flux-upgrade-danger-copy strong { color: #ffadb4; font-size: 12px; }
+.flux-upgrade-danger-copy small { color: #caa0a7; font-size: 10px; }
+.flux-upgrade-confirmation [data-flux-upgrade-confirm] { border-color: #ff5968; background: linear-gradient(#8d2032, #4e101d); }
+.flux-upgrade-confirmation [data-flux-upgrade-cancel] { border-color: #617786; background: linear-gradient(#263c49, #13252f); }
 .flux-bind-note { margin-top: 12px; color: #85a8bd; font-size: 11px; }
 .modification-empty-state { grid-column: 1 / -1; display: grid; place-items: center; align-content: center; gap: 10px; color: #7896a9; }
 .modification-empty-state span { font-size: 48px; color: #39637a; }

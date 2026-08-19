@@ -788,7 +788,7 @@ function getPossibleRandomModifiers(item) {
 }
 
 function rerollBoundItemModifier(item, random = Math.random) {
-    if (!item?.fluxTargetModifierId || !Array.isArray(item.rolledModifiers)) return null;
+    if (!item?.fluxTargetModifierId || item.fluxModificationLocked || !Array.isArray(item.rolledModifiers)) return null;
     const modifier = item.rolledModifiers.find(candidate => candidate.id === item.fluxTargetModifierId);
     const previousDefinition = RANDOM_MODIFIER_DEFINITIONS.find(candidate => candidate.id === modifier?.id);
     if (!modifier || !previousDefinition) return null;
@@ -853,6 +853,55 @@ function rerollBoundItemModifier(item, random = Math.random) {
     };
     Object.assign(modifier, next);
     item.fluxTargetModifierId = next.id;
+    return { modifier, previous, next };
+}
+
+function upgradeBoundItemModifierGrade(item, random = Math.random) {
+    if (!item?.fluxTargetModifierId || item.fluxModificationLocked || !Array.isArray(item.rolledModifiers)) return null;
+    const modifier = item.rolledModifiers.find(candidate => candidate.id === item.fluxTargetModifierId);
+    const definition = RANDOM_MODIFIER_DEFINITIONS.find(candidate => candidate.id === modifier?.id);
+    const previousGrade = Math.max(1, Math.min(5, Math.floor(Number(modifier?.grade) || 1)));
+    const nextGrade = previousGrade + 1;
+    const baseRange = definition ? asModifierRange(definition.grades[nextGrade]) : null;
+    if (!modifier || !definition || nextGrade > 5 || !baseRange) return null;
+
+    const previous = {
+        id: modifier.id,
+        displayName: modifier.displayName,
+        grade: previousGrade,
+        gradeLabel: modifier.gradeLabel || getModifierGradeLabel(previousGrade),
+        value: modifier.value,
+        displayValue: modifier.displayValue,
+        statPath: modifier.statPath,
+        isPercent: Boolean(modifier.isPercent)
+    };
+    if (!removeRandomModifierValue(item, definition, modifier.value)) return null;
+
+    const multiplier = typeof definition.valueMultiplier === 'function'
+        ? Math.max(0, Number(definition.valueMultiplier(getModifierContext(item))) || 1)
+        : 1;
+    let nextDisplayValue = rollValueFromModifierRange(baseRange, random);
+    if (nextDisplayValue === null) {
+        modifier.value = applyRandomModifierValue(item, definition, previous.displayValue);
+        return null;
+    }
+    nextDisplayValue *= multiplier;
+    nextDisplayValue = Number.isInteger(baseRange.min) && Number.isInteger(baseRange.max)
+        ? Math.max(1, Math.round(nextDisplayValue))
+        : Number(nextDisplayValue.toFixed(2));
+
+    const next = {
+        id: definition.id,
+        displayName: definition.displayName,
+        grade: nextGrade,
+        gradeLabel: getModifierGradeLabel(nextGrade),
+        value: applyRandomModifierValue(item, definition, nextDisplayValue),
+        displayValue: nextDisplayValue,
+        statPath: definition.statPath,
+        isPercent: Boolean(definition.isPercent)
+    };
+    Object.assign(modifier, next);
+    item.fluxModificationLocked = true;
     return { modifier, previous, next };
 }
 
@@ -1003,6 +1052,7 @@ window.getModifierGradeLabel = getModifierGradeLabel;
 window.getModifierRollRange = getModifierRollRange;
 window.getPossibleRandomModifiers = getPossibleRandomModifiers;
 window.rerollBoundItemModifier = rerollBoundItemModifier;
+window.upgradeBoundItemModifierGrade = upgradeBoundItemModifierGrade;
 
 function generateItemInstance(template) {
     const item = JSON.parse(JSON.stringify(template));

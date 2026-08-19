@@ -1778,6 +1778,54 @@ test('Flux rerolls the permanently bound slot across modifier types, grades, and
   assert.equal(result.fluxTargetModifierId, result.rerolled.next.id);
 });
 
+test('Flux can up-tier a bound modifier once and permanently close only Flux modification', () => {
+  const result = evaluateClassic(
+    'itemgenerator.js',
+    `(() => {
+      const chip = { name: 'Test Chip', color: 'red' };
+      const item = {
+        name: 'Test Plate', type: 'Armor', slot: 'chest', levelRequirement: 25,
+        healthBonus: 50,
+        fluxTargetModifierId: 'flatMaxHealth',
+        rolledModifiers: [
+          { id: 'flatMaxHealth', displayName: 'Max Health', grade: 2, gradeLabel: 'Grade II', value: 50, displayValue: 50, statPath: 'healthBonus' }
+        ],
+        rolledWires: [{ color: 'red', chip }]
+      };
+      const upgraded = upgradeBoundItemModifierGrade(item, () => 0);
+      const rerollAfterLock = rerollBoundItemModifier(item, () => 0);
+      const secondUpgrade = upgradeBoundItemModifierGrade(item, () => 0);
+      return {
+        upgraded,
+        modifier: item.rolledModifiers[0],
+        healthBonus: item.healthBonus,
+        locked: item.fluxModificationLocked,
+        rerollAfterLock,
+        secondUpgrade,
+        wireColor: item.rolledWires[0].color,
+        chipName: item.rolledWires[0].chip.name
+      };
+    })()`
+  );
+
+  assert.equal(result.upgraded.previous.grade, 2);
+  assert.equal(result.upgraded.next.grade, 3);
+  assert.equal(result.modifier.grade, 3);
+  assert.equal(result.healthBonus, result.modifier.value);
+  assert.equal(result.locked, true);
+  assert.equal(result.rerollAfterLock, null);
+  assert.equal(result.secondUpgrade, null);
+  assert.equal(result.wireColor, 'red');
+  assert.equal(result.chipName, 'Test Chip');
+
+  const modifierUi = read('itemModification.js');
+  assert.match(modifierUi, /const FLUX_GRADE_UPGRADE_COST = 10/);
+  assert.match(modifierUi, /updateEquipmentDisplay\(\)/);
+  assert.match(modifierUi, /This item can never be rerolled or up-tiered again/);
+  assert.match(modifierUi, /Wire and Chip management will remain available/);
+  assert.match(read('saveSchema.js'), /item\.fluxModificationLocked = Boolean\(item\.fluxModificationLocked\)/);
+});
+
 test('Flux conversion trades five upward and one into three downward', () => {
   const result = evaluateClassic(
     'materialStorage.js',

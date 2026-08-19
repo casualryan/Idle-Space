@@ -1,6 +1,7 @@
 // Purpose-built Flux interface for permanently binding and rerolling one generated modifier.
 
 const FLUX_REROLL_COSTS = Object.freeze({ 1: 1, 2: 1, 3: 2, 4: 3, 5: 4 });
+const FLUX_GRADE_UPGRADE_COST = 10;
 let selectedModificationItem = null;
 let lastFluxRerollResult = null;
 
@@ -37,15 +38,31 @@ function formatModificationRoll(value, isPercent) {
 }
 
 function bindFluxTarget(item, modifierId) {
-    if (!item || item.fluxTargetModifierId) return false;
+    if (!item || item.fluxTargetModifierId || item.fluxModificationLocked) return false;
     const modifier = item.rolledModifiers?.find(candidate => candidate.id === modifierId);
     if (!modifier || !getModifierRollRange(item, modifier)) return false;
     item.fluxTargetModifierId = modifier.id;
     lastFluxRerollResult = null;
     logMessage(`${item.name} is now Flux-bound.`);
-    if (typeof updateInventoryDisplay === 'function') updateInventoryDisplay();
+    refreshModifiedItemViews(item);
     renderItemModificationScreen();
     return true;
+}
+
+function isModifiedItemEquipped(item) {
+    const equipment = player?.equipment || {};
+    return ['mainHand', 'offHand', 'head', 'chest', 'legs', 'feet', 'gloves']
+        .some(slot => equipment[slot] === item)
+        || (Array.isArray(equipment.bionicSlots) && equipment.bionicSlots.includes(item));
+}
+
+function refreshModifiedItemViews(item) {
+    if (isModifiedItemEquipped(item)) {
+        if (typeof player.calculateStats === 'function') player.calculateStats();
+        if (typeof updatePlayerStatsDisplay === 'function') updatePlayerStatsDisplay();
+        if (typeof updateEquipmentDisplay === 'function') updateEquipmentDisplay();
+    }
+    if (typeof updateInventoryDisplay === 'function') updateInventoryDisplay();
 }
 
 function requestFluxTargetBinding(item, modifierId) {
@@ -58,7 +75,7 @@ function requestFluxTargetBinding(item, modifierId) {
 }
 
 function rerollSelectedFluxModifier(item) {
-    if (!item?.fluxTargetModifierId || isDelveInProgress || isCombatActive) return false;
+    if (!item?.fluxTargetModifierId || item.fluxModificationLocked || isDelveInProgress || isCombatActive) return false;
     const modifier = item.rolledModifiers?.find(candidate => candidate.id === item.fluxTargetModifierId);
     if (!modifier) return false;
     const grade = Math.max(1, Math.min(5, Math.floor(Number(modifier.grade) || 1)));
@@ -76,16 +93,73 @@ function rerollSelectedFluxModifier(item) {
         showWarningPopup('The selected modifier could not be rerolled. Flux was refunded.');
         return false;
     }
-    if (Object.values(player.equipment || {}).includes(item) || player.equipment?.bionicSlots?.includes(item)) {
-        player.calculateStats();
-        updatePlayerStatsDisplay();
-    }
-    lastFluxRerollResult = { item, previous: result.previous, next: result.next };
+    lastFluxRerollResult = { item, previous: result.previous, next: result.next, mode: 'reroll' };
     logMessage(`${item.name}: ${formatFluxRerollOutcome(result.previous)} → ${formatFluxRerollOutcome(result.next)}.`);
     if (typeof updateMaterialInventoryDisplay === 'function') updateMaterialInventoryDisplay();
-    if (typeof updateInventoryDisplay === 'function') updateInventoryDisplay();
+    refreshModifiedItemViews(item);
     renderItemModificationScreen();
     return true;
+}
+
+function upgradeSelectedFluxModifierGrade(item) {
+    if (!item?.fluxTargetModifierId || item.fluxModificationLocked || isDelveInProgress || isCombatActive) return false;
+    const modifier = item.rolledModifiers?.find(candidate => candidate.id === item.fluxTargetModifierId);
+    const grade = Math.max(1, Math.min(5, Math.floor(Number(modifier?.grade) || 1)));
+    if (!modifier || grade >= 5) return false;
+    const fluxName = getFluxNameForModifier(modifier);
+    if (getMaterialQuantity(fluxName) < FLUX_GRADE_UPGRADE_COST) {
+        showWarningPopup(`Requires ${FLUX_GRADE_UPGRADE_COST} ${fluxName}.`);
+        return false;
+    }
+    if (!removeMaterialFromStorage(fluxName, FLUX_GRADE_UPGRADE_COST)) return false;
+    const result = typeof upgradeBoundItemModifierGrade === 'function'
+        ? upgradeBoundItemModifierGrade(item)
+        : null;
+    if (!result) {
+        addMaterialToStorage(fluxName, FLUX_GRADE_UPGRADE_COST);
+        showWarningPopup('The selected modifier could not be upgraded. Flux was refunded.');
+        return false;
+    }
+
+    lastFluxRerollResult = { item, previous: result.previous, next: result.next, mode: 'upgrade' };
+    logMessage(`${item.name}: ${formatFluxRerollOutcome(result.previous)} → ${formatFluxRerollOutcome(result.next)}. Flux modification is now permanently locked.`);
+    if (typeof updateMaterialInventoryDisplay === 'function') updateMaterialInventoryDisplay();
+    refreshModifiedItemViews(item);
+    renderItemModificationScreen();
+    return true;
+}
+
+function requestFluxGradeUpgrade(item) {
+    const modifier = item?.rolledModifiers?.find(candidate => candidate.id === item.fluxTargetModifierId);
+    const grade = Math.max(1, Math.min(5, Math.floor(Number(modifier?.grade) || 1)));
+    if (!modifier || item.fluxModificationLocked || grade >= 5) return;
+    const fluxName = getFluxNameForModifier(modifier);
+    const overlay = document.createElement('div');
+    overlay.id = 'flux-upgrade-confirmation-overlay';
+    overlay.className = 'flux-upgrade-confirmation-overlay';
+    const popup = document.createElement('div');
+    popup.className = 'flux-upgrade-confirmation';
+    popup.innerHTML = `
+        <div class="flux-upgrade-danger-icon" aria-hidden="true">!</div>
+        <span class="flux-upgrade-danger-label">CAUTION · PERMANENT ACTION</span>
+        <h3>Up-Tier and Lock Item?</h3>
+        <p>The bound <strong>${modifier.displayName}</strong> modifier will advance from Grade ${grade} to Grade ${grade + 1} and roll a new value in that grade.</p>
+        <div class="flux-upgrade-danger-copy"><strong>This item can never be rerolled or up-tiered again.</strong><small>Wire and Chip management will remain available.</small></div>
+        <div class="popup-buttons"><button type="button" data-flux-upgrade-confirm>Spend ${FLUX_GRADE_UPGRADE_COST} ${fluxName} &amp; Lock</button><button type="button" data-flux-upgrade-cancel>Cancel</button></div>`;
+    overlay.appendChild(popup);
+    const close = () => {
+        document.removeEventListener('keydown', onKey);
+        overlay.remove();
+    };
+    const onKey = event => { if (event.key === 'Escape') close(); };
+    popup.querySelector('[data-flux-upgrade-confirm]').addEventListener('click', () => {
+        close();
+        upgradeSelectedFluxModifierGrade(item);
+    });
+    popup.querySelector('[data-flux-upgrade-cancel]').addEventListener('click', close);
+    overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
 }
 
 function formatFluxRerollOutcome(modifier) {
@@ -155,8 +229,8 @@ function renderModifierRows(item) {
         const unavailable = Boolean(boundId && !selected);
         const row = document.createElement('button');
         row.type = 'button';
-        row.className = `flux-modifier-row${selected ? ' is-bound' : ''}${unavailable ? ' is-unavailable' : ''}`;
-        row.disabled = unavailable || Boolean(boundId) || isDelveInProgress || isCombatActive;
+        row.className = `flux-modifier-row${selected ? ' is-bound' : ''}${unavailable ? ' is-unavailable' : ''}${item.fluxModificationLocked ? ' is-locked' : ''}`;
+        row.disabled = unavailable || Boolean(boundId) || Boolean(item.fluxModificationLocked) || isDelveInProgress || isCombatActive;
         row.title = `${range.gradeLabel}: ${formatModificationRoll(range.min, range.isPercent)}–${formatModificationRoll(range.max, range.isPercent)}`;
         row.innerHTML = `
             <span class="flux-bound-symbol" aria-hidden="true">${selected ? '◈' : '◇'}</span>
@@ -233,7 +307,7 @@ function renderItemModificationScreen() {
             button.type = 'button';
             button.className = `modification-item-card${entry.item === selectedModificationItem ? ' is-selected' : ''}`;
             button.disabled = locked;
-            button.innerHTML = `<img src="${entry.item.icon || 'icons/default-icon.png'}" alt=""><span><strong>${entry.item.name}</strong><small>${entry.source}</small></span>${entry.item.fluxTargetModifierId ? '<b aria-label="Flux bound">◈</b>' : ''}`;
+            button.innerHTML = `<img src="${entry.item.icon || 'icons/default-icon.png'}" alt=""><span><strong>${entry.item.name}</strong><small>${entry.source}</small></span>${entry.item.fluxModificationLocked ? '<b aria-label="Flux modification locked">▣</b>' : entry.item.fluxTargetModifierId ? '<b aria-label="Flux bound">◈</b>' : ''}`;
             button.addEventListener('click', () => {
                 if (selectedModificationItem !== entry.item) lastFluxRerollResult = null;
                 selectedModificationItem = entry.item;
@@ -258,7 +332,7 @@ function renderItemModificationScreen() {
     const boundModifier = item.rolledModifiers.find(modifier => modifier.id === item.fluxTargetModifierId);
     workspace.innerHTML = `
         <div class="modification-static-stats">
-            <header><span>CURRENT ITEM</span><h3>${item.name}${boundModifier ? ' <b aria-label="Flux bound">◈</b>' : ''}</h3></header>
+            <header><span>CURRENT ITEM</span><h3>${item.name}${item.fluxModificationLocked ? ' <b aria-label="Flux modification locked">▣</b>' : boundModifier ? ' <b aria-label="Flux bound">◈</b>' : ''}</h3></header>
             <div class="modification-tooltip-static">${getItemTooltipContent(item, false)}</div>
         </div>
         <div class="modification-affix-panel"><header><span>MODIFIABLE</span><h3>Generated Modifiers</h3></header></div>`;
@@ -276,7 +350,8 @@ function renderItemModificationScreen() {
             <div><img src="icons/flux_${['i', 'ii', 'iii', 'iv', 'v'][grade - 1]}.png" alt=""><span><strong>${cost} ${fluxName}</strong><small>Owned: ${getMaterialQuantity(fluxName)}</small></span></div>
             <button type="button">Reroll ◈</button>`;
         const button = action.querySelector('button');
-        button.disabled = locked || getMaterialQuantity(fluxName) < cost;
+        button.disabled = locked || item.fluxModificationLocked || getMaterialQuantity(fluxName) < cost;
+        if (item.fluxModificationLocked) button.textContent = 'Modification Locked';
         button.addEventListener('click', () => rerollSelectedFluxModifier(item));
         affixPanel.appendChild(action);
         if (lastFluxRerollResult?.item === item) {
@@ -288,6 +363,22 @@ function renderItemModificationScreen() {
             outcome.textContent = `${formatFluxRerollOutcome(lastFluxRerollResult.previous)} → ${formatFluxRerollOutcome(lastFluxRerollResult.next)}`;
             result.append(label, outcome);
             affixPanel.appendChild(result);
+        }
+        if (item.fluxModificationLocked) {
+            const lockedNotice = document.createElement('div');
+            lockedNotice.className = 'flux-item-locked-notice';
+            lockedNotice.innerHTML = '<strong>▣ FLUX MODIFICATION LOCKED</strong><span>This item cannot be rerolled or up-tiered again. Wires and Chips remain editable.</span>';
+            affixPanel.appendChild(lockedNotice);
+        } else if (grade < 5) {
+            const upgrade = document.createElement('div');
+            upgrade.className = 'flux-upgrade-action';
+            upgrade.innerHTML = `
+                <div><span class="flux-upgrade-mark">!</span><span><strong>Up-Tier to Grade ${grade + 1}</strong><small>${FLUX_GRADE_UPGRADE_COST} ${fluxName} · Permanently locks Flux modification</small></span></div>
+                <button type="button">Up-Tier &amp; Lock</button>`;
+            const upgradeButton = upgrade.querySelector('button');
+            upgradeButton.disabled = locked || getMaterialQuantity(fluxName) < FLUX_GRADE_UPGRADE_COST;
+            upgradeButton.addEventListener('click', () => requestFluxGradeUpgrade(item));
+            affixPanel.appendChild(upgrade);
         }
     } else {
         const note = document.createElement('p');
@@ -302,6 +393,7 @@ function renderItemModificationScreen() {
 
 window.renderItemModificationScreen = renderItemModificationScreen;
 window.FLUX_REROLL_COSTS = FLUX_REROLL_COSTS;
+window.FLUX_GRADE_UPGRADE_COST = FLUX_GRADE_UPGRADE_COST;
 
 window.registerCoreboundInitializer(() => {
     addInventoryChangeListener(() => {

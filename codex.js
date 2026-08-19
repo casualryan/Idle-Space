@@ -57,6 +57,7 @@
             sections: [
                 ['Binding', 'An item may permanently bind exactly one generated modifier as its Flux target. Other modifiers can never be rerolled on that item.'],
                 ['Rerolling', 'Flux matching the current modifier grade rerolls the bound slot’s modifier type, grade, and value. Item modification is unavailable during Patrols and Operations.'],
+                ['Final Up-Tier', 'Spend 10 Flux matching the bound modifier’s current grade to raise it by one grade and roll a new value. This permanently locks further Flux modification on the item, but Wires and Chips remain editable.'],
                 ['Conversion', 'Five Flux of one grade can be compressed into one Flux of the next grade. One Flux can be broken down into three Flux of the grade immediately below it.'],
                 ['Caches and Cores', 'Caches can be opened for uncertain themed rewards or sold unopened for guaranteed Feed. Cores drop from enemies, stack in dedicated storage, and are consumed when an Operation begins.']
             ]
