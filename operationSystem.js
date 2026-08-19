@@ -1,8 +1,9 @@
 // Operation-only Core effects, randomized between-encounter events, and run modifiers.
 
-const OPERATION_BOARD_VERSION = 4;
+const OPERATION_BOARD_VERSION = 5;
 const OPERATION_BOARD_SIZE = 6;
 const OPERATION_STANDARD_BOARD_SIZE = 4;
+const OPERATION_DEEP_SECTOR_BOARD_SIZE = OPERATION_BOARD_SIZE - OPERATION_STANDARD_BOARD_SIZE;
 const OPERATION_ENEMY_ROSTER_MIN = 10;
 const OPERATION_ENEMY_ROSTER_MAX = 12;
 const OPERATION_ENEMY_ROSTER_SUPPORT_MAX = 3;
@@ -270,7 +271,8 @@ function normalizeOperationBoard(source, options = {}) {
     const difficultyBands = playerLevel >= 50
         ? [...OPERATION_STANDARD_DIFFICULTY_BANDS, OPERATION_DEEP_SECTOR_BAND, OPERATION_DEEP_SECTOR_BAND]
         : [...OPERATION_STANDARD_DIFFICULTY_BANDS];
-    const canPreserveOffers = Number(board.version) === OPERATION_BOARD_VERSION && Number(board.playerLevel) === playerLevel;
+    const canPreserveOffers = [OPERATION_BOARD_VERSION - 1, OPERATION_BOARD_VERSION].includes(Number(board.version))
+        && Number(board.playerLevel) === playerLevel;
     const savedOffers = canPreserveOffers && Array.isArray(board.offers)
         ? board.offers.filter(offer => (
             offer?.generatedOperation
@@ -281,22 +283,58 @@ function normalizeOperationBoard(source, options = {}) {
             && offer.guaranteedReward
         )).slice(0, boardSize)
         : [];
-    const offers = [];
+    const savedDeepSectorOffers = canPreserveOffers
+        && board.deepSectorOffers && typeof board.deepSectorOffers === 'object' && !Array.isArray(board.deepSectorOffers)
+        ? board.deepSectorOffers
+        : {};
+    const standardOffers = [];
+    const deepSectorOffers = {};
     let generation = Math.max(0, Math.floor(Number(board.generation) || 0));
-    for (let index = 0; index < boardSize; index++) {
+    for (let index = 0; index < Math.min(boardSize, OPERATION_STANDARD_BOARD_SIZE); index++) {
         const difficultyBand = difficultyBands[index];
         const savedOffer = savedOffers[index];
-        const deepLevelMatches = difficultyBand !== OPERATION_DEEP_SECTOR_BAND
-            || Number(savedOffer?.recommendedLevel) === progress.selectedLevel;
-        if (savedOffer?.difficultyBand === difficultyBand && deepLevelMatches) {
-            offers.push(savedOffer);
+        if (savedOffer?.difficultyBand === difficultyBand) {
+            standardOffers.push(savedOffer);
             continue;
         }
         const seed = `${createOperationSeed(random, now)}-${generation.toString(36)}-${index}`;
-        offers.push(generateOperationOffer(seed, playerLevel, enemyRegistry, difficultyBand, { deepSectorLevel: progress.selectedLevel }));
+        standardOffers.push(generateOperationOffer(seed, playerLevel, enemyRegistry, difficultyBand));
         generation++;
     }
-    return { version: OPERATION_BOARD_VERSION, generation, playerLevel, offers };
+
+    if (playerLevel >= 50) {
+        for (let level = DEEP_SECTOR_MIN_LEVEL; level <= progress.highestUnlockedLevel; level += DEEP_SECTOR_LEVEL_STEP) {
+            const savedForLevel = Array.isArray(savedDeepSectorOffers[level])
+                ? savedDeepSectorOffers[level]
+                : (level === progress.selectedLevel ? savedOffers.slice(OPERATION_STANDARD_BOARD_SIZE) : []);
+            const offersForLevel = [];
+            for (let index = 0; index < OPERATION_DEEP_SECTOR_BOARD_SIZE; index++) {
+                const savedOffer = savedForLevel[index];
+                if (savedOffer?.difficultyBand === OPERATION_DEEP_SECTOR_BAND
+                    && Number(savedOffer.recommendedLevel) === level) {
+                    offersForLevel.push(savedOffer);
+                    continue;
+                }
+                const seed = `${createOperationSeed(random, now)}-${generation.toString(36)}-deep-${level}-${index}`;
+                offersForLevel.push(generateOperationOffer(seed, playerLevel, enemyRegistry, OPERATION_DEEP_SECTOR_BAND, {
+                    deepSectorLevel: level
+                }));
+                generation++;
+            }
+            deepSectorOffers[level] = offersForLevel;
+        }
+    }
+
+    const visibleDeepOffers = playerLevel >= 50
+        ? (deepSectorOffers[progress.selectedLevel] || [])
+        : [];
+    return {
+        version: OPERATION_BOARD_VERSION,
+        generation,
+        playerLevel,
+        offers: [...standardOffers, ...visibleDeepOffers],
+        deepSectorOffers
+    };
 }
 
 function ensureOperationBoard(options = {}) {
@@ -310,16 +348,25 @@ function rerollOperationBoard(options = {}) {
     const now = options.now || Date.now;
     const playerLevel = Math.max(1, Math.min(50, Math.floor(Number(options.playerLevel ?? window.player?.level) || 1)));
     const progress = ensureDeepSectorProgress();
-    const difficultyBands = playerLevel >= 50
-        ? [...OPERATION_STANDARD_DIFFICULTY_BANDS, OPERATION_DEEP_SECTOR_BAND, OPERATION_DEEP_SECTOR_BAND]
-        : [...OPERATION_STANDARD_DIFFICULTY_BANDS];
-    board.offers = difficultyBands.map((difficultyBand, index) => {
+    const standardOffers = OPERATION_STANDARD_DIFFICULTY_BANDS.map((difficultyBand, index) => {
         const seed = `${createOperationSeed(random, now)}-${board.generation.toString(36)}-${index}`;
         board.generation++;
-        return generateOperationOffer(seed, playerLevel, options.enemies || window.enemies || [], difficultyBand, {
-            deepSectorLevel: progress.selectedLevel
-        });
+        return generateOperationOffer(seed, playerLevel, options.enemies || window.enemies || [], difficultyBand);
     });
+    const deepSectorOffers = {};
+    if (playerLevel >= 50) {
+        for (let level = DEEP_SECTOR_MIN_LEVEL; level <= progress.highestUnlockedLevel; level += DEEP_SECTOR_LEVEL_STEP) {
+            deepSectorOffers[level] = Array.from({ length: OPERATION_DEEP_SECTOR_BOARD_SIZE }, (_, index) => {
+                const seed = `${createOperationSeed(random, now)}-${board.generation.toString(36)}-deep-${level}-${index}`;
+                board.generation++;
+                return generateOperationOffer(seed, playerLevel, options.enemies || window.enemies || [], OPERATION_DEEP_SECTOR_BAND, {
+                    deepSectorLevel: level
+                });
+            });
+        }
+    }
+    board.deepSectorOffers = deepSectorOffers;
+    board.offers = [...standardOffers, ...(deepSectorOffers[progress.selectedLevel] || [])];
     board.version = OPERATION_BOARD_VERSION;
     board.playerLevel = playerLevel;
     return board;
@@ -330,16 +377,7 @@ function selectDeepSectorLevel(level, options = {}) {
     const requested = Math.floor(Number(level) || DEEP_SECTOR_MIN_LEVEL);
     const selected = Math.max(DEEP_SECTOR_MIN_LEVEL, Math.min(progress.highestUnlockedLevel, requested));
     progress.selectedLevel = DEEP_SECTOR_MIN_LEVEL + Math.floor((selected - DEEP_SECTOR_MIN_LEVEL) / DEEP_SECTOR_LEVEL_STEP) * DEEP_SECTOR_LEVEL_STEP;
-    const board = ensureOperationBoard(options);
-    board.offers = board.offers.slice(0, OPERATION_STANDARD_BOARD_SIZE);
-    for (let index = 0; index < 2; index++) {
-        const offerIndex = OPERATION_STANDARD_BOARD_SIZE + index;
-        const seed = `${createOperationSeed(options.random || Math.random, options.now || Date.now)}-${board.generation.toString(36)}-${offerIndex}`;
-        board.offers.push(generateOperationOffer(seed, 50, options.enemies || window.enemies || [], OPERATION_DEEP_SECTOR_BAND, {
-            deepSectorLevel: progress.selectedLevel
-        }));
-        board.generation++;
-    }
+    ensureOperationBoard(options);
     return progress.selectedLevel;
 }
 

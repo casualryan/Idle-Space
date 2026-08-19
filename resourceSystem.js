@@ -35,6 +35,15 @@ const CACHE_THEME_MATERIALS = Object.freeze({
     chemical: Object.freeze(['Toxic Residue', 'Synthetic Poison Gland', 'Synthetic Biofluid']),
     radiation: Object.freeze(['Unstable Photon', 'Crystalized Light', 'Nanite Cluster'])
 });
+const CACHE_THEME_ADVANCED_LEVELS = Object.freeze({
+    kinetic: 11,
+    slashing: 11,
+    pyro: 11,
+    electric: 11,
+    cryo: 16,
+    chemical: 16,
+    radiation: 16
+});
 
 window.coreInventory = window.coreInventory && typeof window.coreInventory === 'object' ? window.coreInventory : {};
 window.cacheInventory = window.cacheInventory && typeof window.cacheInventory === 'object' ? window.cacheInventory : {};
@@ -208,31 +217,27 @@ function rollCacheContents(cacheId, random = Math.random) {
     const definition = getCacheDefinition(cacheId);
     if (!definition) return [];
     const level = Math.max(1, Number(player?.level) || 1);
-    const table = definition.theme === 'flux'
-        ? [{ kind: 'whiff', weight: 12 }, { kind: 'flux', weight: 50 }, { kind: 'feed', weight: 28 }, { kind: 'core', weight: 10 }]
-        : definition.theme === 'core'
-            ? [{ kind: 'whiff', weight: 10 }, { kind: 'core', weight: 55 }, { kind: 'feed', weight: 25 }, { kind: 'flux', weight: 10 }]
-            : [{ kind: 'whiff', weight: 14 }, { kind: 'material', weight: 54 }, { kind: 'feed', weight: 24 }, { kind: 'flux', weight: 8 }];
-    const outcome = chooseWeighted(table, random).kind;
-    if (outcome === 'whiff') return [];
-    if (outcome === 'feed') return [{ kind: 'feed', name: 'Feed', quantity: Math.max(20, Math.round(definition.sellValue * (0.35 + random() * 1.5))) }];
-    if (outcome === 'flux') {
-        const name = getFluxNameForLevel(level, random);
-        return [{ kind: 'material', name, quantity: 1 + (random() < 0.35 ? 1 : 0) }];
+    if (definition.theme === 'flux') {
+        const rollCount = 4 + Math.floor(Math.min(0.999999, Math.max(0, random())) * 2);
+        const quantities = {};
+        for (let index = 0; index < rollCount; index++) {
+            const name = getFluxNameForLevel(level, random);
+            quantities[name] = (quantities[name] || 0) + 1;
+        }
+        return Object.entries(quantities).map(([name, quantity]) => ({ kind: 'material', name, quantity }));
     }
-    if (outcome === 'core') {
+    if (definition.theme === 'core') {
         const eligible = CORE_DEFINITIONS.filter(core => core.minLevel <= level);
         const core = eligible[Math.floor(random() * eligible.length)] || CORE_DEFINITIONS[0];
         return [{ kind: 'core', id: core.id, name: core.name, quantity: 1 }];
     }
 
     const materialPool = CACHE_THEME_MATERIALS[definition.theme] || CACHE_THEME_MATERIALS.kinetic;
-    const band = level >= 31 ? 2 : level >= 11 ? 1 : 0;
+    const advancedLevel = CACHE_THEME_ADVANCED_LEVELS[definition.theme] || 11;
+    const band = level >= 31 ? 2 : level >= advancedLevel ? 1 : 0;
     const index = Math.max(0, Math.min(materialPool.length - 1, band - (random() < 0.35 ? 1 : 0)));
     const quantity = index === 0 ? 2 + Math.floor(random() * 5) : index === 1 ? 1 + Math.floor(random() * 3) : 1;
-    const rewards = [{ kind: 'material', name: materialPool[index], quantity }];
-    if (random() < 0.3) rewards.push({ kind: 'feed', name: 'Feed', quantity: Math.round(definition.sellValue * (0.2 + random() * 0.55)) });
-    return rewards;
+    return [{ kind: 'material', name: materialPool[index], quantity }];
 }
 
 function storeCacheReward(reward) {
@@ -512,7 +517,7 @@ function showCacheResolutionPopup() {
 function renderResourceCard(definition, quantity, kind) {
     const card = document.createElement('article');
     card.className = `resource-storage-card ${quantity > 0 ? 'is-owned' : 'is-empty'}`;
-    const detail = kind === 'core' ? definition.effect : `Open for themed rewards or sell for ${definition.sellValue} Feed.`;
+    const detail = kind === 'core' ? definition.effect : `Open for guaranteed themed contents or sell for ${definition.sellValue} Feed.`;
     card.innerHTML = `
         <img src="${definition.icon}" alt="${definition.name}">
         <div class="resource-storage-copy"><strong>${definition.name}</strong><span>${detail}</span></div>

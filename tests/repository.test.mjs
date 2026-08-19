@@ -1675,15 +1675,121 @@ test('Deep Sector Intel sustains escalation and funds permanent Operation loot u
   assert.match(read('delveUI.js'), /playerLevel >= 50[\s\S]*Deep Sector Operations/);
 });
 
-test('Caches retain themed outcomes and unopened guaranteed Feed value', () => {
+test('Deep Sector offer lists persist across threat switching and all reroll on deployment', () => {
+  const result = evaluateClassic(
+    ['resourceSystem.js', 'operationSystem.js'],
+    `(() => {
+      window.deepSectorProgress = normalizeDeepSectorProgress({
+        intel: 20,
+        highestUnlockedLevel: 65,
+        selectedLevel: 55
+      });
+      window.operationBoard = normalizeOperationBoard(null, {
+        playerLevel: 50,
+        enemies: window.enemies,
+        random: () => 0.31,
+        now: () => 7000
+      });
+      const idsForLevel = level => window.operationBoard.deepSectorOffers[level].map(offer => offer.operationId);
+      const allDeepIds = () => Object.values(window.operationBoard.deepSectorOffers)
+        .flatMap(offers => offers.map(offer => offer.operationId));
+      const initial55 = idsForLevel(55);
+      const initial60 = idsForLevel(60);
+      const initial65 = idsForLevel(65);
+      const generationBeforeSwitching = window.operationBoard.generation;
+
+      selectDeepSectorLevel(60, { enemies: window.enemies, random: () => 0.99, now: () => 9999 });
+      const visible60 = window.operationBoard.offers.slice(4).map(offer => offer.operationId);
+      selectDeepSectorLevel(55, { enemies: window.enemies, random: () => 0.77, now: () => 8888 });
+      const visible55 = window.operationBoard.offers.slice(4).map(offer => offer.operationId);
+      selectDeepSectorLevel(60, { enemies: window.enemies, random: () => 0.66, now: () => 7777 });
+      const secondVisible60 = window.operationBoard.offers.slice(4).map(offer => offer.operationId);
+      const generationAfterSwitching = window.operationBoard.generation;
+
+      const restored = normalizeOperationBoard(JSON.parse(JSON.stringify(window.operationBoard)), {
+        playerLevel: 50,
+        enemies: window.enemies,
+        random: () => 0.01,
+        now: () => 123456
+      });
+      const persistedAfterLoad = JSON.stringify(restored.deepSectorOffers) === JSON.stringify(window.operationBoard.deepSectorOffers);
+      const beforeDeployment = allDeepIds();
+      const selectedOperation = window.operationBoard.offers[0];
+      beginOperationState(selectedOperation);
+      const afterDeployment = allDeepIds();
+
+      return {
+        levels: Object.keys(window.operationBoard.deepSectorOffers),
+        sizes: Object.values(window.operationBoard.deepSectorOffers).map(offers => offers.length),
+        initial55,
+        initial60,
+        initial65,
+        visible55,
+        visible60,
+        secondVisible60,
+        generationBeforeSwitching,
+        generationAfterSwitching,
+        persistedAfterLoad,
+        everyDeepOfferRerolled: afterDeployment.every(id => !beforeDeployment.includes(id))
+      };
+    })()`,
+    {
+      window: {
+        coreInventory: {}, cacheInventory: {}, materials, enemies,
+        player: { level: 50 }, registerCoreboundInitializer: () => {}, operationBoard: null, deepSectorProgress: null
+      },
+      document: { getElementById: () => null },
+      operationState: null,
+      currentRunMode: null,
+      currentMonsterIndex: 0,
+      currentDelveLocation: null,
+      completedOperationSeeds: [],
+      completedOperationCount: 0,
+      refreshOperationEventHistoryUI: () => {},
+      logMessage: () => {}
+    }
+  );
+
+  assert.deepEqual([...result.levels], ['55', '60', '65']);
+  assert.deepEqual([...result.sizes], [2, 2, 2]);
+  assert.deepEqual([...result.visible55], [...result.initial55]);
+  assert.deepEqual([...result.visible60], [...result.initial60]);
+  assert.deepEqual([...result.secondVisible60], [...result.initial60]);
+  assert.equal(result.generationAfterSwitching, result.generationBeforeSwitching);
+  assert.equal(result.persistedAfterLoad, true);
+  assert.equal(result.everyDeepOfferRerolled, true);
+  assert.equal(result.initial65.length, 2);
+});
+
+test('Caches always contain guaranteed theme-matching contents while unopened caches retain Feed value', () => {
   const result = evaluateClassic(
     'resourceSystem.js',
     `(() => {
       const kinetic = rollCacheContents('kinetic', () => 0.2);
       const flux = rollCacheContents('flux', () => 0.2);
+      const variedFluxValues = [0.999, 0, 0.25, 0.5, 0.75, 0.999];
+      let variedFluxIndex = 0;
+      const variedFlux = rollCacheContents('flux', () => variedFluxValues[variedFluxIndex++] ?? 0);
+      const themed = CACHE_DEFINITIONS.filter(cache => !['flux', 'core'].includes(cache.theme)).map(cache => ({
+        theme: cache.theme,
+        rewards: [0, 0.2, 0.999].flatMap(value => rollCacheContents(cache.id, () => value))
+      }));
+      const core = rollCacheContents('core', () => 0.2);
       window.cacheInventory.kinetic = 2;
       const sold = sellCache('kinetic', 1);
-      return { kinetic, flux, sold, remaining: window.cacheInventory.kinetic, playerFeed };
+      return {
+        kinetic,
+        flux,
+        variedFlux,
+        themed,
+        themedMatches: themed.every(entry => entry.rewards.every(reward => (
+          reward.kind === 'material' && CACHE_THEME_MATERIALS[entry.theme].includes(reward.name)
+        ))),
+        core,
+        sold,
+        remaining: window.cacheInventory.kinetic,
+        playerFeed
+      };
     })()`,
     {
       window: { coreInventory: {}, cacheInventory: {}, registerCoreboundInitializer: () => {} },
@@ -1696,9 +1802,19 @@ test('Caches retain themed outcomes and unopened guaranteed Feed value', () => {
 
   assert.equal(result.kinetic[0].name, 'Stabilizer');
   assert.match(result.flux[0].name, /^Flux I{1,3}|Flux IV|Flux V$/);
+  assert.equal(result.flux.reduce((total, reward) => total + reward.quantity, 0), 4);
+  assert.equal(result.variedFlux.reduce((total, reward) => total + reward.quantity, 0), 5);
+  assert.equal(result.variedFlux.every(reward => reward.kind === 'material' && /^Flux (I|II|III|IV|V)$/.test(reward.name)), true);
+  assert.equal(result.themed.every(entry => entry.rewards.length > 0), true);
+  assert.equal(result.themedMatches, true);
+  assert.equal(result.core.length, 1);
+  assert.equal(result.core[0].kind, 'core');
+  assert.equal([...result.themed.flatMap(entry => entry.rewards), ...result.flux, ...result.variedFlux, ...result.core]
+    .some(reward => reward.kind === 'feed'), false);
   assert.equal(result.sold, true);
   assert.equal(result.remaining, 1);
   assert.equal(result.playerFeed, 105);
+  assert.match(read('index.html'), /Open for guaranteed themed contents or sell unopened for Feed/);
 });
 
 test('Operation and Cache reward manifests are informational and confirm before overflow handling', () => {
