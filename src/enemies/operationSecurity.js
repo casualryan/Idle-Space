@@ -24,9 +24,9 @@ export default [
         id: 'operation_security_command_bot',
         name: 'Security Command Bot',
         operationSecurityRole: 'command',
+        enemyAbilityIds: ['commander'],
         archetype: 'heavy',
         portrait: 'images/enemies/security-command-bot.png',
-        tauntAbility: { initialDelay: 5, duration: 2.5, cooldown: 14 },
         description: 'A scalable command platform deployed by sealed Operation security systems.'
     },
     {
@@ -34,6 +34,7 @@ export default [
         id: 'operation_security_interceptor_drone',
         name: 'Security Interceptor Drone',
         operationSecurityRole: 'interceptor',
+        enemyAbilityIds: ['berserker'],
         archetype: 'swarm',
         portrait: 'images/enemies/security-interceptor-drone.png',
         description: 'A fast security drone slaved to a command platform.'

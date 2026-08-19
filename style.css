@@ -4398,6 +4398,7 @@ hr {
 
 /* Enhanced Attack Progress Bar */
 .progress-bar.attack-bar {
+    display: block;
     height: 100%;
     width: 0%;
     background: linear-gradient(90deg, rgba(0, 200, 100, 0.5), rgba(0, 255, 150, 0.8));
@@ -4535,14 +4536,20 @@ hr {
 }
 
 /* Styling for the HP slice animation */
-.hp-slice {
+.hp-slice,
+.es-slice {
     position: absolute;
     height: 100%;
-    background-color: rgba(255, 0, 0, 0.5);
     top: 0;
     animation: fade-out 1s forwards;
     pointer-events: none;
     z-index: 2147483647;
+}
+
+.hp-slice { background-color: rgba(255, 0, 0, 0.5); }
+.es-slice {
+    background-color: rgba(91, 146, 255, 0.62);
+    box-shadow: 0 0 9px rgba(110, 185, 255, 0.8);
 }
 
 @keyframes fade-out {
@@ -7115,7 +7122,8 @@ hr {
 .enemy-combat-card {
     display: grid;
     grid-template-columns: 94px minmax(0, 1fr);
-    gap: 9px 13px;
+    grid-template-rows: 22px 28px 28px 18px 24px;
+    gap: 5px 13px;
     width: 100%;
     height: 188px;
     min-height: 188px;
@@ -7131,7 +7139,60 @@ hr {
     border-color: rgba(255, 145, 160, 0.82);
 }
 
-.enemy-combat-card .combat-card-portrait { grid-row: 1 / 5; }
+.enemy-combat-card .combat-card-portrait { grid-row: 1 / 6; }
+.enemy-card-header {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+}
+.enemy-card-header .enemy-card-name { flex: 1; }
+.enemy-damage-tag,
+.enemy-ability-tag {
+    flex: 0 0 auto;
+    border: 1px solid currentColor;
+    border-radius: 8px;
+    background: rgba(2, 10, 20, 0.82);
+    font: 700 7px 'Orbitron', sans-serif;
+    line-height: 1;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.enemy-damage-tag { padding: 3px 5px; }
+.enemy-card-intel {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+.enemy-resistances {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    font: 700 8px 'Orbitron', sans-serif;
+}
+.enemy-resistances > span { display: inline-flex; align-items: baseline; gap: 2px; }
+.enemy-resistances i { color: #66808d; font-style: normal; font-size: 7px; }
+.enemy-resistances b { font-size: 9px; }
+.enemy-resistances [data-enemy-resistance="physical"] b { color: #c4ced1; }
+.enemy-resistances [data-enemy-resistance="elemental"] b { color: #75c9ff; }
+.enemy-resistances [data-enemy-resistance="chemical"] b { color: #72df8a; }
+.enemy-ability-tag {
+    max-width: 78px;
+    overflow: hidden;
+    padding: 3px 5px;
+    color: #b997ff;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.enemy-ability-tag[data-ability="repair"] { color: #6ee7a8; }
+.enemy-ability-tag[data-ability="shieldProjector"] { color: #6dc9ff; }
+.enemy-ability-tag[data-ability="commander"] { color: #c9a2ff; }
+.enemy-ability-tag[data-ability="cleanser"] { color: #61e5dc; }
+.enemy-ability-tag[data-ability="berserker"] { color: #ff9f5c; }
+.enemy-ability-tag[data-ability="taunt"] { color: #ffbd45; }
 .enemy-combat-card.selected {
     border-color: #4be5ff;
     box-shadow: 0 0 0 2px rgba(75, 229, 255, 0.18), 0 0 23px rgba(75, 229, 255, 0.17);
@@ -7143,6 +7204,18 @@ hr {
 }
 
 .enemy-combat-card.empowered .enemy-card-name { color: #e2aeff; }
+.enemy-combat-card.commander-buffed {
+    box-shadow: inset 0 0 16px rgba(174, 108, 255, 0.12), 0 10px 25px rgba(0, 0, 0, 0.28);
+}
+.enemy-combat-card.commander-buffed::after {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border: 1px solid rgba(187, 126, 255, 0.22);
+    border-radius: 6px;
+    pointer-events: none;
+    animation: commander-aura-pulse 1.8s ease-in-out infinite;
+}
 .enemy-combat-card.defeated { opacity: 0.28; filter: grayscale(1); cursor: default; }
 .enemy-combat-card.empty { opacity: 0.13; border-style: dashed; cursor: default; }
 .enemy-combat-card.empty .combat-card-portrait { visibility: hidden; }
@@ -7181,6 +7254,113 @@ hr {
 .enemy-combat-card .progress-bar.attack-bar {
     background: linear-gradient(90deg, rgba(255, 70, 95, 0.45), #ff667d);
     box-shadow: 0 0 10px rgba(255, 102, 125, 0.35);
+}
+
+.enemy-support-effects-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    overflow: hidden;
+    pointer-events: none;
+}
+.enemy-support-link {
+    position: absolute;
+    height: 4px;
+    border-radius: 999px;
+    transform-origin: 0 50%;
+    opacity: 0;
+    pointer-events: none;
+}
+.enemy-support-link::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 14px currentColor;
+    transform: translate(-50%, -50%);
+}
+.enemy-support-link--repair {
+    color: #68f0a7;
+    background: linear-gradient(90deg, rgba(104, 240, 167, 0.15), #68f0a7);
+    box-shadow: 0 0 12px rgba(104, 240, 167, 0.8);
+}
+.enemy-support-link--cleanse {
+    color: #64dfdf;
+    background: linear-gradient(90deg, rgba(100, 223, 223, 0.15), #64dfdf);
+    box-shadow: 0 0 12px rgba(100, 223, 223, 0.8);
+}
+.enemy-support-link--shieldProjector {
+    color: #70bfff;
+    background: linear-gradient(90deg, rgba(80, 135, 255, 0.18), #70bfff 48%, rgba(165, 233, 255, 0.95));
+    box-shadow: 0 0 13px rgba(74, 161, 255, 0.82);
+}
+.enemy-support-link--burst {
+    animation: enemy-support-burst 720ms ease-out forwards;
+}
+.enemy-support-link--persistent {
+    height: 3px;
+    opacity: 0.72;
+    background-size: 220% 100%;
+    animation: enemy-support-channel 1.05s linear infinite;
+}
+.enemy-support-link--persistent::after { animation: enemy-support-packet 1.05s linear infinite; }
+.enemy-ability-float {
+    position: absolute;
+    z-index: 2;
+    color: #73f2a9;
+    font: 900 18px 'Orbitron', sans-serif;
+    letter-spacing: 0.04em;
+    text-shadow: 0 2px #00140b, 0 0 12px currentColor;
+    transform: translateX(-50%);
+    animation: enemy-ability-float 1.05s ease-out forwards;
+}
+.enemy-ability-float--shield { color: #7bd5ff; }
+.enemy-ability-float--cleanse { color: #75eee7; font-size: 13px; }
+.enemy-ability-float--berserker { color: #ff9f5c; font-size: 13px; }
+.enemy-combat-card.enemy-ability-impact--repair { animation: enemy-repair-impact 600ms ease-out; }
+.enemy-combat-card.enemy-ability-impact--cleanse { animation: enemy-cleanse-impact 600ms ease-out; }
+.enemy-combat-card.enemy-ability-impact--shieldProjector { animation: enemy-shield-impact 600ms ease-out; }
+.enemy-combat-card.enemy-self-ability--berserker { animation: enemy-berserker-rise 700ms ease-out; }
+
+@keyframes enemy-support-burst {
+    0% { opacity: 0; clip-path: inset(0 100% 0 0); }
+    22%, 70% { opacity: 1; }
+    70% { clip-path: inset(0 0 0 0); }
+    100% { opacity: 0; clip-path: inset(0 0 0 0); }
+}
+@keyframes enemy-support-channel {
+    0% { background-position: 100% 0; filter: brightness(0.85); }
+    50% { opacity: 0.95; filter: brightness(1.35); }
+    100% { background-position: -100% 0; filter: brightness(0.85); }
+}
+@keyframes enemy-support-packet {
+    from { left: 0; }
+    to { left: 100%; }
+}
+@keyframes enemy-ability-float {
+    0% { opacity: 0; transform: translate(-50%, 8px) scale(0.88); }
+    20%, 72% { opacity: 1; transform: translate(-50%, -8px) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -34px) scale(0.97); }
+}
+@keyframes commander-aura-pulse {
+    0%, 100% { opacity: 0.28; box-shadow: inset 0 0 5px rgba(187, 126, 255, 0.08); }
+    50% { opacity: 0.82; box-shadow: inset 0 0 18px rgba(187, 126, 255, 0.22); }
+}
+@keyframes enemy-repair-impact {
+    45% { box-shadow: 0 0 0 2px rgba(104, 240, 167, 0.48), 0 0 28px rgba(104, 240, 167, 0.42); }
+}
+@keyframes enemy-cleanse-impact {
+    45% { box-shadow: 0 0 0 2px rgba(100, 223, 223, 0.48), 0 0 28px rgba(100, 223, 223, 0.42); }
+}
+@keyframes enemy-shield-impact {
+    45% { box-shadow: 0 0 0 2px rgba(112, 191, 255, 0.5), 0 0 30px rgba(112, 191, 255, 0.45); }
+}
+@keyframes enemy-berserker-rise {
+    45% { box-shadow: 0 0 0 2px rgba(255, 120, 70, 0.52), 0 0 34px rgba(255, 80, 45, 0.48); }
 }
 
 .combat-drawer {

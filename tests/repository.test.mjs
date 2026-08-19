@@ -889,7 +889,7 @@ test('combat runtime keeps state, rules, sequencing, rewards, and rendering in e
 
 test('enemy templates and runtime combatants satisfy the authoritative combat schema', () => {
   const schema = evaluateClassic(
-    'combatSchema.js',
+    ['enemyAbilities.js', 'combatSchema.js'],
     '({ validateEnemyCombatTemplate, validateCombatantReference })'
   );
   const invalidEnemies = enemies
@@ -1861,7 +1861,7 @@ test('content validation rejects unsupported item stats and roll paths', () => {
 
 test('all authored registries satisfy the unified content contract', () => {
   const validateRegistries = (developerMode) => evaluateClassic(
-    ['combatSchema.js', 'stats.js', 'recipes.js', 'npcshops.js', 'passives.js', 'skills.js', 'lootPools.js', 'locations.js', 'contentSchema.js'],
+    ['enemyAbilities.js', 'combatSchema.js', 'stats.js', 'recipes.js', 'npcshops.js', 'passives.js', 'skills.js', 'lootPools.js', 'locations.js', 'contentSchema.js'],
     `validateCoreboundContent({
       items: testItems,
       enemies: testEnemies,
@@ -3047,7 +3047,115 @@ test('taunt redirects attacks without replacing the selected target', () => {
     selectedAfterTaunt: 'selected'
   });
   assert.ok(enemies.some(enemy => enemy.tauntAbility), 'no enemy archetype received taunt');
-  assert.ok(enemies.filter(enemy => ['shield', 'heavy', 'heavyShield'].includes(enemy.archetype)).every(enemy => enemy.tauntAbility));
+  assert.ok(enemies
+    .filter(enemy => ['shield', 'heavy', 'heavyShield'].includes(enemy.archetype) && (enemy.enemyAbilityIds || []).length === 0)
+    .every(enemy => enemy.tauntAbility));
+});
+
+test('enemy combat roles are authored, validated, and visibly communicated', () => {
+  const roleIds = new Set(enemies.flatMap(enemy => enemy.enemyAbilityIds || []));
+  assert.deepEqual([...roleIds].sort(), ['berserker', 'cleanser', 'commander', 'repair', 'shieldProjector']);
+
+  const definitions = evaluateClassic('enemyAbilities.js', 'window.enemyAbilityDefinitions');
+  for (const roleId of roleIds) {
+    assert.ok(definitions[roleId], `missing enemy ability definition: ${roleId}`);
+    assert.ok(definitions[roleId].label);
+    assert.ok(definitions[roleId].description);
+  }
+
+  const controller = read('combatController.js');
+  const ui = read('combatUI.js');
+  const styles = read('style.css');
+  assert.match(controller, /function executeRepairAbility/);
+  assert.match(controller, /function executeCleanserAbility/);
+  assert.match(controller, /function processShieldProjectorChannels/);
+  assert.match(controller, /function applyEnemyAbilityStatModifiers/);
+  assert.match(controller, /function processBerserkerAbilities/);
+  assert.match(ui, /data-enemy-resistance="physical"/);
+  assert.match(ui, /class="enemy-damage-tag"/);
+  assert.match(ui, /class="enemy-ability-tag"/);
+  assert.match(ui, /function playEnemySupportAbilityEffect/);
+  assert.match(styles, /\.enemy-support-link--repair/);
+  assert.match(styles, /\.enemy-support-link--shieldProjector/);
+  assert.match(styles, /\.enemy-ability-float--berserker/);
+});
+
+test('enemy shield damage slices cannot accumulate into card width', () => {
+  const ui = read('combatUI.js');
+  const styles = read('style.css');
+  assert.match(styles, /\.hp-slice,\s*\.es-slice\s*\{[^}]*position:\s*absolute[^}]*animation:\s*fade-out/s);
+  assert.match(ui, /const damageWidth = Math\.min\(containerWidth, Math\.max\(0, \(shieldDamageAmount \/ totalEs\) \* containerWidth\)\)/);
+  assert.match(ui, /slice\.addEventListener\('animationend', \(\) => slice\.remove\(\), \{ once: true \}\)/);
+  assert.match(ui, /setTimeout\(\(\) => slice\.remove\(\), 1200\)/);
+});
+
+test('enemy action bars use independent animation cycles for attacks and support actions', () => {
+  const ui = read('combatUI.js');
+  const controller = read('combatController.js');
+  const styles = read('style.css');
+  assert.match(ui, /bar\._attackProgressAnimation = bar\.animate/);
+  assert.match(ui, /data-enemy-action-label/);
+  assert.match(controller, /enemyNextAttackTimes\[candidate\._combatId\] = getEnemyActionInterval\(candidate\)/);
+  assert.match(controller, /executeEnemyAction\(attacker\)/);
+  assert.match(styles, /\.progress-bar\.attack-bar\s*\{[^}]*display:\s*block/s);
+});
+
+test('enemy support roles heal, cleanse, project shields, command allies, and escalate', () => {
+  const result = JSON.parse(evaluateClassic(
+    ['enemyAbilities.js', 'combatController.js'],
+    `JSON.stringify((() => {
+      const repairer = { name: 'Repairer', _combatId: 'repairer', currentHealth: 100, enemyAbilityIds: ['repair'], totalStats: { health: 100, energyShield: 0, attackSpeed: 1, damageTypes: { kinetic: 10 }, defenseTypes: {} } };
+      const projector = { name: 'Projector', _combatId: 'projector', currentHealth: 100, enemyAbilityIds: ['shieldProjector'], totalStats: { health: 100, energyShield: 20, attackSpeed: 1, damageTypes: { electric: 10 }, defenseTypes: {} } };
+      const commander = { name: 'Commander', _combatId: 'commander', currentHealth: 100, enemyAbilityIds: ['commander'], totalStats: { health: 100, energyShield: 0, attackSpeed: 1, damageTypes: { kinetic: 10 }, defenseTypes: {} } };
+      const cleanser = { name: 'Cleanser', _combatId: 'cleanser', currentHealth: 100, enemyAbilityIds: ['cleanser'], totalStats: { health: 100, energyShield: 0, attackSpeed: 1, damageTypes: { radiation: 10 }, defenseTypes: {} } };
+      const berserker = { name: 'Berserker', _combatId: 'berserker', currentHealth: 100, enemyAbilityIds: ['berserker'], totalStats: { health: 100, energyShield: 0, attackSpeed: 1, damageTypes: { slashing: 10 }, defenseTypes: {} } };
+      const ally = {
+        name: 'Ally', _combatId: 'ally', currentHealth: 40, currentShield: 10,
+        activeDebuffs: [{ name: 'Test', onRemove: () => {} }],
+        enemyAbilityIds: [],
+        totalStats: { health: 100, energyShield: 100, attackSpeed: 1, precision: 0, damageTypes: { kinetic: 100 }, defenseTypes: {} }
+      };
+      encounterEnemies = [repairer, projector, commander, cleanser, berserker, ally];
+      initializeEnemyAbilityState(projector).shieldTargetId = ally._combatId;
+      const repaired = executeRepairAbility(repairer, getEnemyAbilityDefinition('repair'));
+      const healthAfterRepair = ally.currentHealth;
+      const cleansed = executeCleanserAbility(cleanser);
+      processShieldProjectorChannels(1);
+      const commandedStats = { attackSpeed: 1, precision: 0, damageTypes: { kinetic: 100 } };
+      applyEnemyAbilityStatModifiers(ally, commandedStats);
+      processBerserkerAbilities(4.1);
+      return {
+        repaired,
+        healthAfterRepair,
+        cleansed,
+        debuffsAfterCleanse: ally.activeDebuffs.length,
+        shieldAfterChannel: ally.currentShield,
+        commandedStats,
+        berserkerStacks: berserker._enemyAbilityState.berserkerStacks
+      };
+    })())`,
+    {
+      encounterEnemies: [],
+      enemyNextAttackTimes: {},
+      healEntity: (target, amount) => { target.currentHealth = Math.min(target.totalStats.health, target.currentHealth + amount); },
+      calculateEnemyStats: () => {},
+      updateEnemyStatsDisplay: () => {},
+      addToCombatLog: () => {},
+      playEnemySupportAbilityEffect: () => {},
+      showEnemyAbilityFloatingText: () => {},
+      playEnemySelfAbilityEffect: () => {}
+    }
+  ));
+
+  assert.equal(result.repaired, true);
+  assert.equal(result.healthAfterRepair, 58);
+  assert.equal(result.cleansed, true);
+  assert.equal(result.debuffsAfterCleanse, 0);
+  assert.equal(result.shieldAfterChannel, 22);
+  assert.equal(result.commandedStats.attackSpeed, 1.1);
+  assert.equal(result.commandedStats.precision, 10);
+  assert.ok(Math.abs(result.commandedStats.damageTypes.kinetic - 115) < 1e-9);
+  assert.equal(result.berserkerStacks, 1);
 });
 
 test('multi-enemy encounter rewards share the original encounter budget', () => {

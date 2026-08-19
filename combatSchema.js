@@ -344,6 +344,12 @@ function validateEnemyCombatTemplate(template) {
             if (!(toFiniteCombatNumber(template.tauntAbility[field]) > 0)) errors.push(`taunt ${field} must be greater than zero`);
         }
     }
+    if (template?.enemyAbilityIds !== undefined && !Array.isArray(template.enemyAbilityIds)) {
+        errors.push('enemyAbilityIds must be an array');
+    }
+    for (const abilityId of template?.enemyAbilityIds || []) {
+        if (!window.enemyAbilityDefinitions?.[abilityId]) errors.push(`unknown enemy ability: ${abilityId}`);
+    }
 
     return { valid: errors.length === 0, errors, name };
 }

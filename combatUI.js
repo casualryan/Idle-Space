@@ -26,6 +26,8 @@ function getAttackProgressBar(combatant) {
 function setAttackProgressBar(combatant, percent) {
     const bar = getAttackProgressBar(combatant);
     if (!bar) return;
+    bar._attackProgressAnimation?.cancel?.();
+    bar._attackProgressAnimation = null;
     bar.style.transition = 'none';
     bar.style.width = `${Math.max(0, Math.min(100, Number(percent) || 0))}%`;
 }
@@ -41,18 +43,32 @@ function startAttackProgressBarCycle(combatant, durationSeconds, elapsedSeconds 
     // Commit the reset before starting the transition. Combat is sampled at
     // 100ms, but the browser can now draw the entire cycle continuously and
     // reach 100% at the real attack threshold.
+    bar._attackProgressAnimation?.cancel?.();
+    bar._attackProgressAnimation = null;
     bar.style.transition = 'none';
     bar.style.width = `${progress}%`;
-    void bar.offsetWidth;
-    if (remaining > 0) {
-        bar.style.transition = `width ${remaining}s linear`;
-        bar.style.width = '100%';
+    if (remaining <= 0) return;
+
+    // Web Animations is not affected by unrelated card reflows and gives each
+    // enemy its own authoritative visual cycle. Keep the transition fallback
+    // for older engines and the lightweight test DOM.
+    if (typeof bar.animate === 'function') {
+        bar._attackProgressAnimation = bar.animate(
+            [{ width: `${progress}%` }, { width: '100%' }],
+            { duration: remaining * 1000, easing: 'linear', fill: 'forwards' }
+        );
+        return;
     }
+    void bar.offsetWidth;
+    bar.style.transition = `width ${remaining}s linear`;
+    bar.style.width = '100%';
 }
 
 function resetAttackProgressBars() {
     setAttackProgressBar('player', 0);
     document.querySelectorAll('.enemy-attack-progress-bar').forEach(bar => {
+        bar._attackProgressAnimation?.cancel?.();
+        bar._attackProgressAnimation = null;
         bar.style.transition = 'none';
         bar.style.width = '0%';
     });
@@ -128,6 +144,85 @@ function fitEnemyCardName(nameElement) {
     nameElement.style.fontSize = `${fittedSize}px`;
 }
 
+const ENEMY_DAMAGE_TYPE_COLORS = Object.freeze({
+    kinetic: '#b8c1c1',
+    slashing: '#d0a6d8',
+    pyro: '#ff6b6b',
+    cryo: '#7dd3fc',
+    electric: '#74c0fc',
+    corrosive: '#67d96f',
+    radiation: '#66ff99',
+    mixed: '#f1c6ff'
+});
+
+function getEnemyPrimaryDamageType(combatant) {
+    const entries = Object.entries(combatant?.totalStats?.damageTypes || combatant?.damageTypes || {})
+        .filter(([, amount]) => Number(amount) > 0)
+        .sort((left, right) => Number(right[1]) - Number(left[1]));
+    if (entries.length === 0) return 'mixed';
+    if (entries.length > 1 && Math.abs(Number(entries[0][1]) - Number(entries[1][1])) < 0.001) return 'mixed';
+    return entries[0][0];
+}
+
+function getEnemyAbilityPresentation(combatant) {
+    const definition = typeof getPrimaryEnemyAbility === 'function' ? getPrimaryEnemyAbility(combatant) : null;
+    if (definition) {
+        const stacks = definition.id === 'berserker'
+            ? Math.max(0, Number(combatant?._enemyAbilityState?.berserkerStacks) || 0)
+            : 0;
+        return {
+            id: definition.id,
+            label: definition.id === 'berserker' && stacks > 0 ? `${definition.label} ${stacks}` : definition.label,
+            description: definition.description
+        };
+    }
+    if (combatant?.tauntAbility) {
+        return {
+            id: 'taunt',
+            label: 'Taunt',
+            description: 'Periodically forces the player to attack this enemy without replacing the selected target.'
+        };
+    }
+    return { id: 'assault', label: 'Assault', description: 'Attacks the player directly.' };
+}
+
+function updateEnemyCombatIntel(card, combatant) {
+    const damageType = getEnemyPrimaryDamageType(combatant);
+    const damageTag = card.querySelector('.enemy-damage-tag');
+    if (damageTag) {
+        damageTag.textContent = damageType.toUpperCase();
+        damageTag.dataset.damageType = damageType;
+        damageTag.style.color = ENEMY_DAMAGE_TYPE_COLORS[damageType] || '#dff8ff';
+        damageTag.title = `Primarily deals ${damageType === 'mixed' ? 'mixed' : damageType} damage.`;
+    }
+
+    const defenses = combatant?.totalStats?.defenseTypes || combatant?.defenseTypes || {};
+    const resistanceDefinitions = [
+        ['physical', 'physicalResistance', 'Physical Resistance'],
+        ['elemental', 'elementalResistance', 'Elemental Resistance'],
+        ['chemical', 'chemicalResistance', 'Chemical Resistance']
+    ];
+    for (const [id, stat, label] of resistanceDefinitions) {
+        const element = card.querySelector(`[data-enemy-resistance="${id}"] b`);
+        const raw = Number(defenses[stat]) || 0;
+        const effective = Math.max(0, Math.min(80, raw));
+        if (element) {
+            element.textContent = String(Math.round(effective));
+            element.parentElement.title = `${label}: ${Math.round(effective)}%`;
+        }
+    }
+
+    const presentation = getEnemyAbilityPresentation(combatant);
+    const abilityTag = card.querySelector('.enemy-ability-tag');
+    if (abilityTag) {
+        abilityTag.textContent = presentation.label;
+        abilityTag.dataset.ability = presentation.id;
+        abilityTag.title = presentation.description;
+    }
+    const actionLabel = card.querySelector('[data-enemy-action-label]');
+    if (actionLabel) actionLabel.textContent = typeof getEnemyActionLabel === 'function' ? getEnemyActionLabel(combatant) : 'Attack Time';
+}
+
 function updateEnemyStatsDisplay() {
     const grid = document.getElementById('enemy-combat-grid');
     if (!grid) return;
@@ -141,10 +236,11 @@ function updateEnemyStatsDisplay() {
             card.innerHTML = `
                 <span class="enemy-target-state" aria-hidden="true"></span>
                 <span class="combat-card-portrait"><img alt=""><span class="combat-card-effects"></span></span>
-                <strong class="enemy-card-name">Empty Contact</strong>
+                <span class="enemy-card-header"><strong class="enemy-card-name">Empty Contact</strong><span class="enemy-damage-tag">--</span></span>
                 <span class="compact-resource"><span class="compact-resource-label"><span>Integrity</span><span data-resource-text="health">0 / 0</span></span><span class="hp-bar-container"><span class="hp-bar"></span></span></span>
                 <span class="compact-resource"><span class="compact-resource-label"><span>Energy Shield</span><span data-resource-text="shield">0 / 0</span></span><span class="es-bar-container"><span class="es-bar"></span></span></span>
-                <span class="compact-resource attack-cycle"><span class="compact-resource-label"><span>Attack Time</span></span><span class="progress-container"><span class="progress-bar attack-bar enemy-attack-progress-bar"></span></span></span>
+                <span class="enemy-card-intel"><span class="enemy-resistances" aria-label="Enemy resistances"><span data-enemy-resistance="physical"><i>P</i><b>0</b></span><span data-enemy-resistance="elemental"><i>E</i><b>0</b></span><span data-enemy-resistance="chemical"><i>C</i><b>0</b></span></span><span class="enemy-ability-tag">Assault</span></span>
+                <span class="compact-resource attack-cycle"><span class="compact-resource-label"><span data-enemy-action-label>Attack Time</span></span><span class="progress-container"><span class="progress-bar attack-bar enemy-attack-progress-bar"></span></span></span>
             `;
             card.addEventListener('click', () => {
                 const combatId = card.dataset.combatId;
@@ -172,9 +268,15 @@ function updateEnemyStatsDisplay() {
             card.querySelector('.hp-bar').style.width = '0%';
             card.querySelector('.es-bar').style.width = '0%';
             const emptyAttackBar = card.querySelector('.enemy-attack-progress-bar');
+            emptyAttackBar._attackProgressAnimation?.cancel?.();
+            emptyAttackBar._attackProgressAnimation = null;
             emptyAttackBar.style.transition = 'none';
             emptyAttackBar.style.width = '0%';
             card.querySelector('.enemy-target-state').textContent = '';
+            card.querySelector('.enemy-damage-tag').textContent = '--';
+            card.querySelector('.enemy-ability-tag').textContent = 'Assault';
+            card.querySelector('[data-enemy-action-label]').textContent = 'Attack Time';
+            card.querySelectorAll('.enemy-resistances b').forEach(value => { value.textContent = '0'; });
             renderCombatEffects(card.querySelector('.combat-card-effects'), null);
             continue;
         }
@@ -187,7 +289,8 @@ function updateEnemyStatsDisplay() {
             forced ? 'taunting' : '',
             candidate.currentHealth <= 0 ? 'defeated' : '',
             propagationPresentationPendingIds.has(candidate._combatId) ? 'propagation-pending' : '',
-            candidate.isEmpowered ? 'empowered' : ''
+            candidate.isEmpowered ? 'empowered' : '',
+            typeof isEnemyAffectedByCommander === 'function' && isEnemyAffectedByCommander(candidate) ? 'commander-buffed' : ''
         ].filter(Boolean).join(' ');
         card.disabled = candidate.currentHealth <= 0;
         card.dataset.combatId = candidate._combatId;
@@ -202,9 +305,11 @@ function updateEnemyStatsDisplay() {
         portrait.alt = `${candidate.name} portrait`;
         card.querySelector('.enemy-target-state').textContent = forced ? 'TAUNTING' : (selected ? 'TARGET' : '');
         if (candidate.currentHealth <= 0) setAttackProgressBar(candidate, 0);
+        updateEnemyCombatIntel(card, candidate);
         renderCombatEffects(card.querySelector('.combat-card-effects'), candidate);
         updateHPESBars(candidate, false);
     }
+    if (typeof syncEnemySupportEffects === 'function') syncEnemySupportEffects();
 }
 
 // Update the HP and ES bar display and formatting
@@ -253,6 +358,121 @@ function updateHPESBars(entity, isPlayer) {
     }
     if (esText) esText.textContent = `${currentShield} / ${totalShield}`;
 }
+
+function getEnemySupportAnchor(combatant) {
+    const stage = document.getElementById('delve-combat-stage');
+    const card = combatant?.isPlayer
+        ? document.getElementById('player-stats')
+        : [...document.querySelectorAll('.enemy-combat-card')]
+            .find(candidate => candidate.dataset.combatId === combatant?._combatId);
+    if (!stage || !card) return null;
+    const stageRect = stage.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    return {
+        x: cardRect.left - stageRect.left + cardRect.width / 2,
+        y: cardRect.top - stageRect.top + cardRect.height / 2,
+        card
+    };
+}
+
+function positionEnemySupportLink(link, source, target) {
+    const origin = getEnemySupportAnchor(source);
+    const destination = getEnemySupportAnchor(target);
+    if (!origin || !destination) return false;
+    const deltaX = destination.x - origin.x;
+    const deltaY = destination.y - origin.y;
+    link.style.left = `${origin.x}px`;
+    link.style.top = `${origin.y}px`;
+    link.style.width = `${Math.hypot(deltaX, deltaY)}px`;
+    link.style.transform = `rotate(${Math.atan2(deltaY, deltaX)}rad)`;
+    return true;
+}
+
+function showEnemyAbilityFloatingText(target, text, type = 'heal') {
+    const layer = document.getElementById('enemy-support-effects-layer');
+    const anchor = getEnemySupportAnchor(target);
+    if (!layer || !anchor) return null;
+    const number = document.createElement('span');
+    number.className = `enemy-ability-float enemy-ability-float--${type}`;
+    number.textContent = String(text || '');
+    number.style.left = `${anchor.x}px`;
+    number.style.top = `${anchor.y - 35}px`;
+    layer.appendChild(number);
+    number.addEventListener('animationend', () => number.remove(), { once: true });
+    setTimeout(() => number.remove(), 1300);
+    return number;
+}
+
+function playEnemySupportAbilityEffect(source, target, type, options = {}) {
+    const layer = document.getElementById('enemy-support-effects-layer');
+    if (!layer || !source || !target) return false;
+    const link = document.createElement('span');
+    link.className = `enemy-support-link enemy-support-link--${type} enemy-support-link--burst`;
+    if (!positionEnemySupportLink(link, source, target)) return false;
+    layer.appendChild(link);
+    const targetAnchor = getEnemySupportAnchor(target);
+    targetAnchor?.card?.classList.add(`enemy-ability-impact--${type}`);
+    setTimeout(() => targetAnchor?.card?.classList.remove(`enemy-ability-impact--${type}`), 650);
+    if (type === 'repair' && Number(options.amount) > 0) {
+        showEnemyAbilityFloatingText(target, `+${Math.round(options.amount)}`, 'heal');
+    } else if (options.label) {
+        showEnemyAbilityFloatingText(target, options.label, type === 'shieldProjector' ? 'shield' : 'cleanse');
+    }
+    link.addEventListener('animationend', () => link.remove(), { once: true });
+    setTimeout(() => link.remove(), 900);
+    return true;
+}
+
+function playEnemySelfAbilityEffect(source, type, label) {
+    const anchor = getEnemySupportAnchor(source);
+    if (!anchor) return false;
+    anchor.card.classList.add(`enemy-self-ability--${type}`);
+    setTimeout(() => anchor.card.classList.remove(`enemy-self-ability--${type}`), 750);
+    if (label) showEnemyAbilityFloatingText(source, label, type);
+    return true;
+}
+
+function syncEnemySupportEffects() {
+    const layer = document.getElementById('enemy-support-effects-layer');
+    if (!layer) return;
+    const desired = new Map();
+    for (const source of Array.isArray(encounterEnemies) ? encounterEnemies : []) {
+        if (!source || source.currentHealth <= 0 || !source._enemyAbilityState?.shieldTargetId) continue;
+        const target = typeof getEnemyByCombatId === 'function'
+            ? getEnemyByCombatId(source._enemyAbilityState.shieldTargetId)
+            : null;
+        if (!target || target.currentHealth <= 0) continue;
+        desired.set(`${source._combatId}:${target._combatId}`, { source, target });
+    }
+
+    layer.querySelectorAll('.enemy-support-link--persistent').forEach(link => {
+        if (!desired.has(link.dataset.linkId)) link.remove();
+    });
+    for (const [linkId, connection] of desired) {
+        let link = [...layer.querySelectorAll('.enemy-support-link--persistent')]
+            .find(candidate => candidate.dataset.linkId === linkId);
+        if (!link) {
+            link = document.createElement('span');
+            link.className = 'enemy-support-link enemy-support-link--shieldProjector enemy-support-link--persistent';
+            link.dataset.linkId = linkId;
+            layer.appendChild(link);
+        }
+        if (!positionEnemySupportLink(link, connection.source, connection.target)) link.remove();
+    }
+}
+
+function clearEnemySupportEffects() {
+    document.getElementById('enemy-support-effects-layer')?.replaceChildren();
+    document.querySelectorAll('.enemy-combat-card').forEach(card => {
+        card.classList.remove('commander-buffed', 'enemy-self-ability--berserker');
+    });
+}
+
+window.playEnemySupportAbilityEffect = playEnemySupportAbilityEffect;
+window.playEnemySelfAbilityEffect = playEnemySelfAbilityEffect;
+window.showEnemyAbilityFloatingText = showEnemyAbilityFloatingText;
+window.syncEnemySupportEffects = syncEnemySupportEffects;
+window.clearEnemySupportEffects = clearEnemySupportEffects;
 
 function addToCombatLog(message, color = null, isBold = false) {
     let html = message || '';
@@ -457,7 +677,7 @@ function animateHpBarChunk(target, damageAmount, isCritical = false, isDebuff = 
     const currentWidth = hpBar.offsetWidth;
 
     // Calculate damage width in pixels
-    const damageWidth = (damageAmount / totalHp) * containerWidth;
+    const damageWidth = Math.min(containerWidth, Math.max(0, (damageAmount / totalHp) * containerWidth));
 
     // Calculate new HP width
     let newWidth = currentWidth - damageWidth;
@@ -493,14 +713,12 @@ function animateHpBarChunk(target, damageAmount, isCritical = false, isDebuff = 
     hpContainer.appendChild(damageNumber);
 
     // Remove slice after animation completes
-    slice.addEventListener('animationend', () => {
-        hpContainer.removeChild(slice);
-    });
+    slice.addEventListener('animationend', () => slice.remove(), { once: true });
+    setTimeout(() => slice.remove(), 1200);
 
     // Remove damage number after animation completes
-    damageNumber.addEventListener('animationend', () => {
-        hpContainer.removeChild(damageNumber);
-    });
+    damageNumber.addEventListener('animationend', () => damageNumber.remove(), { once: true });
+    setTimeout(() => damageNumber.remove(), 1100);
 }
 
 function animateShieldBarChunk(target, shieldDamageAmount, isCritical = false, isDebuff = false) {
@@ -517,7 +735,7 @@ function animateShieldBarChunk(target, shieldDamageAmount, isCritical = false, i
     const currentWidth = esBar.offsetWidth;
 
     // Calculate damage width in pixels
-    const damageWidth = (shieldDamageAmount / totalEs) * containerWidth;
+    const damageWidth = Math.min(containerWidth, Math.max(0, (shieldDamageAmount / totalEs) * containerWidth));
 
     // Calculate new ES width
     let newWidth = currentWidth - damageWidth;
@@ -553,14 +771,12 @@ function animateShieldBarChunk(target, shieldDamageAmount, isCritical = false, i
     esContainer.appendChild(damageNumber);
 
     // Remove slice after animation completes
-    slice.addEventListener('animationend', () => {
-        esContainer.removeChild(slice);
-    });
+    slice.addEventListener('animationend', () => slice.remove(), { once: true });
+    setTimeout(() => slice.remove(), 1200);
 
     // Remove damage number after animation completes
-    damageNumber.addEventListener('animationend', () => {
-        esContainer.removeChild(damageNumber);
-    });
+    damageNumber.addEventListener('animationend', () => damageNumber.remove(), { once: true });
+    setTimeout(() => damageNumber.remove(), 1100);
 }
 
 

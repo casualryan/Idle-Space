@@ -209,6 +209,8 @@ function handleDefeatedCombatant(target) {
     delete enemyNextAttackTimes[target._combatId];
     if (tauntOverride?.enemyId === target._combatId) clearTauntOverride({ silent: true });
     if (selectedEnemyId === target._combatId) ensureSelectedEnemyTarget();
+    if (typeof refreshEnemyAbilityDerivedStats === 'function') refreshEnemyAbilityDerivedStats();
+    if (typeof syncEnemySupportEffects === 'function') syncEnemySupportEffects();
     if (typeof updateEnemyStatsDisplay === 'function') updateEnemyStatsDisplay();
     if (getLivingEnemies().length === 0) stopCombat('enemyDefeated');
 }

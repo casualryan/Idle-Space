@@ -1049,6 +1049,9 @@ function calculateEnemyStats(enemyObject) {
     }
 
     if (typeof applyActiveRunEnemyModifiers === 'function') applyActiveRunEnemyModifiers(enemyObject.totalStats);
+    if (typeof applyEnemyAbilityStatModifiers === 'function') {
+        applyEnemyAbilityStatModifiers(enemyObject, enemyObject.totalStats);
+    }
 
     // Ensure health/shield are positive
     enemyObject.totalStats.health = Math.max(1, Math.round(enemyObject.totalStats.health));

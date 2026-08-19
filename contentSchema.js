@@ -357,6 +357,14 @@ function validateCoreboundContent(registries = {}) {
                 if (!(Number(enemy.tauntAbility[field]) > 0)) report('enemy', name, `taunt ${field} must be positive`);
             }
         }
+        if (enemy?.enemyAbilityIds !== undefined && !Array.isArray(enemy.enemyAbilityIds)) {
+            report('enemy', name, 'enemyAbilityIds must be an array');
+        }
+        for (const abilityId of enemy?.enemyAbilityIds || []) {
+            if (!window.enemyAbilityDefinitions?.[abilityId]) {
+                report('enemy', name, `unknown enemy ability: ${abilityId}`);
+            }
+        }
         for (const [tier, pools] of Object.entries(enemy?.lootConfig?.poolsByTier || {})) {
             if (!validTierIds.has(Number(tier))) report('enemy', name, `unknown loot tier: ${tier}`);
             if (!Array.isArray(pools)) report('enemy', name, `loot tier ${tier} pools must be an array`);

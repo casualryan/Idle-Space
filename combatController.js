@@ -102,6 +102,232 @@ function processEnemyTaunts(deltaTime) {
     activateEnemyTaunt(readyTaunter, readyTaunter.tauntAbility.duration);
 }
 
+function getPrimaryEnemyAbility(combatant) {
+    return typeof getEnemyAbilityDefinitions === 'function'
+        ? getEnemyAbilityDefinitions(combatant)[0] || null
+        : null;
+}
+
+function initializeEnemyAbilityState(combatant) {
+    if (!combatant) return null;
+    const existing = combatant._enemyAbilityState && typeof combatant._enemyAbilityState === 'object'
+        ? combatant._enemyAbilityState
+        : {};
+    combatant._enemyAbilityState = {
+        berserkerElapsed: Math.max(0, Number(existing.berserkerElapsed) || 0),
+        berserkerStacks: Math.max(0, Math.floor(Number(existing.berserkerStacks) || 0)),
+        shieldTargetId: typeof existing.shieldTargetId === 'string' ? existing.shieldTargetId : null,
+        shieldTextElapsed: Math.max(0, Number(existing.shieldTextElapsed) || 0),
+        shieldTextAmount: Math.max(0, Number(existing.shieldTextAmount) || 0)
+    };
+    return combatant._enemyAbilityState;
+}
+
+function getEnemyActionInterval(combatant) {
+    const ability = getPrimaryEnemyAbility(combatant);
+    if (ability?.replacesAttack && Number(ability.actionInterval) > 0) {
+        return Math.max(0.25, Number(ability.actionInterval));
+    }
+    return Math.max(0.1, 1 / Math.max(0.1, Number(combatant?.totalStats?.attackSpeed) || 1));
+}
+
+function getEnemyActionLabel(combatant) {
+    return getPrimaryEnemyAbility(combatant)?.actionLabel || 'Attack Time';
+}
+
+function findRepairTarget(source) {
+    return getLivingEnemies()
+        .filter(candidate => candidate !== source && candidate.currentHealth < Number(candidate.totalStats?.health || 1))
+        .sort((left, right) => {
+            const leftRatio = left.currentHealth / Math.max(1, Number(left.totalStats?.health) || 1);
+            const rightRatio = right.currentHealth / Math.max(1, Number(right.totalStats?.health) || 1);
+            return leftRatio - rightRatio;
+        })[0] || null;
+}
+
+function findCleanseTarget(source) {
+    return getLivingEnemies()
+        .filter(candidate => candidate !== source && Array.isArray(candidate.activeDebuffs) && candidate.activeDebuffs.length > 0)
+        .sort((left, right) => right.activeDebuffs.length - left.activeDebuffs.length)[0] || null;
+}
+
+function findShieldProjectionTarget(source) {
+    return getLivingEnemies()
+        .filter(candidate => candidate !== source && Number(candidate.totalStats?.energyShield || 0) > 0)
+        .sort((left, right) => {
+            const leftRatio = Number(left.currentShield || 0) / Math.max(1, Number(left.totalStats?.energyShield) || 1);
+            const rightRatio = Number(right.currentShield || 0) / Math.max(1, Number(right.totalStats?.energyShield) || 1);
+            return leftRatio - rightRatio;
+        })[0] || null;
+}
+
+function executeRepairAbility(source, ability) {
+    const target = findRepairTarget(source);
+    if (!target) return false;
+    const maximumHealth = Math.max(1, Number(target.totalStats?.health) || 1);
+    const before = Math.max(0, Number(target.currentHealth) || 0);
+    const requested = maximumHealth * Math.max(0, Number(ability.healPercent) || 0);
+    if (typeof healEntity === 'function') healEntity(target, requested);
+    else target.currentHealth = Math.min(maximumHealth, before + requested);
+    const restored = Math.max(0, Number(target.currentHealth) - before);
+    if (restored <= 0) return false;
+    if (typeof playEnemySupportAbilityEffect === 'function') {
+        playEnemySupportAbilityEffect(source, target, 'repair', { amount: restored });
+    }
+    return true;
+}
+
+function executeCleanserAbility(source) {
+    const target = findCleanseTarget(source);
+    if (!target) return false;
+    const removed = target.activeDebuffs.length;
+    clearCombatantDebuffs(target);
+    if (typeof calculateEnemyStats === 'function') calculateEnemyStats(target);
+    if (typeof addToCombatLog === 'function') {
+        addToCombatLog(`${source.name} cleanses ${removed} debuff${removed === 1 ? '' : 's'} from ${target.name}.`, '#64dfdf');
+    }
+    if (typeof playEnemySupportAbilityEffect === 'function') {
+        playEnemySupportAbilityEffect(source, target, 'cleanse', { label: 'CLEANSED' });
+    }
+    return true;
+}
+
+function executeShieldProjectorAbility(source) {
+    const state = initializeEnemyAbilityState(source);
+    let target = getEnemyByCombatId(state.shieldTargetId);
+    if (!target || target.currentHealth <= 0 || Number(target.totalStats?.energyShield || 0) <= 0) {
+        target = findShieldProjectionTarget(source);
+        state.shieldTargetId = target?._combatId || null;
+        if (target && typeof addToCombatLog === 'function') {
+            addToCombatLog(`${source.name} channels shielding into ${target.name}.`, '#74c0fc');
+        }
+        if (target && typeof playEnemySupportAbilityEffect === 'function') {
+            playEnemySupportAbilityEffect(source, target, 'shieldProjector', { label: 'LINKED' });
+        }
+    }
+    return Boolean(target);
+}
+
+function executeEnemyAction(attacker) {
+    const ability = getPrimaryEnemyAbility(attacker);
+    let handled = false;
+    if (ability?.id === 'repair') handled = executeRepairAbility(attacker, ability);
+    else if (ability?.id === 'cleanser') handled = executeCleanserAbility(attacker);
+    else if (ability?.id === 'shieldProjector') handled = executeShieldProjectorAbility(attacker);
+    if (!handled) enemyAttack(attacker);
+}
+
+function processShieldProjectorChannels(deltaTime) {
+    for (const source of getLivingEnemies()) {
+        if (typeof hasEnemyAbility !== 'function' || !hasEnemyAbility(source, 'shieldProjector')) continue;
+        const state = initializeEnemyAbilityState(source);
+        const target = getEnemyByCombatId(state.shieldTargetId);
+        if (!target || target.currentHealth <= 0 || Number(target.totalStats?.energyShield || 0) <= 0) {
+            state.shieldTargetId = null;
+            continue;
+        }
+        const ability = getEnemyAbilityDefinition('shieldProjector');
+        const maximumShield = Math.max(0, Number(target.totalStats?.energyShield) || 0);
+        const before = Math.max(0, Number(target.currentShield) || 0);
+        target.currentShield = Math.min(maximumShield, before + maximumShield * Number(ability.shieldPerSecond || 0) * deltaTime);
+        const restored = Math.max(0, target.currentShield - before);
+        state.shieldTextElapsed += deltaTime;
+        state.shieldTextAmount += restored;
+        if (state.shieldTextElapsed >= 0.8) {
+            if (state.shieldTextAmount >= 1 && typeof showEnemyAbilityFloatingText === 'function') {
+                showEnemyAbilityFloatingText(target, `+${Math.round(state.shieldTextAmount)} ES`, 'shield');
+            }
+            state.shieldTextElapsed = 0;
+            state.shieldTextAmount = 0;
+        }
+    }
+}
+
+function refreshEnemyAbilityDerivedStats() {
+    for (const candidate of getLivingEnemies()) {
+        const currentHealth = Math.max(0, Number(candidate.currentHealth) || 0);
+        const currentShield = Math.max(0, Number(candidate.currentShield) || 0);
+        if (typeof calculateEnemyStats === 'function') calculateEnemyStats(candidate);
+        candidate.currentHealth = Math.min(currentHealth, Math.max(1, Number(candidate.totalStats?.health) || 1));
+        candidate.currentShield = Math.min(currentShield, Math.max(0, Number(candidate.totalStats?.energyShield) || 0));
+        if (enemyNextAttackTimes?.[candidate._combatId] !== undefined) {
+            enemyNextAttackTimes[candidate._combatId] = getEnemyActionInterval(candidate);
+            if (typeof startAttackProgressBarCycle === 'function') {
+                startAttackProgressBarCycle(
+                    candidate,
+                    enemyNextAttackTimes[candidate._combatId],
+                    Math.min(
+                        Number(enemyAttackTimers?.[candidate._combatId]) || 0,
+                        enemyNextAttackTimes[candidate._combatId]
+                    )
+                );
+            }
+        }
+    }
+}
+
+function processBerserkerAbilities(deltaTime) {
+    let statsChanged = false;
+    for (const source of getLivingEnemies()) {
+        if (typeof hasEnemyAbility !== 'function' || !hasEnemyAbility(source, 'berserker')) continue;
+        const ability = getEnemyAbilityDefinition('berserker');
+        const state = initializeEnemyAbilityState(source);
+        if (state.berserkerStacks >= ability.maxStacks) continue;
+        state.berserkerElapsed += deltaTime;
+        while (state.berserkerElapsed >= ability.stackInterval && state.berserkerStacks < ability.maxStacks) {
+            state.berserkerElapsed -= ability.stackInterval;
+            state.berserkerStacks++;
+            statsChanged = true;
+            if (typeof playEnemySelfAbilityEffect === 'function') {
+                playEnemySelfAbilityEffect(source, 'berserker', `RAGE ${state.berserkerStacks}/${ability.maxStacks}`);
+            }
+            if (typeof addToCombatLog === 'function') {
+                addToCombatLog(`${source.name} gains Rage ${state.berserkerStacks}/${ability.maxStacks}.`, '#ff9f43');
+            }
+        }
+    }
+    if (statsChanged) refreshEnemyAbilityDerivedStats();
+}
+
+function processEnemyAbilities(deltaTime) {
+    processShieldProjectorChannels(deltaTime);
+    processBerserkerAbilities(deltaTime);
+}
+
+function applyEnemyAbilityStatModifiers(combatant, stats) {
+    if (!combatant || !stats) return stats;
+    const commander = getLivingEnemies().find(candidate => (
+        candidate !== combatant
+        && typeof hasEnemyAbility === 'function'
+        && hasEnemyAbility(candidate, 'commander')
+    ));
+    if (commander) {
+        const ability = getEnemyAbilityDefinition('commander');
+        stats.attackSpeed *= 1 + Number(ability.attackSpeedMultiplier || 0);
+        stats.precision += Number(ability.precisionBonus || 0);
+        for (const type of Object.keys(stats.damageTypes || {})) {
+            stats.damageTypes[type] *= 1 + Number(ability.damageMultiplier || 0);
+        }
+    }
+    if (typeof hasEnemyAbility === 'function' && hasEnemyAbility(combatant, 'berserker')) {
+        const ability = getEnemyAbilityDefinition('berserker');
+        const stacks = Math.max(0, Number(combatant._enemyAbilityState?.berserkerStacks) || 0);
+        stats.attackSpeed *= 1 + stacks * Number(ability.attackSpeedPerStack || 0);
+        for (const type of Object.keys(stats.damageTypes || {})) {
+            stats.damageTypes[type] *= 1 + stacks * Number(ability.damagePerStack || 0);
+        }
+    }
+    return stats;
+}
+
+function isEnemyAffectedByCommander(combatant) {
+    return getLivingEnemies().some(candidate => (
+        candidate !== combatant
+        && typeof hasEnemyAbility === 'function'
+        && hasEnemyAbility(candidate, 'commander')
+    ));
+}
+
 function getEncounterEnemyCount(location, random = Math.random) {
     if (!location || location.developerOnly || Number(location.maxEnemies) === 1) return 1;
     const level = Math.max(1, Number(location.recommendedLevel) || 1);
@@ -166,6 +392,7 @@ function createEnemyInstance(monsterName, isEmpowered, slotIndex, rewardScale, o
     instance._combatId = `${instance.id || String(monsterName).replace(/[^a-z0-9]/gi, '-')}-${encounterSerial}-${slotIndex}`;
     instance._rewardScale = Math.max(0, Number(rewardScale) || 0);
     instance._tauntCooldownRemaining = Math.max(0, Number(instance.tauntAbility?.initialDelay ?? 0));
+    initializeEnemyAbilityState(instance);
     instance._defeatHandled = false;
     instance._operationLootChanceMultiplier = Math.max(0, Number(options.lootChanceMultiplier) || 1);
 
@@ -282,6 +509,7 @@ function spawnEnemyEncounter(encounterEntries) {
         rewardScale,
         entry
     ));
+    refreshEnemyAbilityDerivedStats();
     assignEncounterExperienceRewards(encounterEnemies);
     selectedEnemyId = null;
     tauntOverride = null;
@@ -338,7 +566,7 @@ function startCombat() {
         clearBuffs(candidate);
         ensureEntityInitialization(candidate, false);
         enemyAttackTimers[candidate._combatId] = 0;
-        enemyNextAttackTimes[candidate._combatId] = 1 / (candidate.totalStats.attackSpeed || 1);
+        enemyNextAttackTimes[candidate._combatId] = getEnemyActionInterval(candidate);
     }
     startHealthRegen();
     lastCombatLoopTime = Date.now();
@@ -362,6 +590,7 @@ function combatLoop() {
     const deltaTime = Math.max(0, (now - lastCombatLoopTime) / 1000);
     lastCombatLoopTime = now;
     processEnemyTaunts(deltaTime);
+    processEnemyAbilities(deltaTime);
 
     if (player) {
         if (playerNextAttackTime <= 0) refreshPlayerAttackInterval();
@@ -378,13 +607,13 @@ function combatLoop() {
 
     for (const attacker of getLivingEnemies()) {
         const id = attacker._combatId;
-        let nextAttack = Number(enemyNextAttackTimes[id]) || (1 / (attacker.totalStats.attackSpeed || 1));
+        let nextAttack = Number(enemyNextAttackTimes[id]) || getEnemyActionInterval(attacker);
         let timer = Number(enemyAttackTimers[id]) || 0;
         timer += deltaTime;
         if (timer >= nextAttack) {
             timer = 0;
-            nextAttack = 1 / (attacker.totalStats.attackSpeed || 1);
-            enemyAttack(attacker);
+            nextAttack = getEnemyActionInterval(attacker);
+            executeEnemyAction(attacker);
             if (!isCombatActive || player.currentHealth <= 0) return;
             if (typeof startAttackProgressBarCycle === 'function') {
                 startAttackProgressBarCycle(attacker, nextAttack);
@@ -423,6 +652,7 @@ function clearCombatantDebuffs(combatant) {
 }
 
 function resetEncounterState() {
+    if (typeof clearEnemySupportEffects === 'function') clearEnemySupportEffects();
     for (const candidate of Array.isArray(encounterEnemies) ? encounterEnemies : []) {
         clearCombatantDebuffs(candidate);
         clearBuffs(candidate);
