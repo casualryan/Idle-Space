@@ -46,6 +46,11 @@ const EMPOWERED_MODIFIER_DEFINITIONS = Object.freeze({
 });
 
 const EMPOWERED_MODIFIER_IDS = Object.freeze(Object.keys(EMPOWERED_MODIFIER_DEFINITIONS));
+const EMPOWERED_SUPPORT_EXCLUDED_MODIFIER_IDS = Object.freeze([
+    'brutal', 'quick', 'precise', 'overcharged', 'vampiric', 'frenzied',
+    'kineticInfused', 'slashingInfused', 'pyroInfused', 'cryoInfused',
+    'electricInfused', 'corrosiveInfused', 'radiationInfused'
+]);
 
 function getEmpoweredModifierDefinition(modifierId) {
     return EMPOWERED_MODIFIER_DEFINITIONS[String(modifierId || '')] || null;
@@ -61,11 +66,24 @@ function hasEmpoweredModifier(combatant, modifierId) {
     return Array.isArray(combatant?.empoweredModifierIds) && combatant.empoweredModifierIds.includes(modifierId);
 }
 
+function isSupportEnemyForEmpowerment(combatant) {
+    if (typeof isEnemySupport === 'function') return isEnemySupport(combatant);
+    return Array.isArray(combatant?.enemyAbilityIds)
+        && combatant.enemyAbilityIds.some(abilityId => ['repair', 'shieldProjector', 'cleanser'].includes(abilityId));
+}
+
+function getEligibleEmpoweredModifierIds(options = {}) {
+    const support = Boolean(options.support || isSupportEnemyForEmpowerment(options.combatant));
+    return EMPOWERED_MODIFIER_IDS.filter(modifierId => (
+        !support || !EMPOWERED_SUPPORT_EXCLUDED_MODIFIER_IDS.includes(modifierId)
+    ));
+}
+
 function rollEmpoweredModifierIds(options = {}) {
     const random = typeof options.random === 'function' ? options.random : Math.random;
     const doubleChance = options.deepSector ? 0.15 : 0.10;
     const count = random() < doubleChance ? 2 : 1;
-    const pool = [...EMPOWERED_MODIFIER_IDS];
+    const pool = [...getEligibleEmpoweredModifierIds(options)];
     const selected = [];
     while (selected.length < count && pool.length > 0) {
         const index = Math.min(pool.length - 1, Math.max(0, Math.floor(random() * pool.length)));
@@ -74,9 +92,10 @@ function rollEmpoweredModifierIds(options = {}) {
     return selected;
 }
 
-function normalizeEmpoweredModifierIds(ids) {
+function normalizeEmpoweredModifierIds(ids, options = {}) {
+    const eligible = new Set(getEligibleEmpoweredModifierIds(options));
     return [...new Set(Array.isArray(ids) ? ids : [])]
-        .filter(id => Boolean(getEmpoweredModifierDefinition(id)))
+        .filter(id => eligible.has(id) && Boolean(getEmpoweredModifierDefinition(id)))
         .slice(0, 2);
 }
 
@@ -102,8 +121,11 @@ function initializeEmpoweredModifierState(combatant) {
 function applyEmpoweredBaseModifiers(combatant, options = {}) {
     if (!combatant) return combatant;
     const random = typeof options.random === 'function' ? options.random : Math.random;
-    const explicit = normalizeEmpoweredModifierIds(options.modifierIds);
-    const ids = explicit.length > 0 ? explicit : rollEmpoweredModifierIds({ random, deepSector: Boolean(options.deepSector) });
+    const support = Boolean(options.support || isSupportEnemyForEmpowerment(combatant));
+    const explicit = normalizeEmpoweredModifierIds(options.modifierIds, { support });
+    const ids = explicit.length > 0
+        ? explicit
+        : rollEmpoweredModifierIds({ random, deepSector: Boolean(options.deepSector), support });
     combatant.isEmpowered = true;
     combatant.empoweredModifierIds = ids;
     const definitions = getEmpoweredModifierDefinitions(combatant);
@@ -243,9 +265,11 @@ function getEmpoweredModifierTooltip(definition) {
 }
 
 window.empoweredModifierDefinitions = EMPOWERED_MODIFIER_DEFINITIONS;
+window.empoweredSupportExcludedModifierIds = EMPOWERED_SUPPORT_EXCLUDED_MODIFIER_IDS;
 window.getEmpoweredModifierDefinition = getEmpoweredModifierDefinition;
 window.getEmpoweredModifierDefinitions = getEmpoweredModifierDefinitions;
 window.hasEmpoweredModifier = hasEmpoweredModifier;
+window.getEligibleEmpoweredModifierIds = getEligibleEmpoweredModifierIds;
 window.rollEmpoweredModifierIds = rollEmpoweredModifierIds;
 window.applyEmpoweredBaseModifiers = applyEmpoweredBaseModifiers;
 window.initializeEmpoweredModifierState = initializeEmpoweredModifierState;

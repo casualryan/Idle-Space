@@ -1,8 +1,11 @@
 // Operation-only Core effects, randomized between-encounter events, and run modifiers.
 
-const OPERATION_BOARD_VERSION = 3;
+const OPERATION_BOARD_VERSION = 4;
 const OPERATION_BOARD_SIZE = 6;
 const OPERATION_STANDARD_BOARD_SIZE = 4;
+const OPERATION_ENEMY_ROSTER_MIN = 10;
+const OPERATION_ENEMY_ROSTER_MAX = 12;
+const OPERATION_ENEMY_ROSTER_SUPPORT_MAX = 3;
 const OPERATION_STANDARD_DIFFICULTY_BANDS = Object.freeze(['current', 'current', 'lower', 'lower']);
 const OPERATION_DEEP_SECTOR_BAND = 'deep';
 const DEEP_SECTOR_MIN_LEVEL = 55;
@@ -68,16 +71,40 @@ function createOperationSeed(random = Math.random, now = Date.now) {
     return `op-${timestamp}-${entropy}`;
 }
 
-function getOperationEnemyPool(recommendedLevel, enemyRegistry = window.enemies || []) {
+function getOperationEnemyPool(recommendedLevel, enemyRegistry = window.enemies || [], options = {}) {
     const level = Math.max(1, Math.min(DEEP_SECTOR_MAX_LEVEL, Math.floor(Number(recommendedLevel) || 1)));
     const eligible = enemyRegistry.filter(enemy => enemy?.name && !enemy.developerOnly && !enemy.isTrainingDummy && !enemy.dynamicOperationSecurity);
+    if (options.deepSector) {
+        const scalable = eligible.filter(enemy => enemy.scalableProgressionEnemy);
+        return scalable.length >= OPERATION_ENEMY_ROSTER_MIN ? scalable : eligible;
+    }
     const nearby = eligible.filter(enemy => Math.abs(Math.max(1, Number(enemy.level) || 1) - level) <= 5);
-    const source = nearby.length >= 4
+    const source = nearby.length >= OPERATION_ENEMY_ROSTER_MIN
         ? nearby
         : eligible.slice().sort((left, right) => (
             Math.abs(Number(left.level || 1) - level) - Math.abs(Number(right.level || 1) - level)
-        )).slice(0, 8);
+        )).slice(0, OPERATION_ENEMY_ROSTER_MAX);
     return source;
+}
+
+function selectOperationEnemyRoster(availableEnemies, random) {
+    const unique = [...new Map(availableEnemies.map(enemy => [enemy.name, enemy])).values()];
+    const shuffled = unique
+        .map(enemy => ({ enemy, order: random() }))
+        .sort((left, right) => left.order - right.order);
+    const requestedCount = OPERATION_ENEMY_ROSTER_MIN
+        + Math.floor(random() * (OPERATION_ENEMY_ROSTER_MAX - OPERATION_ENEMY_ROSTER_MIN + 1));
+    const targetCount = Math.min(shuffled.length, requestedCount);
+    const selected = [];
+    let supportCount = 0;
+    for (const entry of shuffled) {
+        const support = typeof isEnemySupport === 'function' && isEnemySupport(entry.enemy);
+        if (support && supportCount >= OPERATION_ENEMY_ROSTER_SUPPORT_MAX) continue;
+        selected.push(entry.enemy);
+        if (support) supportCount++;
+        if (selected.length >= targetCount) break;
+    }
+    return selected;
 }
 
 function chooseOperationGuaranteedReward(level, random) {
@@ -199,13 +226,12 @@ function generateOperationOffer(seed, playerLevel = Number(window.player?.level)
     const recommendedLevel = normalizedBand === OPERATION_DEEP_SECTOR_BAND
         ? Math.max(DEEP_SECTOR_MIN_LEVEL, Math.min(DEEP_SECTOR_MAX_LEVEL, Math.floor(Number(options.deepSectorLevel) || DEEP_SECTOR_MIN_LEVEL)))
         : getOperationLevelForBand(playerLevel, normalizedBand, random);
-    const availableEnemies = getOperationEnemyPool(recommendedLevel, enemyRegistry);
-    const shuffledEnemies = availableEnemies
-        .map(enemy => ({ enemy, order: random() }))
-        .sort((left, right) => left.order - right.order);
-    const enemyCount = Math.min(shuffledEnemies.length, 4 + Math.floor(random() * 3));
+    const availableEnemies = getOperationEnemyPool(recommendedLevel, enemyRegistry, {
+        deepSector: normalizedBand === OPERATION_DEEP_SECTOR_BAND
+    });
+    const rosterEnemies = selectOperationEnemyRoster(availableEnemies, random);
     const empoweredChance = Math.min(0.35, 0.03 + Math.floor(recommendedLevel / 10) * 0.035);
-    const enemies = shuffledEnemies.slice(0, enemyCount).map(({ enemy }) => ({
+    const enemies = rosterEnemies.map(enemy => ({
         name: enemy.name,
         spawnRate: 1 + Math.floor(random() * 4),
         empoweredChance
@@ -1481,6 +1507,8 @@ window.OPERATION_EVENT_DEFINITIONS = OPERATION_EVENT_DEFINITIONS;
 window.OPERATION_BOARD_SIZE = OPERATION_BOARD_SIZE;
 window.OPERATION_BOARD_VERSION = OPERATION_BOARD_VERSION;
 window.OPERATION_STANDARD_BOARD_SIZE = OPERATION_STANDARD_BOARD_SIZE;
+window.OPERATION_ENEMY_ROSTER_MIN = OPERATION_ENEMY_ROSTER_MIN;
+window.OPERATION_ENEMY_ROSTER_MAX = OPERATION_ENEMY_ROSTER_MAX;
 window.DEEP_SECTOR_MIN_LEVEL = DEEP_SECTOR_MIN_LEVEL;
 window.DEEP_SECTOR_MAX_LEVEL = DEEP_SECTOR_MAX_LEVEL;
 window.DEEP_SECTOR_LEVEL_STEP = DEEP_SECTOR_LEVEL_STEP;

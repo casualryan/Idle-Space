@@ -229,15 +229,15 @@ function getPassiveNodeState(node) {
 }
 
 function preservePassiveResourceRatios(callback) {
-    const healthMaximum = Math.max(1, Number(player.totalStats?.health) || 1);
-    const shieldMaximum = Math.max(0, Number(player.totalStats?.energyShield) || 0);
-    const healthRatio = Math.min(1, Math.max(0, Number(player.currentHealth) / healthMaximum));
-    const shieldRatio = shieldMaximum > 0 ? Math.min(1, Math.max(0, Number(player.currentShield) / shieldMaximum)) : 0;
+    const ratios = typeof captureCombatResourceRatios === 'function'
+        ? captureCombatResourceRatios(player)
+        : null;
     callback();
     resetGearPassiveBonuses();
     applyAllPassivesToPlayer();
-    player.currentHealth = Math.max(1, Math.round(player.totalStats.health * healthRatio));
-    player.currentShield = Math.max(0, Math.round(player.totalStats.energyShield * shieldRatio));
+    if (ratios && typeof restoreCombatResourceRatios === 'function') {
+        restoreCombatResourceRatios(player, ratios);
+    }
 }
 
 function investPassiveNode(nodeId) {

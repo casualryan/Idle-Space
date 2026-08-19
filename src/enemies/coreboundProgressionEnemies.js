@@ -290,24 +290,31 @@ function getEnemyPortraitPath(blueprint) {
     return `images/enemies/${slug}.png`;
 }
 
-function toEnemy(blueprint) {
-    const baseHealth = getBaseHealth(blueprint.level);
-    const baseShield = getBaseShield(blueprint.level);
-    const baseDamage = getBaseDamage(blueprint.level);
+function toEnemy(blueprint, levelOverride = null) {
+    const effectiveLevel = levelOverride == null
+        ? blueprint.level
+        : Math.max(1, Math.min(100, Math.floor(Number(levelOverride) || blueprint.level)));
+    const effectiveZone = levelOverride == null
+        ? blueprint.zone
+        : Math.max(1, Math.min(20, Math.ceil(effectiveLevel / 5)));
+    const baseHealth = getBaseHealth(effectiveLevel);
+    const baseShield = getBaseShield(effectiveLevel);
+    const baseDamage = getBaseDamage(effectiveLevel);
     const tunedStats = applyArchetypeStats(
-        blueprint.level,
+        effectiveLevel,
         blueprint.archetype,
         baseHealth,
         baseShield,
         baseDamage
     );
-    const zoneTuning = ZONE_COMBAT_TUNING[blueprint.zone] || { health: 1, damage: 1 };
+    const zoneTuning = ZONE_COMBAT_TUNING[effectiveZone] || { health: 1, damage: 1 };
 
     return {
         id: blueprint.id,
         name: blueprint.name,
-        level: blueprint.level,
-        zone: blueprint.zone,
+        level: effectiveLevel,
+        zone: effectiveZone,
+        scalableProgressionEnemy: true,
         archetype: blueprint.archetype,
         portrait: getEnemyPortraitPath(blueprint),
         enemyAbilityIds: blueprint.abilityId ? [blueprint.abilityId] : [],
@@ -322,13 +329,41 @@ function toEnemy(blueprint) {
         damageTypes: {
             [blueprint.damageType]: Math.max(1, Math.round(tunedStats.damage * zoneTuning.damage))
         },
-        defenseTypes: getDefenses(blueprint.level, blueprint.damageType),
-        lootConfig: getLootConfig(blueprint.zone, blueprint.archetype, blueprint.lootFamilies || blueprint.damageType),
-        currencyDrop: getCurrencyDrop(blueprint.zone, blueprint.level),
-        experienceValue: getExperienceValue(blueprint.zone, blueprint.archetype),
+        defenseTypes: getDefenses(effectiveLevel, blueprint.damageType),
+        lootConfig: getLootConfig(effectiveZone, blueprint.archetype, blueprint.lootFamilies || blueprint.damageType),
+        currencyDrop: getCurrencyDrop(effectiveZone, effectiveLevel),
+        experienceValue: getExperienceValue(effectiveZone, blueprint.archetype),
         statusEffects: [],
         description: `${ARCHETYPE_DESCRIPTIONS[blueprint.archetype] || ARCHETYPE_DESCRIPTIONS.balanced} ${DAMAGE_DESCRIPTIONS[blueprint.damageType] || ''}`.trim()
     };
 }
 
-export default BLUEPRINTS.map(toEnemy);
+export function createScaledCoreboundEnemy(templateId, level) {
+    const blueprint = BLUEPRINTS.find(candidate => candidate.id === templateId);
+    if (!blueprint) return null;
+    const targetLevel = Math.max(1, Math.min(100, Math.floor(Number(level) || blueprint.level)));
+    if (targetLevel <= 50) return toEnemy(blueprint, targetLevel);
+
+    const enemy = toEnemy(blueprint, 50);
+    const excessLevels = targetLevel - 50;
+    const targetZone = Math.max(11, Math.min(20, Math.ceil(targetLevel / 5)));
+    const durabilityMultiplier = 1 + excessLevels * 0.07;
+    const damageMultiplier = 1 + excessLevels * 0.04;
+    enemy.level = targetLevel;
+    enemy.zone = targetZone;
+    enemy.health = Math.max(1, Math.round(enemy.health * durabilityMultiplier));
+    enemy.energyShield = Math.max(0, Math.round(enemy.energyShield * durabilityMultiplier));
+    enemy.damageTypes = Object.fromEntries(Object.entries(enemy.damageTypes).map(([type, amount]) => [
+        type,
+        Math.max(1, Math.round(Number(amount || 0) * damageMultiplier))
+    ]));
+    enemy.precision = Number(enemy.precision || 0) + excessLevels * 2;
+    enemy.deflection = Number(enemy.deflection || 0) + excessLevels * 2;
+    enemy.lootConfig = getLootConfig(targetZone, blueprint.archetype, blueprint.lootFamilies || blueprint.damageType);
+    enemy.currencyDrop = getCurrencyDrop(targetZone, targetLevel);
+    enemy.currencyDrop.min = Math.max(1, Math.round(enemy.currencyDrop.min * (1 + excessLevels * 0.03)));
+    enemy.currencyDrop.max = Math.max(enemy.currencyDrop.min, Math.round(enemy.currencyDrop.max * (1 + excessLevels * 0.03)));
+    return enemy;
+}
+
+export default BLUEPRINTS.map(blueprint => toEnemy(blueprint));

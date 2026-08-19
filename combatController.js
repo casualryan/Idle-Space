@@ -490,13 +490,34 @@ function getEncounterEnemyCount(location, random = Math.random) {
     return distribution[distribution.length - 1][0];
 }
 
-function selectWeightedEncounterEnemies(location, count, random = Math.random) {
+function getEncounterSupportLimit(enemyCount) {
+    return Math.max(1, Math.min(2, Number(enemyCount) >= 5 ? 2 : 1));
+}
+
+function isEncounterSupportEntry(entry) {
+    const template = findEnemyTemplate(entry?.name);
+    return typeof isEnemySupport === 'function'
+        ? isEnemySupport(template)
+        : Array.isArray(template?.enemyAbilityIds)
+            && template.enemyAbilityIds.some(abilityId => ['repair', 'shieldProjector', 'cleanser'].includes(abilityId));
+}
+
+function selectWeightedEncounterEnemies(location, count, random = Math.random, options = {}) {
     const authored = Array.isArray(location?.enemies) ? location.enemies : [];
     const selected = [];
     const selectedRareNames = new Set();
+    const existingEntries = Array.isArray(options.existingEntries) ? options.existingEntries : [];
+    const targetCount = Math.max(1, Math.min(6, Number(count) || 1));
+    const finalSquadSize = Math.min(6, existingEntries.length + targetCount);
+    const allowSupportOverflow = Boolean(options.allowSupportOverflow || location?.allowSupportOverflow);
+    const supportLimit = allowSupportOverflow ? finalSquadSize : getEncounterSupportLimit(finalSquadSize);
+    let supportCount = existingEntries.filter(isEncounterSupportEntry).length;
 
-    for (let slot = 0; slot < Math.max(1, Math.min(6, Number(count) || 1)); slot++) {
-        const eligible = authored.filter(entry => Number(entry.spawnRate || 1) > 1 || !selectedRareNames.has(entry.name));
+    for (let slot = 0; slot < targetCount; slot++) {
+        const eligible = authored.filter(entry => (
+            (Number(entry.spawnRate || 1) > 1 || !selectedRareNames.has(entry.name))
+            && (supportCount < supportLimit || !isEncounterSupportEntry(entry))
+        ));
         if (eligible.length === 0) break;
         const totalWeight = eligible.reduce((sum, entry) => sum + Math.max(1, Number(entry.spawnRate) || 1), 0);
         let roll = (typeof random === 'function' ? random() : Math.random()) * totalWeight;
@@ -509,6 +530,7 @@ function selectWeightedEncounterEnemies(location, count, random = Math.random) {
             }
         }
         selected.push(chosen);
+        if (isEncounterSupportEntry(chosen)) supportCount++;
         if (Number(chosen.spawnRate || 1) <= 1) selectedRareNames.add(chosen.name);
     }
     return selected;
@@ -525,7 +547,18 @@ function findEnemyTemplate(monsterName) {
 function createEnemyInstance(monsterName, isEmpowered, slotIndex, rewardScale, options = {}) {
     const template = findEnemyTemplate(monsterName);
     if (!template) throw new Error(`Enemy template not found: ${monsterName}`);
-    const instance = JSON.parse(JSON.stringify(template));
+    const levelOverride = options.levelOverride
+        ? Math.max(1, Math.min(100, Math.floor(Number(options.levelOverride) || 1)))
+        : null;
+    let normalizedToLevel = false;
+    let instance = JSON.parse(JSON.stringify(template));
+    if (levelOverride && template.scalableProgressionEnemy && typeof window.createScaledCoreboundEnemy === 'function') {
+        const scaled = window.createScaledCoreboundEnemy(template.id, levelOverride);
+        if (scaled) {
+            instance = JSON.parse(JSON.stringify(scaled));
+            normalizedToLevel = true;
+        }
+    }
     instance.activeBuffs = [];
     instance.activeDebuffs = [];
     instance.effects = instance.effects || [];
@@ -538,10 +571,6 @@ function createEnemyInstance(monsterName, isEmpowered, slotIndex, rewardScale, o
     instance._defeatHandled = false;
     instance._operationLootChanceMultiplier = Math.max(0, Number(options.lootChanceMultiplier) || 1);
 
-    const levelOverride = options.levelOverride
-        ? Math.max(1, Math.min(100, Math.floor(Number(options.levelOverride) || 1)))
-        : null;
-
     if (template.dynamicOperationSecurity && levelOverride) {
         const targetLevel = levelOverride;
         const registry = (Array.isArray(window.enemies) ? window.enemies : [])
@@ -550,14 +579,18 @@ function createEnemyInstance(monsterName, isEmpowered, slotIndex, rewardScale, o
             Math.abs(Number(left.level || 1) - targetLevel) - Math.abs(Number(right.level || 1) - targetLevel)
         ))[0];
         if (source) {
+            const scaledSource = source.scalableProgressionEnemy && typeof window.createScaledCoreboundEnemy === 'function'
+                ? window.createScaledCoreboundEnemy(source.id, targetLevel) || source
+                : source;
             instance.level = targetLevel;
             instance.zone = Math.max(1, Math.min(20, Math.ceil(targetLevel / 5)));
             for (const key of ['health', 'energyShield', 'attackSpeed', 'criticalChance', 'criticalMultiplier', 'precision', 'deflection', 'experienceValue']) {
-                if (source[key] !== undefined) instance[key] = JSON.parse(JSON.stringify(source[key]));
+                if (scaledSource[key] !== undefined) instance[key] = JSON.parse(JSON.stringify(scaledSource[key]));
             }
             for (const key of ['damageTypes', 'defenseTypes', 'lootConfig', 'currencyDrop']) {
-                if (source[key] !== undefined) instance[key] = JSON.parse(JSON.stringify(source[key]));
+                if (scaledSource[key] !== undefined) instance[key] = JSON.parse(JSON.stringify(scaledSource[key]));
             }
+            normalizedToLevel = scaledSource !== source;
             const roleTuning = {
                 command: { health: 1.35, shield: 1.2, damage: 1.2, speed: 0.82 },
                 interceptor: { health: 0.72, shield: 0.75, damage: 0.72, speed: 1.25 },
@@ -572,10 +605,10 @@ function createEnemyInstance(monsterName, isEmpowered, slotIndex, rewardScale, o
         }
     }
 
-    // Deep Sector scaling modifies the base enemy before empowerment. Keeping
-    // this here makes authored archetypes retain their identity while every
-    // level above 50 consistently adds durability, damage, and accuracy.
-    if (levelOverride) {
+    // Generated Operation normalization happens before empowerment. Scalable
+    // progression enemies are rebuilt exactly; this fallback keeps special
+    // authored enemies level-aware without changing fixed Patrol templates.
+    if (levelOverride && !normalizedToLevel) {
         instance.level = levelOverride;
         instance.zone = Math.max(1, Math.min(20, Math.ceil(levelOverride / 5)));
         const excessLevels = Math.max(0, levelOverride - 50);
@@ -602,7 +635,8 @@ function createEnemyInstance(monsterName, isEmpowered, slotIndex, rewardScale, o
         applyEmpoweredBaseModifiers(instance, {
             modifierIds: options.empoweredModifierIds,
             random: options.random,
-            deepSector: Boolean(options.deepSector || levelOverride > 50 || currentDelveLocation?.deepSector)
+            deepSector: Boolean(options.deepSector || levelOverride > 50 || currentDelveLocation?.deepSector),
+            support: typeof isEnemySupport === 'function' && isEnemySupport(instance)
         });
         instance.name = `Empowered ${instance.name}`;
     }
@@ -640,6 +674,14 @@ function assignEncounterExperienceRewards(group) {
     }
 }
 
+function fillEncounterResourcesAfterSquadModifiers(group = encounterEnemies) {
+    for (const candidate of Array.isArray(group) ? group : []) {
+        candidate.currentHealth = Math.max(1, Number(candidate.totalStats?.health) || candidate.health || 1);
+        candidate.currentShield = Math.max(0, Number(candidate.totalStats?.energyShield) || 0);
+    }
+    return group;
+}
+
 function spawnEnemyEncounter(encounterEntries) {
     const entries = Array.isArray(encounterEntries) ? encounterEntries : [];
     if (entries.length === 0) return false;
@@ -654,6 +696,7 @@ function spawnEnemyEncounter(encounterEntries) {
         entry
     ));
     refreshEnemyAbilityDerivedStats();
+    fillEncounterResourcesAfterSquadModifiers(encounterEnemies);
     assignEncounterExperienceRewards(encounterEnemies);
     selectedEnemyId = null;
     tauntOverride = null;
@@ -1007,18 +1050,16 @@ function ensureEntityInitialization(entity, isPlayer) {
 }
 
 function preparePlayerForCombat() {
-    const previousHealth = player.currentHealth;
-    const previousShield = player.currentShield;
+    const resourceRatios = typeof captureCombatResourceRatios === 'function'
+        ? captureCombatResourceRatios(player)
+        : null;
 
     clearBuffs(player);
     player.calculateStats();
 
-    player.currentHealth = previousHealth == null
-        ? player.totalStats.health
-        : Math.max(0, Math.min(previousHealth, player.totalStats.health));
-    player.currentShield = previousShield == null
-        ? player.totalStats.energyShield
-        : Math.max(0, Math.min(previousShield, player.totalStats.energyShield));
+    if (resourceRatios && typeof restoreCombatResourceRatios === 'function') {
+        restoreCombatResourceRatios(player, resourceRatios);
+    }
 
     updatePlayerStatsDisplay();
     console.log("Player prepared for combat:", player);

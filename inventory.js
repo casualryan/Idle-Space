@@ -434,6 +434,10 @@ function equipItem(item) {
         return;
     }
 
+    const resourceRatios = typeof captureCombatResourceRatios === 'function'
+        ? captureCombatResourceRatios(player)
+        : null;
+
     // Handle equipping based on slot
     let previousItem = null;
     switch (item.slot) {
@@ -473,6 +477,9 @@ function equipItem(item) {
     resetGearPassiveBonuses();
     // Passive application owns the single authoritative stat rebuild.
     applyAllPassivesToPlayer();
+    if (resourceRatios && typeof restoreCombatResourceRatios === 'function') {
+        restoreCombatResourceRatios(player, resourceRatios);
+    }
     
     updateInventoryDisplay();
     // Recompute proc effects from equipped gear
@@ -1095,6 +1102,9 @@ function unequipItem(slotName) {
         logMessage('Equipment cannot be changed during an active Patrol or Operation.');
         return;
     }
+    const resourceRatios = typeof captureCombatResourceRatios === 'function'
+        ? captureCombatResourceRatios(player)
+        : null;
     // If the slot is a bionic slot, handle differently
     if (slotName.startsWith('bionic-slot-')) {
         const slotIndex = parseInt(slotName.split('-')[2]);
@@ -1131,6 +1141,9 @@ function unequipItem(slotName) {
     resetGearPassiveBonuses();
     // Passive application owns the single authoritative stat rebuild.
     applyAllPassivesToPlayer();
+    if (resourceRatios && typeof restoreCombatResourceRatios === 'function') {
+        restoreCombatResourceRatios(player, resourceRatios);
+    }
     recomputePlayerEffects();
 
     // Update displays

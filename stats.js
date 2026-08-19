@@ -494,6 +494,43 @@ window.coreboundStatPipeline = Object.freeze({
 });
 
 // Calculate player's total stats based on base, passives, gear, and buffs
+function captureCombatResourceRatios(entity) {
+    const maximumHealth = Math.max(1, Number(entity?.totalStats?.health) || 1);
+    const maximumShield = Math.max(0, Number(entity?.totalStats?.energyShield) || 0);
+    const currentHealth = Number(entity?.currentHealth);
+    const currentShield = Number(entity?.currentShield);
+    return {
+        health: Number.isFinite(currentHealth)
+            ? Math.min(1, Math.max(0, currentHealth / maximumHealth))
+            : 1,
+        shield: maximumShield > 0 && Number.isFinite(currentShield)
+            ? Math.min(1, Math.max(0, currentShield / maximumShield))
+            : 1
+    };
+}
+
+function restoreCombatResourceRatios(entity, ratios) {
+    if (!entity?.totalStats || !ratios) return entity;
+    const maximumHealth = Math.max(1, Number(entity.totalStats.health) || 1);
+    const maximumShield = Math.max(0, Number(entity.totalStats.energyShield) || 0);
+    const healthRatio = Math.min(1, Math.max(0, Number(ratios.health) || 0));
+    const shieldRatio = Math.min(1, Math.max(0, Number(ratios.shield) || 0));
+    entity.currentHealth = healthRatio > 0 ? Math.max(1, Math.round(maximumHealth * healthRatio)) : 0;
+    entity.currentShield = Math.max(0, Math.round(maximumShield * shieldRatio));
+    return entity;
+}
+
+function calculatePlayerStatsPreservingResources(playerObject) {
+    const ratios = captureCombatResourceRatios(playerObject);
+    calculatePlayerStats(playerObject);
+    restoreCombatResourceRatios(playerObject, ratios);
+    return playerObject.totalStats;
+}
+
+window.captureCombatResourceRatios = captureCombatResourceRatios;
+window.restoreCombatResourceRatios = restoreCombatResourceRatios;
+window.calculatePlayerStatsPreservingResources = calculatePlayerStatsPreservingResources;
+
 function calculatePlayerStats(playerObject) {
     // Start with a fresh copy of base stats
     const baseStats = playerObject.baseStats || playerBaseStats;

@@ -58,7 +58,8 @@ function isModifiedItemEquipped(item) {
 
 function refreshModifiedItemViews(item) {
     if (isModifiedItemEquipped(item)) {
-        if (typeof player.calculateStats === 'function') player.calculateStats();
+        if (typeof calculatePlayerStatsPreservingResources === 'function') calculatePlayerStatsPreservingResources(player);
+        else if (typeof player.calculateStats === 'function') player.calculateStats();
         if (typeof updatePlayerStatsDisplay === 'function') updatePlayerStatsDisplay();
         if (typeof updateEquipmentDisplay === 'function') updateEquipmentDisplay();
     }

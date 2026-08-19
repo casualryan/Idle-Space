@@ -55,6 +55,8 @@ const ENEMY_ABILITY_DEFINITIONS = Object.freeze({
     })
 });
 
+const ENEMY_SUPPORT_ABILITY_IDS = Object.freeze(['repair', 'shieldProjector', 'cleanser']);
+
 function getEnemyAbilityDefinition(abilityId) {
     return ENEMY_ABILITY_DEFINITIONS[String(abilityId || '')] || null;
 }
@@ -69,7 +71,18 @@ function hasEnemyAbility(combatant, abilityId) {
     return Array.isArray(combatant?.enemyAbilityIds) && combatant.enemyAbilityIds.includes(abilityId);
 }
 
+function getEnemySupportAbilityIds(combatant) {
+    return ENEMY_SUPPORT_ABILITY_IDS.filter(abilityId => hasEnemyAbility(combatant, abilityId));
+}
+
+function isEnemySupport(combatant) {
+    return getEnemySupportAbilityIds(combatant).length > 0;
+}
+
 window.enemyAbilityDefinitions = ENEMY_ABILITY_DEFINITIONS;
+window.enemySupportAbilityIds = ENEMY_SUPPORT_ABILITY_IDS;
 window.getEnemyAbilityDefinition = getEnemyAbilityDefinition;
 window.getEnemyAbilityDefinitions = getEnemyAbilityDefinitions;
 window.hasEnemyAbility = hasEnemyAbility;
+window.getEnemySupportAbilityIds = getEnemySupportAbilityIds;
+window.isEnemySupport = isEnemySupport;

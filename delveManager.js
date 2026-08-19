@@ -186,15 +186,19 @@ function beginNextMonsterInSequence() {
         encounterEntries = selectedEnemies.map(selectedEnemy => ({
             name: selectedEnemy.name,
             isEmpowered: Boolean(selectedEnemy.empoweredChance && Math.random() < selectedEnemy.empoweredChance),
-            levelOverride: currentDelveLocation?.deepSector ? operationLevel : null,
+            levelOverride: currentDelveLocation?.generatedOperation ? operationLevel : null,
+            deepSector: Boolean(currentDelveLocation?.deepSector),
             lootChanceMultiplier: Number(encounterModifier.lootChanceMultiplier) || 1
         }));
         for (let index = 0; index < extraEmpowered && encounterEntries.length < 6; index++) {
-            const extra = selectWeightedEncounterEnemies(encounterLocation, 1)[0];
+            const extra = selectWeightedEncounterEnemies(encounterLocation, 1, Math.random, {
+                existingEntries: encounterEntries
+            })[0];
             if (extra) encounterEntries.push({
                 name: extra.name,
                 isEmpowered: true,
-                levelOverride: currentDelveLocation?.deepSector ? operationLevel : null,
+                levelOverride: currentDelveLocation?.generatedOperation ? operationLevel : null,
+                deepSector: Boolean(currentDelveLocation?.deepSector),
                 lootChanceMultiplier: Number(encounterModifier.lootChanceMultiplier) || 1
             });
         }

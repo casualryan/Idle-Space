@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 import enemies from '../src/enemies/index.js';
+import { createScaledCoreboundEnemy } from '../src/enemies/coreboundProgressionEnemies.js';
 import armor from '../src/items/armor/index.js';
 import bionics from '../src/items/bionics/index.js';
 import chips from '../src/items/chips/index.js';
@@ -3896,4 +3897,159 @@ test('empowered enemies roll the approved unique modifier pool and additive rewa
     materialChanceMultiplier: 1.6,
     materialPromotionChance: 0.24
   });
+});
+
+test('equipment resource changes preserve percentages and newly composed squads start full', () => {
+  const resources = evaluateClassic(
+    'stats.js',
+    `(() => {
+      const full = { currentHealth: 100, currentShield: 0, totalStats: { health: 100, energyShield: 0 } };
+      const fullRatios = captureCombatResourceRatios(full);
+      full.totalStats = { health: 250, energyShield: 80 };
+      restoreCombatResourceRatios(full, fullRatios);
+      const wounded = { currentHealth: 30, currentShield: 20, totalStats: { health: 100, energyShield: 40 } };
+      const woundedRatios = captureCombatResourceRatios(wounded);
+      wounded.totalStats = { health: 200, energyShield: 100 };
+      restoreCombatResourceRatios(wounded, woundedRatios);
+      return { full, wounded };
+    })()`,
+    { player: {} }
+  );
+  assert.equal(resources.full.currentHealth, 250);
+  assert.equal(resources.full.currentShield, 80);
+  assert.equal(resources.full.totalStats.health, 250);
+  assert.equal(resources.full.totalStats.energyShield, 80);
+  assert.equal(resources.wounded.currentHealth, 60);
+  assert.equal(resources.wounded.currentShield, 50);
+
+  const squad = evaluateClassic(
+    'combatController.js',
+    `(() => {
+      const group = [
+        { health: 100, currentHealth: 100, currentShield: 20, totalStats: { health: 140, energyShield: 75 } },
+        { health: 80, currentHealth: 80, currentShield: 0, totalStats: { health: 112, energyShield: 30 } }
+      ];
+      fillEncounterResourcesAfterSquadModifiers(group);
+      return group;
+    })()`,
+    { encounterEnemies: [] }
+  );
+  assert.equal(JSON.stringify(squad.map(enemy => [enemy.currentHealth, enemy.currentShield])), JSON.stringify([[140, 75], [112, 30]]));
+  assert.match(read('combatController.js'), /refreshEnemyAbilityDerivedStats\(\);\s*fillEncounterResourcesAfterSquadModifiers\(encounterEnemies\)/);
+});
+
+test('random squads enforce the approved support budget without banning duplicate support roles', () => {
+  const result = evaluateClassic(
+    ['enemyAbilities.js', 'combatController.js'],
+    `(() => {
+      const location = {
+        enemies: [
+          { name: 'Repair Bot', spawnRate: 100 },
+          { name: 'Assault Bot', spawnRate: 100 }
+        ]
+      };
+      const small = selectWeightedEncounterEnemies(location, 4, () => 0);
+      const large = selectWeightedEncounterEnemies(location, 6, () => 0);
+      const authored = selectWeightedEncounterEnemies({ ...location, allowSupportOverflow: true }, 6, () => 0);
+      return {
+        small: small.map(entry => entry.name),
+        large: large.map(entry => entry.name),
+        authored: authored.map(entry => entry.name)
+      };
+    })()`,
+    {
+      window: {
+        enemies: [
+          { name: 'Repair Bot', enemyAbilityIds: ['repair'] },
+          { name: 'Assault Bot', enemyAbilityIds: [] }
+        ]
+      },
+      encounterEnemies: []
+    }
+  );
+  assert.equal(result.small.filter(name => name === 'Repair Bot').length, 1);
+  assert.equal(result.large.filter(name => name === 'Repair Bot').length, 2);
+  assert.equal(result.large.length, 6);
+  assert.equal(result.authored.filter(name => name === 'Repair Bot').length, 6);
+});
+
+test('Operations save large unique rosters and only Deep Sectors draw from the full scalable catalog', () => {
+  const result = evaluateClassic(
+    ['resourceSystem.js', 'enemyAbilities.js', 'operationSystem.js'],
+    `(() => {
+      const standard = generateOperationOffer('standard-roster', 28, window.enemies, 'current');
+      const deep = Array.from({ length: 20 }, (_, index) =>
+        generateOperationOffer('deep-roster-' + index, 50, window.enemies, 'deep', { deepSectorLevel: 70 })
+      );
+      const nativeLevel = name => window.enemies.find(enemy => enemy.name === name)?.level || 0;
+      return {
+        standardSize: standard.enemies.length,
+        standardUnique: new Set(standard.enemies.map(entry => entry.name)).size,
+        standardLevels: standard.enemies.map(entry => nativeLevel(entry.name)),
+        deepSizes: deep.map(offer => offer.enemies.length),
+        deepUnique: deep.map(offer => new Set(offer.enemies.map(entry => entry.name)).size),
+        deepNativeLevels: deep.flatMap(offer => offer.enemies.map(entry => nativeLevel(entry.name))),
+        deepSupportCounts: deep.map(offer => offer.enemies.filter(entry => isEnemySupport(window.enemies.find(enemy => enemy.name === entry.name))).length)
+      };
+    })()`,
+    {
+      window: {
+        coreInventory: {}, cacheInventory: {}, materials, enemies,
+        player: { level: 50 }, registerCoreboundInitializer: () => {}
+      },
+      document: { getElementById: () => null },
+      operationState: null,
+      currentRunMode: null,
+      currentMonsterIndex: 0,
+      currentDelveLocation: null,
+      completedOperationSeeds: [],
+      completedOperationCount: 0,
+      logMessage: () => {}
+    }
+  );
+  assert.ok(result.standardSize >= 10 && result.standardSize <= 12);
+  assert.equal(result.standardUnique, result.standardSize);
+  assert.ok(result.standardLevels.every(level => Math.abs(level - 28) <= 5));
+  assert.equal(result.deepSizes.every(size => size >= 10 && size <= 12), true);
+  assert.deepEqual([...result.deepUnique], [...result.deepSizes]);
+  assert.ok(Math.min(...result.deepNativeLevels) <= 10, 'Deep Sector rosters never reached the early catalog');
+  assert.ok(Math.max(...result.deepNativeLevels) >= 60, 'Deep Sector rosters never reached the late catalog');
+  assert.equal(result.deepSupportCounts.every(count => count <= 3), true);
+});
+
+test('Deep Sector normalization rebuilds old enemies at the target level before empowerment', () => {
+  const native = enemies.find(enemy => enemy.id === 'cb_scrapmite_drone');
+  const scaled = createScaledCoreboundEnemy(native.id, 70);
+  assert.equal(native.level, 1);
+  assert.equal(scaled.level, 70);
+  assert.equal(scaled.zone, 14);
+  assert.ok(scaled.health > native.health * 10);
+  assert.ok(Object.values(scaled.damageTypes)[0] > Object.values(native.damageTypes)[0] * 5);
+  assert.ok(scaled.precision >= 40);
+  assert.ok(scaled.deflection >= 40);
+  assert.equal(scaled.scalableProgressionEnemy, true);
+});
+
+test('support enemies exclude personal offensive Empowered modifiers while retaining auras', () => {
+  const result = evaluateClassic(
+    ['enemyAbilities.js', 'empoweredModifiers.js'],
+    `(() => {
+      const eligible = getEligibleEmpoweredModifierIds({ support: true });
+      const support = {
+        level: 50,
+        health: 100,
+        energyShield: 50,
+        damageTypes: { kinetic: 10 },
+        defenseTypes: {},
+        enemyAbilityIds: ['repair']
+      };
+      applyEmpoweredBaseModifiers(support, { modifierIds: ['slashingInfused', 'barrierAura'] });
+      return { eligible, rolled: support.empoweredModifierIds };
+    })()`
+  );
+  const excluded = ['brutal', 'quick', 'precise', 'overcharged', 'vampiric', 'frenzied',
+    'kineticInfused', 'slashingInfused', 'pyroInfused', 'cryoInfused', 'electricInfused', 'corrosiveInfused', 'radiationInfused'];
+  assert.equal(excluded.some(id => result.eligible.includes(id)), false);
+  assert.equal(result.eligible.includes('barrierAura'), true);
+  assert.deepEqual([...result.rolled], ['barrierAura']);
 });
