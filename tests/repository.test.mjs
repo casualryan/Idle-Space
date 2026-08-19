@@ -4025,9 +4025,41 @@ test('Deep Sector normalization rebuilds old enemies at the target level before 
   assert.equal(scaled.zone, 14);
   assert.ok(scaled.health > native.health * 10);
   assert.ok(Object.values(scaled.damageTypes)[0] > Object.values(native.damageTypes)[0] * 5);
-  assert.ok(scaled.precision >= 40);
+  assert.ok(scaled.precision >= 440);
   assert.ok(scaled.deflection >= 40);
   assert.equal(scaled.scalableProgressionEnemy, true);
+});
+
+test('Deep Sector damage and Precision normalize by target level rather than native enemy level', () => {
+  const deepLevels = Array.from({ length: 10 }, (_, index) => 55 + index * 5);
+  const scaledByLevel = deepLevels.map(level => ({
+    level,
+    earlyBalanced: createScaledCoreboundEnemy('cb_bent_service_crawler', level),
+    lateBalanced: createScaledCoreboundEnemy('cb_crownfall_skirmisher', level),
+    earlySwarm: createScaledCoreboundEnemy('cb_scrapmite_drone', level),
+    laterSwarm: createScaledCoreboundEnemy('cb_sovereign_blade_assembly', level)
+  }));
+
+  for (const sample of scaledByLevel) {
+    assert.equal(Object.values(sample.earlyBalanced.damageTypes)[0], Object.values(sample.lateBalanced.damageTypes)[0]);
+    assert.equal(Object.values(sample.earlySwarm.damageTypes)[0], Object.values(sample.laterSwarm.damageTypes)[0]);
+    assert.equal(sample.earlySwarm.precision, sample.level * 6 + (sample.level - 50) * 2);
+  }
+  for (let index = 1; index < scaledByLevel.length; index++) {
+    assert.ok(
+      Object.values(scaledByLevel[index].earlySwarm.damageTypes)[0]
+        > Object.values(scaledByLevel[index - 1].earlySwarm.damageTypes)[0],
+      `Deep Sector damage did not increase from level ${scaledByLevel[index - 1].level} to ${scaledByLevel[index].level}`
+    );
+  }
+
+  const earlySwarm = scaledByLevel[0].earlySwarm;
+  assert.equal(earlySwarm.precision, 340);
+
+  const representativeDeflection = 305;
+  const rollFloor = Math.min(0.85, Math.max(0.1, 0.35 + (earlySwarm.precision - representativeDeflection) * 0.015));
+  const minimumHitAtResistanceCap = Object.values(earlySwarm.damageTypes)[0] * rollFloor * 0.20;
+  assert.ok(minimumHitAtResistanceCap >= 9, 'a normalized level-55 enemy can still collapse to trivial capped-resistance damage');
 });
 
 test('support enemies exclude personal offensive Empowered modifiers while retaining auras', () => {

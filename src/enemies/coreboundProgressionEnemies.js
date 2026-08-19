@@ -290,7 +290,7 @@ function getEnemyPortraitPath(blueprint) {
     return `images/enemies/${slug}.png`;
 }
 
-function toEnemy(blueprint, levelOverride = null) {
+function toEnemy(blueprint, levelOverride = null, options = {}) {
     const effectiveLevel = levelOverride == null
         ? blueprint.level
         : Math.max(1, Math.min(100, Math.floor(Number(levelOverride) || blueprint.level)));
@@ -307,7 +307,9 @@ function toEnemy(blueprint, levelOverride = null) {
         baseShield,
         baseDamage
     );
-    const zoneTuning = ZONE_COMBAT_TUNING[effectiveZone] || { health: 1, damage: 1 };
+    const zoneTuning = options.neutralZoneTuning
+        ? { health: 1, damage: 1 }
+        : (ZONE_COMBAT_TUNING[effectiveZone] || { health: 1, damage: 1 });
 
     return {
         id: blueprint.id,
@@ -344,7 +346,11 @@ export function createScaledCoreboundEnemy(templateId, level) {
     const targetLevel = Math.max(1, Math.min(100, Math.floor(Number(level) || blueprint.level)));
     if (targetLevel <= 50) return toEnemy(blueprint, targetLevel);
 
-    const enemy = toEnemy(blueprint, 50);
+    // Deep Sectors use the neutral target-level curve rather than inheriting
+    // the deliberately softened tuning of any authored Patrol zone. This is
+    // what makes an early-game identity a real level-55+ combatant instead of
+    // a low-level template wearing only an above-50 multiplier.
+    const enemy = toEnemy(blueprint, targetLevel, { neutralZoneTuning: true });
     const excessLevels = targetLevel - 50;
     const targetZone = Math.max(11, Math.min(20, Math.ceil(targetLevel / 5)));
     const durabilityMultiplier = 1 + excessLevels * 0.07;
@@ -357,7 +363,10 @@ export function createScaledCoreboundEnemy(templateId, level) {
         type,
         Math.max(1, Math.round(Number(amount || 0) * damageMultiplier))
     ]));
-    enemy.precision = Number(enemy.precision || 0) + excessLevels * 2;
+    // Player Deflection is fully developed by level 50. Deep Sector enemies
+    // need a target-level Precision baseline or their hits collapse to the
+    // global 10% damage-roll floor regardless of their scaled weapon damage.
+    enemy.precision = Math.max(Number(enemy.precision || 0), targetLevel * 6 + excessLevels * 2);
     enemy.deflection = Number(enemy.deflection || 0) + excessLevels * 2;
     enemy.lootConfig = getLootConfig(targetZone, blueprint.archetype, blueprint.lootFamilies || blueprint.damageType);
     enemy.currencyDrop = getCurrencyDrop(targetZone, targetLevel);
