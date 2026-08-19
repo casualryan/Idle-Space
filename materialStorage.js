@@ -2,6 +2,7 @@
 // by recipes, loot, gathering, saves, and the fixed-position inventory UI.
 
 const MATERIAL_STORAGE_CAP = 50000;
+const FLUX_STORAGE_GRADES = Object.freeze(['Flux I', 'Flux II', 'Flux III', 'Flux IV', 'Flux V']);
 
 const MATERIAL_STORAGE_GROUPS = Object.freeze([
     Object.freeze({
@@ -183,6 +184,28 @@ function removeMaterialFromStorage(itemName, quantity = 1) {
     return true;
 }
 
+function convertFluxStorage(sourceGrade, targetGrade) {
+    const sourceIndex = Math.floor(Number(sourceGrade)) - 1;
+    const targetIndex = Math.floor(Number(targetGrade)) - 1;
+    if (sourceIndex < 0 || sourceIndex >= FLUX_STORAGE_GRADES.length) return null;
+    if (targetIndex < 0 || targetIndex >= FLUX_STORAGE_GRADES.length) return null;
+    if (Math.abs(sourceIndex - targetIndex) !== 1) return null;
+
+    const upgrading = targetIndex > sourceIndex;
+    const sourceCost = upgrading ? 5 : 1;
+    const outputQuantity = upgrading ? 1 : 3;
+    const sourceName = FLUX_STORAGE_GRADES[sourceIndex];
+    const targetName = FLUX_STORAGE_GRADES[targetIndex];
+    if (getMaterialQuantity(sourceName) < sourceCost) return null;
+    if (getMaterialQuantity(targetName) + outputQuantity > MATERIAL_STORAGE_CAP) return null;
+    if (!removeMaterialFromStorage(sourceName, sourceCost)) return null;
+    if (!addMaterialToStorage(targetName, outputQuantity)) {
+        addMaterialToStorage(sourceName, sourceCost);
+        return null;
+    }
+    return { sourceName, targetName, sourceCost, outputQuantity };
+}
+
 function migrateLooseMaterialsToStorage(items = window.inventory) {
     if (!Array.isArray(items)) return [];
     const ordinaryItems = [];
@@ -269,7 +292,7 @@ function getMaterialStorageTooltipContent(itemName, groupLabel) {
     if (dropRows.length > 0) {
         content += dropRows.map(row => `<div class="material-tooltip-source"><span>${escapeMaterialTooltipText(row.enemy)}</span><small>${escapeMaterialTooltipText(row.location)}${row.targeted ? ' · TARGETED' : ''}</small></div>`).join('');
     } else if (group?.id === 'flux') {
-        content += `<div class="material-tooltip-muted">Enemy Flux drops scale with area level. Flux Caches can also yield level-appropriate grades.</div>`;
+        content += `<div class="material-tooltip-muted">Higher-level enemies favor stronger Flux, but every unlocked grade can drop. Flux Caches can also yield any unlocked grade.</div>`;
     } else {
         content += `<div class="material-tooltip-muted">No enemy drop has been documented. Check gathering or fabrication sources above.</div>`;
     }
@@ -336,9 +359,11 @@ function updateMaterialInventoryDisplay() {
 
 window.MATERIAL_STORAGE_CAP = MATERIAL_STORAGE_CAP;
 window.MATERIAL_STORAGE_GROUPS = MATERIAL_STORAGE_GROUPS;
+window.FLUX_STORAGE_GRADES = FLUX_STORAGE_GRADES;
 window.getMaterialQuantity = getMaterialQuantity;
 window.addMaterialToStorage = addMaterialToStorage;
 window.removeMaterialFromStorage = removeMaterialFromStorage;
+window.convertFluxStorage = convertFluxStorage;
 window.normalizeMaterialStorage = normalizeMaterialStorage;
 window.migrateLooseMaterialsToStorage = migrateLooseMaterialsToStorage;
 window.getMaterialDropSourceRows = getMaterialDropSourceRows;

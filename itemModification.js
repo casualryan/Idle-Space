@@ -2,6 +2,7 @@
 
 const FLUX_REROLL_COSTS = Object.freeze({ 1: 1, 2: 1, 3: 2, 4: 3, 5: 4 });
 let selectedModificationItem = null;
+let lastFluxRerollResult = null;
 
 function isEquipmentItemForModification(item) {
     if (!item || !Array.isArray(item.rolledModifiers) || item.rolledModifiers.length === 0) return false;
@@ -40,6 +41,7 @@ function bindFluxTarget(item, modifierId) {
     const modifier = item.rolledModifiers?.find(candidate => candidate.id === modifierId);
     if (!modifier || !getModifierRollRange(item, modifier)) return false;
     item.fluxTargetModifierId = modifier.id;
+    lastFluxRerollResult = null;
     logMessage(`${item.name} is now Flux-bound.`);
     if (typeof updateInventoryDisplay === 'function') updateInventoryDisplay();
     renderItemModificationScreen();
@@ -67,7 +69,6 @@ function rerollSelectedFluxModifier(item) {
         return false;
     }
 
-    const previous = modifier.displayValue;
     if (!removeMaterialFromStorage(fluxName, cost)) return false;
     const result = rerollBoundItemModifier(item);
     if (!result) {
@@ -79,11 +80,68 @@ function rerollSelectedFluxModifier(item) {
         player.calculateStats();
         updatePlayerStatsDisplay();
     }
-    logMessage(`${item.name}: ${modifier.displayName} ${formatModificationRoll(previous, modifier.isPercent)} → ${formatModificationRoll(modifier.displayValue, modifier.isPercent)}.`);
+    lastFluxRerollResult = { item, previous: result.previous, next: result.next };
+    logMessage(`${item.name}: ${formatFluxRerollOutcome(result.previous)} → ${formatFluxRerollOutcome(result.next)}.`);
     if (typeof updateMaterialInventoryDisplay === 'function') updateMaterialInventoryDisplay();
     if (typeof updateInventoryDisplay === 'function') updateInventoryDisplay();
     renderItemModificationScreen();
     return true;
+}
+
+function formatFluxRerollOutcome(modifier) {
+    return `${formatModificationRoll(modifier?.displayValue, modifier?.isPercent)} ${modifier?.displayName || 'Modifier'} (${modifier?.gradeLabel || getModifierGradeLabel(modifier?.grade)})`;
+}
+
+function executeFluxConversion(sourceGrade, targetGrade) {
+    if (isDelveInProgress || isCombatActive) return false;
+    const result = convertFluxStorage(sourceGrade, targetGrade);
+    if (!result) {
+        const upgrading = targetGrade > sourceGrade;
+        const sourceName = `Flux ${['I', 'II', 'III', 'IV', 'V'][sourceGrade - 1]}`;
+        const required = upgrading ? 5 : 1;
+        showWarningPopup(`Requires ${required} ${sourceName} and available storage space.`);
+        return false;
+    }
+    logMessage(`${result.sourceCost} ${result.sourceName} converted into ${result.outputQuantity} ${result.targetName}.`);
+    if (typeof updateMaterialInventoryDisplay === 'function') updateMaterialInventoryDisplay();
+    renderItemModificationScreen();
+    return true;
+}
+
+function renderFluxExchange(locked) {
+    const section = document.createElement('section');
+    section.className = 'flux-exchange-panel';
+    section.innerHTML = '<header><span>FLUX EXCHANGE</span><h3>Grade Conversion</h3><p>Compress five lower-grade Flux into one higher grade, or break one higher grade into three of the grade below.</p></header>';
+    const grid = document.createElement('div');
+    grid.className = 'flux-exchange-grid';
+    const numerals = ['I', 'II', 'III', 'IV', 'V'];
+    for (let grade = 1; grade < numerals.length; grade += 1) {
+        const lowerName = `Flux ${numerals[grade - 1]}`;
+        const higherName = `Flux ${numerals[grade]}`;
+        const lowerQuantity = getMaterialQuantity(lowerName);
+        const higherQuantity = getMaterialQuantity(higherName);
+        const row = document.createElement('article');
+        row.className = 'flux-exchange-row';
+        row.innerHTML = `
+            <div><img src="icons/flux_${numerals[grade - 1].toLowerCase()}.png" alt=""><span><strong>${lowerName}</strong><small>Owned: ${lowerQuantity.toLocaleString()}</small></span></div>
+            <div class="flux-exchange-actions"></div>
+            <div><img src="icons/flux_${numerals[grade].toLowerCase()}.png" alt=""><span><strong>${higherName}</strong><small>Owned: ${higherQuantity.toLocaleString()}</small></span></div>`;
+        const actions = row.querySelector('.flux-exchange-actions');
+        const upgrade = document.createElement('button');
+        upgrade.type = 'button';
+        upgrade.textContent = `5 ${numerals[grade - 1]} → 1 ${numerals[grade]}`;
+        upgrade.disabled = locked || lowerQuantity < 5 || higherQuantity >= MATERIAL_STORAGE_CAP;
+        upgrade.addEventListener('click', () => executeFluxConversion(grade, grade + 1));
+        const downgrade = document.createElement('button');
+        downgrade.type = 'button';
+        downgrade.textContent = `3 ${numerals[grade - 1]} ← 1 ${numerals[grade]}`;
+        downgrade.disabled = locked || higherQuantity < 1 || lowerQuantity > MATERIAL_STORAGE_CAP - 3;
+        downgrade.addEventListener('click', () => executeFluxConversion(grade + 1, grade));
+        actions.append(upgrade, downgrade);
+        grid.appendChild(row);
+    }
+    section.appendChild(grid);
+    return section;
 }
 
 function renderModifierRows(item) {
@@ -177,6 +235,7 @@ function renderItemModificationScreen() {
             button.disabled = locked;
             button.innerHTML = `<img src="${entry.item.icon || 'icons/default-icon.png'}" alt=""><span><strong>${entry.item.name}</strong><small>${entry.source}</small></span>${entry.item.fluxTargetModifierId ? '<b aria-label="Flux bound">◈</b>' : ''}`;
             button.addEventListener('click', () => {
+                if (selectedModificationItem !== entry.item) lastFluxRerollResult = null;
                 selectedModificationItem = entry.item;
                 renderItemModificationScreen();
             });
@@ -191,6 +250,7 @@ function renderItemModificationScreen() {
     if (!selectedModificationItem) {
         workspace.innerHTML = '<div class="modification-empty-state"><span>◇</span><strong>No item selected</strong></div>';
         root.appendChild(workspace);
+        root.appendChild(renderFluxExchange(locked));
         return;
     }
 
@@ -219,6 +279,16 @@ function renderItemModificationScreen() {
         button.disabled = locked || getMaterialQuantity(fluxName) < cost;
         button.addEventListener('click', () => rerollSelectedFluxModifier(item));
         affixPanel.appendChild(action);
+        if (lastFluxRerollResult?.item === item) {
+            const result = document.createElement('div');
+            result.className = 'flux-reroll-result';
+            const label = document.createElement('span');
+            label.textContent = 'LAST MODIFICATION';
+            const outcome = document.createElement('p');
+            outcome.textContent = `${formatFluxRerollOutcome(lastFluxRerollResult.previous)} → ${formatFluxRerollOutcome(lastFluxRerollResult.next)}`;
+            result.append(label, outcome);
+            affixPanel.appendChild(result);
+        }
     } else {
         const note = document.createElement('p');
         note.className = 'flux-bind-note';
@@ -227,6 +297,7 @@ function renderItemModificationScreen() {
     }
 
     root.appendChild(workspace);
+    root.appendChild(renderFluxExchange(locked));
 }
 
 window.renderItemModificationScreen = renderItemModificationScreen;

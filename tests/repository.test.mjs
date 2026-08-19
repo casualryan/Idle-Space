@@ -1744,24 +1744,101 @@ test('Equipment telemetry exposes complete tabbed stats and presents resistance 
   assert.match(styles, /\.equipment-stat-card-grid/);
 });
 
-test('Flux rerolls only the permanently bound modifier inside its grade range', () => {
+test('Flux rerolls the permanently bound slot across modifier types, grades, and values', () => {
   const result = evaluateClassic(
     'itemgenerator.js',
     `(() => {
       const item = {
-        name: 'Test Plate', type: 'Armor', slot: 'chest', healthBonus: 150, deflection: 17,
+        name: 'Test Plate', type: 'Armor', slot: 'chest', levelRequirement: 45, healthBonus: 150, deflection: 17,
         fluxTargetModifierId: 'flatMaxHealth',
-        rolledModifiers: [{ id: 'flatMaxHealth', displayName: 'Max Health', grade: 3, value: 150, displayValue: 150 }]
+        rolledModifiers: [
+          { id: 'flatMaxHealth', displayName: 'Max Health', grade: 3, gradeLabel: 'Grade III', value: 150, displayValue: 150, statPath: 'healthBonus' },
+          { id: 'deflection', displayName: 'Deflection', grade: 3, gradeLabel: 'Grade III', value: 17, displayValue: 17, statPath: 'deflection' }
+        ]
       };
-      const range = getModifierRollRange(item, item.rolledModifiers[0]);
-      const rerolled = rerollBoundItemModifier(item, () => 0);
-      return { range, rerolled, healthBonus: item.healthBonus, deflection: item.deflection };
+      const rolls = [0.999999, 0.999999, 0];
+      const rerolled = rerollBoundItemModifier(item, () => rolls.shift() ?? 0);
+      return {
+        rerolled,
+        healthBonus: item.healthBonus || 0,
+        deflection: item.deflection,
+        untouchedModifier: item.rolledModifiers[1],
+        fluxTargetModifierId: item.fluxTargetModifierId
+      };
     })()`
   );
 
-  assert.equal(result.rerolled.nextDisplayValue, result.range.min);
-  assert.equal(result.healthBonus, result.range.min);
+  assert.equal(result.rerolled.previous.id, 'flatMaxHealth');
+  assert.notEqual(result.rerolled.next.id, result.rerolled.previous.id);
+  assert.equal(result.rerolled.next.grade, 5);
+  assert.equal(result.healthBonus, 0);
   assert.equal(result.deflection, 17);
+  assert.equal(result.untouchedModifier.id, 'deflection');
+  assert.equal(result.untouchedModifier.displayValue, 17);
+  assert.equal(result.fluxTargetModifierId, result.rerolled.next.id);
+});
+
+test('Flux conversion trades five upward and one into three downward', () => {
+  const result = evaluateClassic(
+    'materialStorage.js',
+    `(() => {
+      const upgraded = convertFluxStorage(1, 2);
+      const afterUpgrade = { low: getMaterialQuantity('Flux I'), high: getMaterialQuantity('Flux II') };
+      const downgraded = convertFluxStorage(2, 1);
+      return {
+        upgraded,
+        afterUpgrade,
+        downgraded,
+        finalLow: getMaterialQuantity('Flux I'),
+        finalHigh: getMaterialQuantity('Flux II'),
+        invalid: convertFluxStorage(1, 3)
+      };
+    })()`,
+    { window: { materialInventory: { 'Flux I': 5, 'Flux II': 1 } } }
+  );
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result.upgraded)), {
+    sourceName: 'Flux I', targetName: 'Flux II', sourceCost: 5, outputQuantity: 1
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(result.afterUpgrade)), { low: 0, high: 2 });
+  assert.deepEqual(JSON.parse(JSON.stringify(result.downgraded)), {
+    sourceName: 'Flux II', targetName: 'Flux I', sourceCost: 1, outputQuantity: 3
+  });
+  assert.equal(result.finalLow, 3);
+  assert.equal(result.finalHigh, 1);
+  assert.equal(result.invalid, null);
+});
+
+test('max-level Flux drops retain every grade and use the increased drop rate', () => {
+  const result = evaluateClassic(
+    'resourceSystem.js',
+    `(() => {
+      const rolls = [0.99, 0.99, 0.06, 0];
+      return {
+        lowest: getFluxNameForLevel(50, () => 0),
+        highest: getFluxNameForLevel(50, () => 0.999999),
+        drops: rollEnemySpecialDrops({ level: 50, damageTypes: { kinetic: 10 }, _rewardScale: 1 }, () => rolls.shift() ?? 0.99)
+      };
+    })()`,
+    {
+      window: {
+        coreInventory: {}, cacheInventory: {}, pendingCacheResolution: null,
+        materials: [
+          { name: 'Flux I', type: 'Material' }, { name: 'Flux II', type: 'Material' },
+          { name: 'Flux III', type: 'Material' }, { name: 'Flux IV', type: 'Material' },
+          { name: 'Flux V', type: 'Material' }
+        ],
+        registerCoreboundInitializer: () => {}
+      },
+      document: { getElementById: () => null },
+      player: { level: 50 }
+    }
+  );
+
+  assert.equal(result.lowest, 'Flux I');
+  assert.equal(result.highest, 'Flux V');
+  assert.equal(result.drops.some(drop => drop.name === 'Flux I'), true);
+  assert.match(read('resourceSystem.js'), /const fluxChance = Math\.min\(0\.2, \(0\.012 \+ level \* 0\.0011\)/);
 });
 
 test('Modification UI exposes the complete eligible roll pool for the selected item', () => {
@@ -1782,6 +1859,8 @@ test('Modification UI exposes the complete eligible roll pool for the selected i
   assert.ok(result.modifiers.some(modifier => modifier.displayName === 'Weapon Pyro Damage'));
   assert.match(modifierUi, /Possible Rolls \(\$\{info\.modifiers\.length\}\)/);
   assert.match(modifierUi, /renderPossibleModifierBrowser\(item\)/);
+  assert.match(modifierUi, /LAST MODIFICATION/);
+  assert.match(modifierUi, /renderFluxExchange\(locked\)/);
 });
 
 test('obsolete bottom-left loot popup system is fully removed', () => {

@@ -162,7 +162,7 @@ function rollEnemySpecialDrops(enemy, random = Math.random) {
     const encounterRewardScale = Math.max(0, Number(enemy?._rewardScale ?? 1));
     const coreChance = Math.min(0.11, (0.012 + level * 0.00065) * empowered * encounterRewardScale * Math.max(0, Number(multipliers.core) || 1));
     const cacheChance = Math.min(0.16, (0.02 + level * 0.0009) * empowered * encounterRewardScale * Math.max(0, Number(multipliers.cache) || 1));
-    const fluxChance = Math.min(0.12, (0.006 + level * 0.0007) * empowered * encounterRewardScale * Math.max(0, Number(multipliers.flux) || 1));
+    const fluxChance = Math.min(0.2, (0.012 + level * 0.0011) * empowered * encounterRewardScale * Math.max(0, Number(multipliers.flux) || 1));
 
     if (random() < coreChance) {
         const eligible = CORE_DEFINITIONS.filter(definition => definition.minLevel <= level && (definition.family === theme || definition.family === 'universal'));
@@ -194,7 +194,10 @@ function chooseWeighted(entries, random = Math.random) {
 
 function getFluxNameForLevel(level, random = Math.random) {
     const maximum = level >= 41 ? 5 : level >= 31 ? 4 : level >= 21 ? 3 : level >= 11 ? 2 : 1;
-    const grade = Math.max(1, maximum - (random() < 0.6 ? 1 : 0));
+    const grade = chooseWeighted(Array.from({ length: maximum }, (_, index) => ({
+        grade: index + 1,
+        weight: 1.75 ** index
+    })), random).grade;
     return `Flux ${['I', 'II', 'III', 'IV', 'V'][grade - 1]}`;
 }
 
@@ -212,7 +215,7 @@ function rollCacheContents(cacheId, random = Math.random) {
     if (outcome === 'feed') return [{ kind: 'feed', name: 'Feed', quantity: Math.max(20, Math.round(definition.sellValue * (0.35 + random() * 1.5))) }];
     if (outcome === 'flux') {
         const name = getFluxNameForLevel(level, random);
-        return [{ kind: 'material', name, quantity: 1 + (random() < 0.18 ? 1 : 0) }];
+        return [{ kind: 'material', name, quantity: 1 + (random() < 0.35 ? 1 : 0) }];
     }
     if (outcome === 'core') {
         const eligible = CORE_DEFINITIONS.filter(core => core.minLevel <= level);

@@ -49,10 +49,10 @@ function getModifierGradeLabel(grade) {
     return MODIFIER_GRADE_LABELS[grade] || `Grade ${grade}`;
 }
 
-function getRandomWeightEntry(weightedEntries) {
+function getRandomWeightEntry(weightedEntries, random = Math.random) {
     const totalWeight = weightedEntries.reduce((sum, entry) => sum + entry.weight, 0);
     if (totalWeight <= 0) return weightedEntries[0];
-    let roll = Math.random() * totalWeight;
+    let roll = Math.min(0.999999, Math.max(0, random())) * totalWeight;
     for (const entry of weightedEntries) {
         roll -= entry.weight;
         if (roll <= 0) return entry;
@@ -91,9 +91,9 @@ function getBionicModifierCountForLevel(level) {
     return getRandomWeightEntry(bucket.weights).count;
 }
 
-function getModifierGradeForLevel(level) {
+function getModifierGradeForLevel(level, random = Math.random) {
     const bucket = getWeightedBucket(level, RANDOM_MODIFIER_GRADE_WEIGHTS);
-    const picked = getRandomWeightEntry(bucket.weights);
+    const picked = getRandomWeightEntry(bucket.weights, random);
     return picked.grade;
 }
 
@@ -696,6 +696,10 @@ function getRandomModifierStoragePath(item, definition) {
 }
 
 function removeRandomModifierValue(item, definition, appliedValue) {
+    if (definition.applyType === 'conversion') {
+        delete item.weaponDamageConversion;
+        return true;
+    }
     const value = Number(appliedValue);
     if (!Number.isFinite(value)) return false;
     if (definition.applyType === 'allResistances') {
@@ -786,19 +790,70 @@ function getPossibleRandomModifiers(item) {
 function rerollBoundItemModifier(item, random = Math.random) {
     if (!item?.fluxTargetModifierId || !Array.isArray(item.rolledModifiers)) return null;
     const modifier = item.rolledModifiers.find(candidate => candidate.id === item.fluxTargetModifierId);
-    const definition = RANDOM_MODIFIER_DEFINITIONS.find(candidate => candidate.id === modifier?.id);
-    const range = getModifierRollRange(item, modifier);
-    if (!modifier || !definition || !range) return null;
+    const previousDefinition = RANDOM_MODIFIER_DEFINITIONS.find(candidate => candidate.id === modifier?.id);
+    if (!modifier || !previousDefinition) return null;
 
-    const previousDisplayValue = Number(modifier.displayValue);
-    const nextDisplayValue = rollValueFromModifierRange({ min: range.min, max: range.max }, random);
-    if (nextDisplayValue === null) return null;
-    removeRandomModifierValue(item, definition, modifier.value);
-    const nextAppliedValue = applyRandomModifierValue(item, definition, nextDisplayValue);
-    modifier.value = nextAppliedValue;
-    modifier.displayValue = nextDisplayValue;
-    modifier.gradeLabel = getModifierGradeLabel(modifier.grade);
-    return { modifier, range, previousDisplayValue, nextDisplayValue };
+    const previous = {
+        id: modifier.id,
+        displayName: modifier.displayName,
+        grade: Math.max(1, Math.min(5, Math.floor(Number(modifier.grade) || 1))),
+        gradeLabel: modifier.gradeLabel || getModifierGradeLabel(modifier.grade),
+        value: modifier.value,
+        displayValue: modifier.displayValue,
+        statPath: modifier.statPath,
+        isPercent: Boolean(modifier.isPercent)
+    };
+    if (!removeRandomModifierValue(item, previousDefinition, modifier.value)) return null;
+    const restorePreviousModifier = () => {
+        modifier.value = applyRandomModifierValue(item, previousDefinition, previous.displayValue);
+    };
+
+    const level = Math.max(1, Math.min(50, normalizeGeneratedItemLevel(item.levelRequirement)));
+    const occupiedFamilies = new Set(item.rolledModifiers
+        .filter(candidate => candidate !== modifier)
+        .map(candidate => RANDOM_MODIFIER_DEFINITIONS.find(definition => definition.id === candidate?.id)?.family)
+        .filter(Boolean));
+    const available = getEligibleRandomModifiers(item)
+        .filter(definition => level >= definition.minLevel && !occupiedFamilies.has(definition.family));
+    if (available.length === 0) {
+        restorePreviousModifier();
+        return null;
+    }
+
+    const nextDefinition = available[getWeightedModifierIndex(available, random)];
+    const nextGrade = getModifierGradeForLevel(level, random);
+    const baseRange = asModifierRange(nextDefinition?.grades?.[nextGrade]);
+    if (!nextDefinition || !baseRange) {
+        restorePreviousModifier();
+        return null;
+    }
+    const multiplier = typeof nextDefinition.valueMultiplier === 'function'
+        ? Math.max(0, Number(nextDefinition.valueMultiplier(getModifierContext(item))) || 1)
+        : 1;
+    let nextDisplayValue = rollValueFromModifierRange(baseRange, random);
+    if (nextDisplayValue === null) {
+        restorePreviousModifier();
+        return null;
+    }
+    nextDisplayValue *= multiplier;
+    nextDisplayValue = Number.isInteger(baseRange.min) && Number.isInteger(baseRange.max)
+        ? Math.max(1, Math.round(nextDisplayValue))
+        : Number(nextDisplayValue.toFixed(2));
+
+    const nextAppliedValue = applyRandomModifierValue(item, nextDefinition, nextDisplayValue);
+    const next = {
+        id: nextDefinition.id,
+        displayName: nextDefinition.displayName,
+        grade: nextGrade,
+        gradeLabel: getModifierGradeLabel(nextGrade),
+        value: nextAppliedValue,
+        displayValue: nextDisplayValue,
+        statPath: nextDefinition.statPath,
+        isPercent: Boolean(nextDefinition.isPercent)
+    };
+    Object.assign(modifier, next);
+    item.fluxTargetModifierId = next.id;
+    return { modifier, previous, next };
 }
 
 function applyRandomModifierValue(item, definition, rolledValue) {
@@ -862,10 +917,10 @@ function applyRandomModifierValue(item, definition, rolledValue) {
     return rolledValue;
 }
 
-function getWeightedModifierIndex(modifiers) {
+function getWeightedModifierIndex(modifiers, random = Math.random) {
     const totalWeight = modifiers.reduce((sum, modifier) => sum + modifier.weight, 0);
     if (totalWeight <= 0) return 0;
-    let roll = Math.random() * totalWeight;
+    let roll = Math.min(0.999999, Math.max(0, random())) * totalWeight;
     for (let index = 0; index < modifiers.length; index++) {
         roll -= modifiers[index].weight;
         if (roll <= 0) return index;

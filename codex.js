@@ -56,7 +56,8 @@
             title: 'Flux Modification',
             sections: [
                 ['Binding', 'An item may permanently bind exactly one generated modifier as its Flux target. Other modifiers can never be rerolled on that item.'],
-                ['Rerolling', 'Flux of the modifier’s grade rerolls only its value within the same grade range. Item modification is unavailable during Patrols and Operations.'],
+                ['Rerolling', 'Flux matching the current modifier grade rerolls the bound slot’s modifier type, grade, and value. Item modification is unavailable during Patrols and Operations.'],
+                ['Conversion', 'Five Flux of one grade can be compressed into one Flux of the next grade. One Flux can be broken down into three Flux of the grade immediately below it.'],
                 ['Caches and Cores', 'Caches can be opened for uncertain themed rewards or sold unopened for guaranteed Feed. Cores drop from enemies, stack in dedicated storage, and are consumed when an Operation begins.']
             ]
         },
