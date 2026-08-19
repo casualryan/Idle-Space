@@ -412,6 +412,10 @@ function getPlayerAttackInterval(playerObject) {
     if (state.nextAttackHaste > 0) multiplier *= 1 - state.nextAttackHaste;
     if (styleHasMechanic(profile, 'siegeRhythm')) multiplier *= 1 - Math.min(0.24, state.consecutiveAttacks * 0.06);
     if (styleHasMechanic(profile, 'quickRiposte') && (state.counterReady || state.counterFollowup)) multiplier *= 0.75;
+    const empoweredSpeedMultiplier = typeof getEmpoweredPlayerAttackSpeedMultiplier === 'function'
+        ? Math.max(0.1, Number(getEmpoweredPlayerAttackSpeedMultiplier()) || 1)
+        : 1;
+    multiplier /= empoweredSpeedMultiplier;
     return Math.max(0.1, (1 / attackSpeed) * multiplier);
 }
 

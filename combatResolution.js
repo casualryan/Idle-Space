@@ -227,7 +227,20 @@ function resolveEnemyAttackImpact(attacker, damageResult) {
         addToCombatLog(`${attacker.name} attacks for ${damageResult.total} damage${critText}`, '#ffffff', false);
     }
 
-    applyDamage(damageResult);
+    const damageApplication = applyDamage(damageResult);
+    if (
+        typeof hasEmpoweredModifier === 'function'
+        && hasEmpoweredModifier(attacker, 'vampiric')
+        && Number(damageApplication?.appliedDamage) > 0
+    ) {
+        const maximumHealth = Math.max(1, Number(attacker.totalStats?.health) || 1);
+        const before = Math.max(0, Number(attacker.currentHealth) || 0);
+        attacker.currentHealth = Math.min(maximumHealth, before + Number(damageApplication.appliedDamage) * 0.20);
+        const restored = Math.max(0, attacker.currentHealth - before);
+        if (restored >= 1 && typeof showEnemyAbilityFloatingText === 'function') {
+            showEnemyAbilityFloatingText(attacker, `+${Math.round(restored)}`, 'heal');
+        }
+    }
     if (typeof recordCombatStyleIncomingHit === 'function') recordCombatStyleIncomingHit(player, attacker, damageResult);
     runIncomingHitDebuffs(attacker, player, damageResult);
     if (!isCombatActive || !player || !attacker) return;

@@ -264,6 +264,7 @@ function refreshEnemyAbilityDerivedStats() {
             }
         }
     }
+    if (typeof refreshPlayerAttackInterval === 'function') refreshPlayerAttackInterval();
 }
 
 function processBerserkerAbilities(deltaTime) {
@@ -289,9 +290,147 @@ function processBerserkerAbilities(deltaTime) {
     if (statsChanged) refreshEnemyAbilityDerivedStats();
 }
 
+function removeOneEnemyDebuff(target) {
+    const debuff = Array.isArray(target?.activeDebuffs) ? target.activeDebuffs[0] : null;
+    if (!debuff) return false;
+    const identifier = debuff.id || debuff.name;
+    if (identifier && typeof removeDebuff === 'function') return removeDebuff(target, identifier);
+    debuff.onRemove?.(target);
+    target.activeDebuffs.shift();
+    return true;
+}
+
+function restoreEmpoweredResource(target, resource, amount) {
+    const maximumKey = resource === 'shield' ? 'energyShield' : 'health';
+    const currentKey = resource === 'shield' ? 'currentShield' : 'currentHealth';
+    const maximum = Math.max(0, Number(target?.totalStats?.[maximumKey]) || 0);
+    const before = Math.max(0, Number(target?.[currentKey]) || 0);
+    target[currentKey] = Math.min(maximum, before + Math.max(0, Number(amount) || 0));
+    return Math.max(0, target[currentKey] - before);
+}
+
+function processEmpoweredRegeneration(deltaTime) {
+    const auraSources = typeof getActiveEmpoweredAuraSources === 'function'
+        ? getActiveEmpoweredAuraSources()
+        : new Map();
+    for (const target of getLivingEnemies()) {
+        const state = typeof initializeEmpoweredModifierState === 'function'
+            ? initializeEmpoweredModifierState(target)
+            : null;
+        if (!state) continue;
+        let restored = 0;
+        if (typeof hasEmpoweredModifier === 'function' && hasEmpoweredModifier(target, 'regenerating')) {
+            restored += restoreEmpoweredResource(target, 'health', Number(target.totalStats?.health || 0) * 0.03 * deltaTime);
+        }
+        if (auraSources.has('mendingAura')) {
+            restored += restoreEmpoweredResource(target, 'health', Number(target.totalStats?.health || 0) * 0.0125 * deltaTime);
+        }
+        if (auraSources.has('barrierAura')) {
+            restoreEmpoweredResource(target, 'shield', Number(target.totalStats?.energyShield || 0) * 0.04 * deltaTime);
+        }
+        state.healTextElapsed += deltaTime;
+        state.healTextAmount += restored;
+        if (state.healTextElapsed >= 0.8) {
+            if (state.healTextAmount >= 1 && typeof showEnemyAbilityFloatingText === 'function') {
+                showEnemyAbilityFloatingText(target, `+${Math.round(state.healTextAmount)}`, 'heal');
+            }
+            state.healTextElapsed = 0;
+            state.healTextAmount = 0;
+        }
+    }
+}
+
+function processEmpoweredEscalation(deltaTime) {
+    let statsChanged = false;
+    for (const source of getLivingEnemies()) {
+        const state = typeof initializeEmpoweredModifierState === 'function'
+            ? initializeEmpoweredModifierState(source)
+            : null;
+        if (!state) continue;
+        if (typeof hasEmpoweredModifier === 'function' && hasEmpoweredModifier(source, 'frenzied') && state.frenziedStacks < 5) {
+            state.frenziedElapsed += deltaTime;
+            while (state.frenziedElapsed >= 4 && state.frenziedStacks < 5) {
+                state.frenziedElapsed -= 4;
+                state.frenziedStacks++;
+                statsChanged = true;
+                if (typeof playEnemySelfAbilityEffect === 'function') playEnemySelfAbilityEffect(source, 'frenzied', `FRENZY ${state.frenziedStacks}/5`);
+            }
+        }
+    }
+    const escalationSource = typeof getActiveEmpoweredAuraSources === 'function'
+        ? getActiveEmpoweredAuraSources().get('escalationAura')
+        : null;
+    if (escalationSource) {
+        const state = initializeEmpoweredModifierState(escalationSource);
+        state.escalationElapsed += deltaTime;
+        while (state.escalationElapsed >= 5 && state.escalationStacks < 5) {
+            state.escalationElapsed -= 5;
+            state.escalationStacks++;
+            statsChanged = true;
+            if (typeof playEnemySelfAbilityEffect === 'function') playEnemySelfAbilityEffect(escalationSource, 'escalation', `ESCALATION ${state.escalationStacks}/5`);
+        }
+    }
+    if (statsChanged) refreshEnemyAbilityDerivedStats();
+}
+
+function processEmpoweredCleansing(deltaTime) {
+    for (const source of getLivingEnemies()) {
+        const state = typeof initializeEmpoweredModifierState === 'function'
+            ? initializeEmpoweredModifierState(source)
+            : null;
+        if (!state) continue;
+        if (typeof hasEmpoweredModifier === 'function' && hasEmpoweredModifier(source, 'nullifying')) {
+            state.nullifyElapsed += deltaTime;
+            if (state.nullifyElapsed >= 5) {
+                state.nullifyElapsed %= 5;
+                const target = getLivingEnemies()
+                    .filter(candidate => Array.isArray(candidate.activeDebuffs) && candidate.activeDebuffs.length > 0)
+                    .sort((left, right) => right.activeDebuffs.length - left.activeDebuffs.length)[0];
+                if (target && removeOneEnemyDebuff(target) && typeof playEnemySupportAbilityEffect === 'function') {
+                    playEnemySupportAbilityEffect(source, target, 'cleanse', { label: 'NULLIFIED' });
+                }
+            }
+        }
+    }
+    const cleansingSource = typeof getActiveEmpoweredAuraSources === 'function'
+        ? getActiveEmpoweredAuraSources().get('cleansingAura')
+        : null;
+    if (cleansingSource) {
+        const state = initializeEmpoweredModifierState(cleansingSource);
+        state.cleanseElapsed += deltaTime;
+        if (state.cleanseElapsed >= 6) {
+            state.cleanseElapsed %= 6;
+            for (const target of getLivingEnemies()) {
+                if (removeOneEnemyDebuff(target) && typeof playEnemySupportAbilityEffect === 'function') {
+                    playEnemySupportAbilityEffect(cleansingSource, target, 'cleanse', { label: 'CLEANSED' });
+                }
+            }
+        }
+    }
+}
+
+function processEmpoweredAuraPresentations(deltaTime) {
+    if (typeof getActiveEmpoweredAuraSources !== 'function') return;
+    for (const [auraId, source] of getActiveEmpoweredAuraSources()) {
+        const state = initializeEmpoweredModifierState(source);
+        state.auraPulseElapsedById[auraId] = Math.max(0, Number(state.auraPulseElapsedById[auraId]) || 0) + deltaTime;
+        if (state.auraPulseElapsedById[auraId] < 2) continue;
+        state.auraPulseElapsedById[auraId] %= 2;
+        if (typeof playEmpoweredAuraPulse === 'function') playEmpoweredAuraPulse(source, getLivingEnemies(), auraId);
+    }
+}
+
+function processEmpoweredModifiers(deltaTime) {
+    processEmpoweredRegeneration(deltaTime);
+    processEmpoweredEscalation(deltaTime);
+    processEmpoweredCleansing(deltaTime);
+    processEmpoweredAuraPresentations(deltaTime);
+}
+
 function processEnemyAbilities(deltaTime) {
     processShieldProjectorChannels(deltaTime);
     processBerserkerAbilities(deltaTime);
+    processEmpoweredModifiers(deltaTime);
 }
 
 function applyEnemyAbilityStatModifiers(combatant, stats) {
@@ -316,6 +455,9 @@ function applyEnemyAbilityStatModifiers(combatant, stats) {
         for (const type of Object.keys(stats.damageTypes || {})) {
             stats.damageTypes[type] *= 1 + stacks * Number(ability.damagePerStack || 0);
         }
+    }
+    if (typeof applyEmpoweredModifierStatModifiers === 'function') {
+        applyEmpoweredModifierStatModifiers(combatant, stats);
     }
     return stats;
 }
@@ -455,13 +597,13 @@ function createEnemyInstance(monsterName, isEmpowered, slotIndex, rewardScale, o
         }
     }
 
-    if (isEmpowered) {
+    if (isEmpowered && typeof applyEmpoweredBaseModifiers === 'function') {
         instance.isEmpowered = true;
-        instance.health = Math.round(Number(instance.health || 1) * 1.5);
-        instance.energyShield = Math.round(Number(instance.energyShield || 0) * 1.5);
-        for (const damageType of Object.keys(instance.damageTypes || {})) {
-            instance.damageTypes[damageType] = Math.round(Number(instance.damageTypes[damageType] || 0) * 1.5);
-        }
+        applyEmpoweredBaseModifiers(instance, {
+            modifierIds: options.empoweredModifierIds,
+            random: options.random,
+            deepSector: Boolean(options.deepSector || levelOverride > 50 || currentDelveLocation?.deepSector)
+        });
         instance.name = `Empowered ${instance.name}`;
     }
 
@@ -476,7 +618,9 @@ function createEnemyInstance(monsterName, isEmpowered, slotIndex, rewardScale, o
 
 function assignEncounterExperienceRewards(group) {
     const allocations = group.map(candidate => {
-        const empoweredMultiplier = candidate.isEmpowered ? 1.5 : 1;
+        const empoweredMultiplier = typeof getEmpoweredRewardProfile === 'function'
+            ? getEmpoweredRewardProfile(candidate, { playerLevel: player?.level }).experienceMultiplier
+            : (candidate.isEmpowered ? 1.4 : 1);
         const exact = Math.max(0, Number(candidate.experienceValue || 0))
             * Math.max(0, Number(candidate._rewardScale ?? 1))
             * empoweredMultiplier;

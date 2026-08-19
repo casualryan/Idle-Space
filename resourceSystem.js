@@ -158,7 +158,10 @@ function rollEnemySpecialDrops(enemy, random = Math.random) {
     const theme = getEnemyTheme(enemy);
     const multipliers = getSpecialDropMultipliers();
     const rewards = [];
-    const empowered = enemy?.isEmpowered ? 1.35 : 1;
+    const empoweredCount = typeof getEmpoweredModifierCount === 'function'
+        ? getEmpoweredModifierCount(enemy)
+        : (enemy?.isEmpowered ? 1 : 0);
+    const empowered = 1 + empoweredCount * 0.20;
     const encounterRewardScale = Math.max(0, Number(enemy?._rewardScale ?? 1));
     const coreChance = Math.min(0.11, (0.012 + level * 0.00065) * empowered * encounterRewardScale * Math.max(0, Number(multipliers.core) || 1));
     const cacheChance = Math.min(0.16, (0.02 + level * 0.0009) * empowered * encounterRewardScale * Math.max(0, Number(multipliers.cache) || 1));

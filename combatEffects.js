@@ -218,13 +218,50 @@ function handleDefeatedCombatant(target) {
 // Canonical entry point for applying a damage packet. The legacy positional
 // signature remains available for old extensions while internal combat uses packets.
 function applyDamage(packetOrTarget, legacyDamage = 0, legacyTargetName = null, legacyDamageTypes = null) {
-    const { packet, legacyCall } = coerceDamagePacket(
+    let { packet, legacyCall } = coerceDamagePacket(
         packetOrTarget,
         legacyDamage,
         legacyTargetName,
         legacyDamageTypes
     );
     assertDamagePacket(packet, 'applyDamage packet');
+
+    const originalTarget = getCombatantEntity(packet.target);
+    if (
+        !legacyCall
+        && packet.source?.entity?.isPlayer
+        && originalTarget?.isEnemy
+        && packet.tags.includes('hit')
+        && !packet.metadata?.guardianRedirect
+        && typeof getLivingEnemies === 'function'
+    ) {
+        const guardian = getLivingEnemies().find(candidate => (
+            candidate !== originalTarget
+            && typeof hasEmpoweredModifier === 'function'
+            && hasEmpoweredModifier(candidate, 'guardian')
+        ));
+        if (guardian) {
+            const redirectedBase = scaleDamagePacket(packet, 0.30);
+            const redirected = createDamagePacket({
+                source: packet.source,
+                target: guardian,
+                kind: packet.kind,
+                damage: redirectedBase.damage,
+                total: redirectedBase.total,
+                isCritical: packet.isCritical,
+                damageRoll: packet.damageRoll,
+                mitigated: packet.mitigated,
+                tags: [...packet.tags, 'guardian-redirect'],
+                flags: packet.flags,
+                metadata: { ...packet.metadata, guardianRedirect: true }
+            });
+            applyDamage(redirected);
+            packet = scaleDamagePacket(packet, 0.70);
+            if (typeof playEnemySupportAbilityEffect === 'function') {
+                playEnemySupportAbilityEffect(guardian, originalTarget, 'guardian', { label: 'INTERCEPTED' });
+            }
+        }
+    }
 
     const target = getCombatantEntity(packet.target);
     const targetName = packet.target.name || packet.metadata.targetName || 'Target';
@@ -401,7 +438,10 @@ function startHealthRegen() {
 
         // Otherwise apply normal health regeneration
         if (player.currentHealth < player.totalStats.health) {
-            const regenPerTick = player.totalStats.healthRegen / 5;
+            const disruptionMultiplier = typeof getEmpoweredPlayerRegenMultiplier === 'function'
+                ? Math.max(0, Number(getEmpoweredPlayerRegenMultiplier()) || 0)
+                : 1;
+            const regenPerTick = player.totalStats.healthRegen / 5 * disruptionMultiplier;
             // (Assuming healthRegen is per second, 5 ticks/sec -> 200ms each)
 
             player.currentHealth += regenPerTick;

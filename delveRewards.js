@@ -161,7 +161,10 @@ function addMonsterLootToDelveBag(monster) {
             if (currencyFind) {
                 finalAmount = Math.floor(amt * (1 + currencyFind / 100));
             }
-            if (monster.isEmpowered) finalAmount = Math.floor(finalAmount * 1.5);
+            const empoweredFeedMultiplier = typeof getEmpoweredRewardProfile === 'function'
+                ? getEmpoweredRewardProfile(monster).feedMultiplier
+                : (monster.isEmpowered ? 1.4 : 1);
+            finalAmount = Math.floor(finalAmount * empoweredFeedMultiplier);
             if (typeof currentRunMode !== 'undefined' && currentRunMode === 'operation' && typeof getActiveOperationRewardModifiers === 'function') {
                 finalAmount = Math.floor(finalAmount * Math.max(0, Number(getActiveOperationRewardModifiers().feed) || 1));
                 if (typeof getDeepSectorIntelShopMultipliers === 'function') {
@@ -303,7 +306,12 @@ function calculateZoneXPPenaltyPercent() {
 
 function awardXPWithZonePenalty(baseXP, defeatedName, defeatedEnemy = null) {
     let xp = Math.floor(Number(baseXP) || 0);
-    if (defeatedEnemy?.isEmpowered && !defeatedEnemy?._experienceRewardIncludesEmpowerment) xp = Math.floor(xp * 1.5);
+    if (defeatedEnemy?.isEmpowered && !defeatedEnemy?._experienceRewardIncludesEmpowerment) {
+        const multiplier = typeof getEmpoweredRewardProfile === 'function'
+            ? getEmpoweredRewardProfile(defeatedEnemy, { playerLevel: player?.level }).experienceMultiplier
+            : 1.4;
+        xp = Math.floor(xp * multiplier);
+    }
     const penalty = calculateZoneXPPenaltyPercent();
     if (penalty > 0 && xp > 0) {
         // Apply penalty and round down per spec

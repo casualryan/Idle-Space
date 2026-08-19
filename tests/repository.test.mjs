@@ -3603,7 +3603,7 @@ test('new-character, fabrication, empowered reward, and claim-cache rules remain
   assert.match(read('fabrication.js'), /playerFeed < fabricationRecipe\.feedCost/);
   assert.match(read('fabrication.js'), /Object\.keys\(ongoingFabrications\)\.length > 0/);
   assert.match(combat, /instance\.isEmpowered = true/);
-  assert.match(combat, /xp = Math\.floor\(xp \* 1\.5\)/);
+  assert.match(combat, /getEmpoweredRewardProfile\(defeatedEnemy/);
   assert.match(combat, /Starting a new Operation destroyed/);
   assert.match(combat, /autoPatrolRedeploy/);
   assert.doesNotMatch(combat, /autoRedeploy/);
@@ -3780,4 +3780,72 @@ test('Armor Penetration reduces the matching resistance in live damage math', ()
     { player: {}, logMessage: () => {} }
   );
   assert.equal(result.total, 75);
+});
+
+test('empowered enemies roll the approved unique modifier pool and additive rewards', () => {
+  const result = evaluateClassic(
+    'empoweredModifiers.js',
+    `(() => {
+      const sequence = values => {
+        let index = 0;
+        return () => values[index++] ?? 0;
+      };
+      const normalDouble = rollEmpoweredModifierIds({ random: sequence([0.05, 0, 0]) });
+      const normalSingle = rollEmpoweredModifierIds({ random: sequence([0.14, 0]) });
+      const deepDouble = rollEmpoweredModifierIds({ deepSector: true, random: sequence([0.14, 0, 0]) });
+      const enemy = {
+        name: 'Test Enemy', level: 40, health: 100, energyShield: 20,
+        damageTypes: { kinetic: 10 },
+        defenseTypes: { physicalResistance: 10, elementalResistance: 10, chemicalResistance: 10 }
+      };
+      applyEmpoweredBaseModifiers(enemy, { modifierIds: ['giant', 'quick'] });
+      const reward = getEmpoweredRewardProfile(enemy, { playerLevel: 40 });
+      const hasteOne = { currentHealth: 10, empoweredModifierIds: ['hasteAura'] };
+      const hasteTwo = { currentHealth: 10, empoweredModifierIds: ['hasteAura'] };
+      const war = { currentHealth: 10, empoweredModifierIds: ['warAura'] };
+      const ally = { currentHealth: 10, level: 20, empoweredModifierIds: [] };
+      globalThis.getLivingEnemies = () => [hasteOne, hasteTwo, war, ally];
+      const auraStats = {
+        health: 100, energyShield: 0, attackSpeed: 1, criticalChance: 0,
+        precision: 0, damageTypes: { kinetic: 10 },
+        defenseTypes: { physicalResistance: 0, elementalResistance: 0, chemicalResistance: 0 }
+      };
+      applyEmpoweredModifierStatModifiers(ally, auraStats);
+      return JSON.parse(JSON.stringify({
+        definitionCount: Object.keys(window.empoweredModifierDefinitions).length,
+        auraCount: Object.values(window.empoweredModifierDefinitions).filter(entry => entry.aura).length,
+        infusionCount: Object.values(window.empoweredModifierDefinitions).filter(entry => entry.infusionType).length,
+        normalDouble, normalSingle, deepDouble,
+        health: enemy.health,
+        shield: enemy.energyShield,
+        damage: enemy.damageTypes.kinetic,
+        ids: enemy.empoweredModifierIds,
+        reward,
+        auraAttackSpeed: auraStats.attackSpeed,
+        auraDamage: auraStats.damageTypes.kinetic
+      }));
+    })()`,
+    { player: { level: 40 } }
+  );
+
+  assert.equal(result.definitionCount, 32);
+  assert.equal(result.auraCount, 10);
+  assert.equal(result.infusionCount, 7);
+  assert.equal(result.normalDouble.length, 2);
+  assert.equal(new Set(result.normalDouble).size, 2, 'double modifiers duplicated');
+  assert.equal(result.normalSingle.length, 1);
+  assert.equal(result.deepDouble.length, 2);
+  assert.deepEqual([...result.ids], ['giant', 'quick']);
+  assert.equal(result.health, 220, 'additive base and Giant health bonuses drifted');
+  assert.equal(result.shield, 36);
+  assert.equal(result.damage, 18);
+  assert.equal(result.auraAttackSpeed, 1.2, 'duplicate Haste Auras stacked');
+  assert.equal(result.auraDamage, 12, 'different squad auras did not coexist');
+  assert.deepEqual({ ...result.reward }, {
+    modifierCount: 2,
+    experienceMultiplier: 1.8,
+    feedMultiplier: 1.8,
+    materialChanceMultiplier: 1.6,
+    materialPromotionChance: 0.24
+  });
 });

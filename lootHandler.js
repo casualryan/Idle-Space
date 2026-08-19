@@ -44,7 +44,11 @@ function shouldDropLoot(enemy, player) {
         dropChance *= (1 + lootLuck / 100);
     }
 
-    if (enemy.isEmpowered) dropChance *= 1.5;
+    if (typeof getEmpoweredRewardProfile === 'function') {
+        dropChance *= getEmpoweredRewardProfile(enemy).materialChanceMultiplier;
+    } else if (enemy.isEmpowered) {
+        dropChance *= 1.3;
+    }
     
     // Apply equipment modifiers that affect loot chance
     if (player && player.equipment) {
@@ -215,11 +219,21 @@ function getLootQuantityRange(entry, enemy) {
     if (entry.quantityClass === 'thematicCommon') multiplier = Math.max(1, Math.ceil(zone / 2));
     if (entry.quantityClass === 'thematicAdvanced') multiplier = Math.max(1, Math.ceil((zone - 1) / 3));
     if (entry.quantityClass === 'thematicApex' && zone >= 11) multiplier = 2;
-    if (enemy?.isEmpowered) multiplier *= 1.5;
     return {
         min: Math.max(1, Math.floor(min * multiplier)),
         max: Math.max(1, Math.floor(max * multiplier))
     };
+}
+
+function promoteEmpoweredLootTier(tier, availableTiers, enemy, random = Math.random) {
+    const ordered = [...new Set((Array.isArray(availableTiers) ? availableTiers : []).map(Number).filter(Number.isFinite))]
+        .sort((left, right) => left - right);
+    const currentIndex = ordered.indexOf(Number(tier));
+    if (currentIndex < 0 || currentIndex >= ordered.length - 1) return tier;
+    const promotionChance = typeof getEmpoweredRewardProfile === 'function'
+        ? getEmpoweredRewardProfile(enemy).materialPromotionChance
+        : (enemy?.isEmpowered ? 0.12 : 0);
+    return random() < promotionChance ? ordered[currentIndex + 1] : tier;
 }
 
 function rollLootQuantity(entry, enemy) {
@@ -249,7 +263,8 @@ function generateLoot(enemy, player) {
     // Generate each item
     for (let i = 0; i < itemCount; i++) {
         // Roll for a loot tier
-        const tier = rollLootTier(player, availableTiers);
+        const rolledTier = rollLootTier(player, availableTiers);
+        const tier = promoteEmpoweredLootTier(rolledTier, availableTiers, enemy);
         
         // Select a loot pool based on the enemy and tier
         const poolName = selectLootPool(enemy, tier);
@@ -331,7 +346,10 @@ function handleLootDrop(enemy) {
             if (currencyFind) {
                 finalAmount = Math.floor(currencyAmount * (1 + currencyFind / 100));
             }
-            if (enemy.isEmpowered) finalAmount = Math.floor(finalAmount * 1.5);
+            const empoweredFeedMultiplier = typeof getEmpoweredRewardProfile === 'function'
+                ? getEmpoweredRewardProfile(enemy).feedMultiplier
+                : (enemy.isEmpowered ? 1.4 : 1);
+            finalAmount = Math.floor(finalAmount * empoweredFeedMultiplier);
 
             updateFeed(finalAmount);
             logMessage(`You recovered {flashing}${finalAmount} Feed{end}`);
@@ -359,7 +377,8 @@ if (typeof module !== 'undefined' && module.exports) {
         selectItemFromPool,
         getLootQuantityRange,
         rollLootQuantity,
-        getAvailableLootTiers
+        getAvailableLootTiers,
+        promoteEmpoweredLootTier
     };
 } else {
     // For browser environment

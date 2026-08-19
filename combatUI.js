@@ -235,6 +235,8 @@ function updateEnemyStatsDisplay() {
             card.dataset.slotIndex = String(slot);
             card.innerHTML = `
                 <span class="enemy-target-state" aria-hidden="true"></span>
+                <span class="enemy-empowered-modifiers" aria-label="Empowered modifiers"></span>
+                <span class="enemy-aura-indicators" aria-label="Active squad auras"></span>
                 <span class="combat-card-portrait"><img alt=""><span class="combat-card-effects"></span></span>
                 <span class="enemy-card-header"><strong class="enemy-card-name">Empty Contact</strong><span class="enemy-damage-tag">--</span></span>
                 <span class="compact-resource"><span class="compact-resource-label"><span>Integrity</span><span data-resource-text="health">0 / 0</span></span><span class="hp-bar-container"><span class="hp-bar"></span></span></span>
@@ -275,6 +277,8 @@ function updateEnemyStatsDisplay() {
             card.querySelector('.enemy-target-state').textContent = '';
             card.querySelector('.enemy-damage-tag').textContent = '--';
             card.querySelector('.enemy-ability-tag').textContent = 'Assault';
+            card.querySelector('.enemy-empowered-modifiers').replaceChildren();
+            card.querySelector('.enemy-aura-indicators').replaceChildren();
             card.querySelector('[data-enemy-action-label]').textContent = 'Attack Time';
             card.querySelectorAll('.enemy-resistances b').forEach(value => { value.textContent = '0'; });
             renderCombatEffects(card.querySelector('.combat-card-effects'), null);
@@ -283,6 +287,13 @@ function updateEnemyStatsDisplay() {
 
         const selected = candidate._combatId === selectedEnemyId;
         const forced = tauntOverride?.enemyId === candidate._combatId && Number(tauntOverride.expiresAt) > Date.now();
+        const empoweredDefinitions = typeof getEmpoweredModifierDefinitions === 'function'
+            ? getEmpoweredModifierDefinitions(candidate)
+            : [];
+        const activeAuraDefinitions = typeof getActiveEmpoweredAuraDefinitions === 'function'
+            ? getActiveEmpoweredAuraDefinitions()
+            : [];
+        const isAuraSource = empoweredDefinitions.some(definition => definition.aura);
         card.className = [
             'enemy-combat-card',
             selected ? 'selected' : '',
@@ -290,6 +301,9 @@ function updateEnemyStatsDisplay() {
             candidate.currentHealth <= 0 ? 'defeated' : '',
             propagationPresentationPendingIds.has(candidate._combatId) ? 'propagation-pending' : '',
             candidate.isEmpowered ? 'empowered' : '',
+            empoweredDefinitions.some(definition => definition.id === 'giant') ? 'empowered-giant' : '',
+            isAuraSource ? 'empowered-aura-source' : '',
+            activeAuraDefinitions.length > 0 ? 'empowered-aura-affected' : '',
             typeof isEnemyAffectedByCommander === 'function' && isEnemyAffectedByCommander(candidate) ? 'commander-buffed' : ''
         ].filter(Boolean).join(' ');
         card.disabled = candidate.currentHealth <= 0;
@@ -304,6 +318,27 @@ function updateEnemyStatsDisplay() {
         if (portrait.getAttribute('src') !== candidate.portrait) portrait.src = candidate.portrait || 'icons/default-icon.png';
         portrait.alt = `${candidate.name} portrait`;
         card.querySelector('.enemy-target-state').textContent = forced ? 'TAUNTING' : (selected ? 'TARGET' : '');
+        const modifierStrip = card.querySelector('.enemy-empowered-modifiers');
+        modifierStrip.replaceChildren(...empoweredDefinitions.map(definition => {
+            const chip = document.createElement('span');
+            chip.className = `enemy-empowered-chip${definition.aura ? ' enemy-empowered-chip--aura' : ''}`;
+            chip.textContent = definition.shortLabel;
+            chip.style.setProperty('--empowered-color', definition.color || '#d39bff');
+            chip.title = typeof getEmpoweredModifierTooltip === 'function'
+                ? getEmpoweredModifierTooltip(definition)
+                : `${definition.label}: ${definition.description}`;
+            chip.setAttribute('aria-label', definition.label);
+            return chip;
+        }));
+        const auraStrip = card.querySelector('.enemy-aura-indicators');
+        auraStrip.replaceChildren(...activeAuraDefinitions.map(definition => {
+            const indicator = document.createElement('span');
+            indicator.className = 'enemy-aura-indicator';
+            indicator.style.setProperty('--aura-color', definition.color || '#b997ff');
+            indicator.title = definition.description;
+            indicator.setAttribute('aria-label', definition.label);
+            return indicator;
+        }));
         if (candidate.currentHealth <= 0) setAttackProgressBar(candidate, 0);
         updateEnemyCombatIntel(card, candidate);
         renderCombatEffects(card.querySelector('.combat-card-effects'), candidate);
@@ -416,7 +451,11 @@ function playEnemySupportAbilityEffect(source, target, type, options = {}) {
     if (type === 'repair' && Number(options.amount) > 0) {
         showEnemyAbilityFloatingText(target, `+${Math.round(options.amount)}`, 'heal');
     } else if (options.label) {
-        showEnemyAbilityFloatingText(target, options.label, type === 'shieldProjector' ? 'shield' : 'cleanse');
+        showEnemyAbilityFloatingText(
+            target,
+            options.label,
+            type === 'shieldProjector' ? 'shield' : type === 'guardian' ? 'guardian' : 'cleanse'
+        );
     }
     link.addEventListener('animationend', () => link.remove(), { once: true });
     setTimeout(() => link.remove(), 900);
@@ -429,6 +468,26 @@ function playEnemySelfAbilityEffect(source, type, label) {
     anchor.card.classList.add(`enemy-self-ability--${type}`);
     setTimeout(() => anchor.card.classList.remove(`enemy-self-ability--${type}`), 750);
     if (label) showEnemyAbilityFloatingText(source, label, type);
+    return true;
+}
+
+function playEmpoweredAuraPulse(source, targets, auraId) {
+    const definition = typeof getEmpoweredModifierDefinition === 'function'
+        ? getEmpoweredModifierDefinition(auraId)
+        : null;
+    const color = definition?.color || '#b997ff';
+    for (const target of Array.isArray(targets) ? targets : []) {
+        if (!target || target === source || target.currentHealth <= 0) continue;
+        const layer = document.getElementById('enemy-support-effects-layer');
+        if (!layer) break;
+        const link = document.createElement('span');
+        link.className = 'enemy-support-link enemy-support-link--aura enemy-support-link--burst';
+        link.style.setProperty('--aura-color', color);
+        if (!positionEnemySupportLink(link, source, target)) continue;
+        layer.appendChild(link);
+        link.addEventListener('animationend', () => link.remove(), { once: true });
+        setTimeout(() => link.remove(), 900);
+    }
     return true;
 }
 
@@ -464,12 +523,20 @@ function syncEnemySupportEffects() {
 function clearEnemySupportEffects() {
     document.getElementById('enemy-support-effects-layer')?.replaceChildren();
     document.querySelectorAll('.enemy-combat-card').forEach(card => {
-        card.classList.remove('commander-buffed', 'enemy-self-ability--berserker');
+        card.classList.remove(
+            'commander-buffed',
+            'enemy-self-ability--berserker',
+            'enemy-self-ability--frenzied',
+            'enemy-self-ability--escalation',
+            'empowered-aura-source',
+            'empowered-aura-affected'
+        );
     });
 }
 
 window.playEnemySupportAbilityEffect = playEnemySupportAbilityEffect;
 window.playEnemySelfAbilityEffect = playEnemySelfAbilityEffect;
+window.playEmpoweredAuraPulse = playEmpoweredAuraPulse;
 window.showEnemyAbilityFloatingText = showEnemyAbilityFloatingText;
 window.syncEnemySupportEffects = syncEnemySupportEffects;
 window.clearEnemySupportEffects = clearEnemySupportEffects;

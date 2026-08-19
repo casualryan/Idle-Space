@@ -31,6 +31,7 @@ export const RUNTIME_SCRIPTS = [
   'lootHandler.js',
   'debuffs.js',
   'enemyAbilities.js',
+  'empoweredModifiers.js',
   'contentSchema.js',
   'combatState.js',
   'operationSystem.js',

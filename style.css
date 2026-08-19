@@ -7204,6 +7204,52 @@ hr {
 }
 
 .enemy-combat-card.empowered .enemy-card-name { color: #e2aeff; }
+.enemy-empowered-modifiers {
+    position: absolute;
+    top: -9px;
+    left: 9px;
+    z-index: 4;
+    display: flex;
+    gap: 4px;
+    pointer-events: auto;
+}
+.enemy-empowered-chip {
+    min-width: 28px;
+    padding: 3px 5px;
+    border: 1px solid var(--empowered-color, #d39bff);
+    border-radius: 9px;
+    background: rgba(3, 9, 18, 0.96);
+    color: var(--empowered-color, #d39bff);
+    font: 800 7px/1 'Orbitron', sans-serif;
+    letter-spacing: 0.07em;
+    text-align: center;
+    box-shadow: 0 0 9px color-mix(in srgb, var(--empowered-color, #d39bff) 42%, transparent);
+}
+.enemy-empowered-chip--aura { animation: empowered-chip-pulse 1.7s ease-in-out infinite; }
+.enemy-aura-indicators {
+    position: absolute;
+    bottom: 5px;
+    left: 8px;
+    z-index: 4;
+    display: flex;
+    max-width: 90px;
+    flex-wrap: wrap;
+    gap: 3px;
+    pointer-events: auto;
+}
+.enemy-aura-indicator {
+    width: 7px;
+    height: 7px;
+    border: 1px solid rgba(255,255,255,0.82);
+    border-radius: 50%;
+    background: var(--aura-color, #b997ff);
+    box-shadow: 0 0 8px var(--aura-color, #b997ff);
+}
+.enemy-combat-card.empowered-aura-source {
+    border-color: color-mix(in srgb, #b997ff 72%, #ff667d);
+    animation: empowered-aura-source-glow 1.8s ease-in-out infinite;
+}
+.enemy-combat-card.empowered-giant .combat-card-portrait img { transform: scale(1.08); }
 .enemy-combat-card.commander-buffed {
     box-shadow: inset 0 0 16px rgba(174, 108, 255, 0.12), 0 10px 25px rgba(0, 0, 0, 0.28);
 }
@@ -7298,6 +7344,17 @@ hr {
     background: linear-gradient(90deg, rgba(80, 135, 255, 0.18), #70bfff 48%, rgba(165, 233, 255, 0.95));
     box-shadow: 0 0 13px rgba(74, 161, 255, 0.82);
 }
+.enemy-support-link--guardian {
+    color: #f6bd60;
+    background: linear-gradient(90deg, rgba(246, 189, 96, 0.16), #f6bd60);
+    box-shadow: 0 0 13px rgba(246, 189, 96, 0.82);
+}
+.enemy-support-link--aura {
+    height: 2px;
+    color: var(--aura-color, #b997ff);
+    background: linear-gradient(90deg, transparent, var(--aura-color, #b997ff));
+    box-shadow: 0 0 10px var(--aura-color, #b997ff);
+}
 .enemy-support-link--burst {
     animation: enemy-support-burst 720ms ease-out forwards;
 }
@@ -7320,11 +7377,17 @@ hr {
 }
 .enemy-ability-float--shield { color: #7bd5ff; }
 .enemy-ability-float--cleanse { color: #75eee7; font-size: 13px; }
+.enemy-ability-float--guardian { color: #f6bd60; font-size: 11px; }
 .enemy-ability-float--berserker { color: #ff9f5c; font-size: 13px; }
+.enemy-ability-float--frenzied,
+.enemy-ability-float--escalation { color: #ff9f5c; font-size: 11px; }
 .enemy-combat-card.enemy-ability-impact--repair { animation: enemy-repair-impact 600ms ease-out; }
 .enemy-combat-card.enemy-ability-impact--cleanse { animation: enemy-cleanse-impact 600ms ease-out; }
 .enemy-combat-card.enemy-ability-impact--shieldProjector { animation: enemy-shield-impact 600ms ease-out; }
+.enemy-combat-card.enemy-ability-impact--guardian { animation: enemy-guardian-impact 600ms ease-out; }
 .enemy-combat-card.enemy-self-ability--berserker { animation: enemy-berserker-rise 700ms ease-out; }
+.enemy-combat-card.enemy-self-ability--frenzied,
+.enemy-combat-card.enemy-self-ability--escalation { animation: enemy-berserker-rise 700ms ease-out; }
 
 @keyframes enemy-support-burst {
     0% { opacity: 0; clip-path: inset(0 100% 0 0); }
@@ -7359,8 +7422,19 @@ hr {
 @keyframes enemy-shield-impact {
     45% { box-shadow: 0 0 0 2px rgba(112, 191, 255, 0.5), 0 0 30px rgba(112, 191, 255, 0.45); }
 }
+@keyframes enemy-guardian-impact {
+    45% { box-shadow: 0 0 0 2px rgba(246, 189, 96, 0.5), 0 0 30px rgba(246, 189, 96, 0.42); }
+}
 @keyframes enemy-berserker-rise {
     45% { box-shadow: 0 0 0 2px rgba(255, 120, 70, 0.52), 0 0 34px rgba(255, 80, 45, 0.48); }
+}
+@keyframes empowered-chip-pulse {
+    0%, 100% { filter: brightness(0.85); }
+    50% { filter: brightness(1.35); }
+}
+@keyframes empowered-aura-source-glow {
+    0%, 100% { box-shadow: inset 0 0 10px rgba(185, 151, 255, 0.12), 0 10px 25px rgba(0, 0, 0, 0.28); }
+    50% { box-shadow: inset 0 0 24px rgba(185, 151, 255, 0.25), 0 0 23px rgba(185, 151, 255, 0.22); }
 }
 
 .combat-drawer {
